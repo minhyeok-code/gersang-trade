@@ -1,0 +1,72 @@
+spring:
+  application:
+    name: gersangtrade
+
+  # ── DB 연결 ──────────────────────────────────────────────────────────────
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/gersang-trade-db?useSSL=false&serverTimezone=Asia/Seoul&characterEncoding=UTF-8}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  # ── JPA / Hibernate ───────────────────────────────────────────────────────
+  jpa:
+    hibernate:
+      # 로컬 개발: create | 운영: validate (Flyway가 스키마 관리)
+      ddl-auto: ${DDL_AUTO:create}
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        # MySQL 8 방언 명시 (자동 감지 실패 방지)
+        dialect: org.hibernate.dialect.MySQLDialect
+
+  # ── Flyway (초기 개발 단계 비활성화 → 운영 전환 시 true로 변경) ─────────────
+  flyway:
+    enabled: false
+
+  # ── Spring Batch ──────────────────────────────────────────────────────────
+  batch:
+    job:
+      # 애플리케이션 시작 시 배치 Job 자동 실행 방지
+      enabled: false
+    jdbc:
+      # Batch 메타 테이블 자동 생성 (로컬: always / 운영: never — Flyway로 관리)
+      initialize-schema: ${BATCH_SCHEMA_INIT:always}
+
+  # ── OAuth2 ────────────────────────────────────────────────────────────────
+  # MVP 범위: Google만 지원. Kakao는 추가기능(확장) 단계에서 별도 프로파일로 추가 예정.
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_CLIENT_ID:}
+            client-secret: ${GOOGLE_CLIENT_SECRET:}
+            scope:
+              - email
+              - profile
+
+# ── JWT / 앱 설정 ────────────────────────────────────────────────────────
+app:
+  jwt:
+    # 운영 환경에서는 반드시 환경변수로 주입. 최소 32자 이상의 랜덤 문자열 권장.
+    secret: ${JWT_SECRET:gersang-trade-dev-secret-key-must-be-at-least-32-chars}
+    access-token-expiry-ms: 900000      # AT 유효시간: 15분
+    refresh-token-expiry-ms: 604800000  # RT 유효시간: 7일
+  oauth2:
+    # 인증 성공 후 프론트엔드로 리다이렉트할 URI (AT를 쿼리 파라미터로 전달)
+    authorized-redirect-uri: ${OAUTH2_REDIRECT_URI:http://localhost:3000/auth/callback}
+  cookie:
+    # 운영 환경(HTTPS)에서는 반드시 true로 설정
+    secure: ${COOKIE_SECURE:false}
+
+# ── 로깅 ──────────────────────────────────────────────────────────────────
+logging:
+  level:
+    root: INFO
+    org.example.gersangtrade: DEBUG
+    # SQL 로그는 application-local.yml에서 DEBUG로 오버라이드
+    org.hibernate.SQL: INFO
+    org.springframework.security: INFO
+    org.springframework.batch: INFO

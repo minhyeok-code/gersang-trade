@@ -1,0 +1,23 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: gersang-trade-db
+    restart: unless-stopped
+    ports:
+      - "3307:3306"   # 로컬 3307 → 컨테이너 3306 (기본 MySQL 포트 충돌 회피)
+    environment:
+      MYSQL_ROOT_PASSWORD: qwer1234
+      MYSQL_DATABASE: gersang-trade-db
+      MYSQL_CHARACTER_SET_SERVER: utf8mb4
+      MYSQL_COLLATION_SERVER: utf8mb4_unicode_ci
+    volumes:
+      - gersang-trade-data:/var/lib/mysql   # 데이터 영속화
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pqwer1234" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  gersang-trade-data:
+    driver: local

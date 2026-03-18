@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd \"D:/Java/gersangTrade/back/gersangtrade\" && ./gradlew compileJava 2>&1)",
+      "Bash(cd D:/Java/gersangTrade/back/gersangtrade && ./gradlew compileJava 2>&1 | tail -40)",
+      "Bash(cd D:/Java/gersangTrade/back/gersangtrade && ./gradlew compileJava 2>&1 | tail -20)",
+      "Bash(cd \"D:/Java/gersangTrade/back/gersangtrade\" && ./gradlew test --tests \"org.example.gersangtrade.listing.service.ListingServiceTest\" --tests \"org.example.gersangtrade.wanted.service.WantedListingServiceTest\" 2>&1)",
+      "Bash(cd \"D:/Java/gersangTrade/back/gersangtrade\" && ./gradlew test --tests \"org.example.gersangtrade.listing.service.ListingServiceTest.createListing_정상_장비아이템_주술없음_등록글ID반환\" --info 2>&1 | tail -60)",
+      "Bash(cd \"D:/Java/gersangTrade/back/gersangtrade\" && ./gradlew test --tests \"org.example.gersangtrade.listing.service.ListingServiceTest.createListing_주술일관성위반_예외발생\" --info 2>&1 | grep -A 30 \"FAILED\\\\|Exception\\\\|Error\\\\|AssertionError\")",
+      "Bash(cd \"D:/Java/gersangTrade/back/gersangtrade\" && ./gradlew test --tests \"org.example.gersangtrade.listing.service.ListingServiceTest\" --tests \"org.example.gersangtrade.wanted.service.WantedListingServiceTest\" 2>&1 | grep -E \"tests|PASSED|FAILED|completed\")",
+      "Bash(find \"D:/Java/gersangTrade/back/gersangtrade/build/test-results\" -name \"*.xml\" | xargs grep -l \"ListingServiceTest\\\\|WantedListingServiceTest\" 2>/dev/null)"
+    ]
+  }
+}
