@@ -10,6 +10,7 @@ import org.example.gersangtrade.domain.catalog.Ritual;
 import org.example.gersangtrade.domain.catalog.RitualApplicability;
 import org.example.gersangtrade.domain.catalog.enums.EquipmentKind;
 import org.example.gersangtrade.domain.catalog.enums.ItemType;
+import org.example.gersangtrade.domain.listing.enums.BundleType;
 import org.example.gersangtrade.domain.listing.enums.ListingStatus;
 import org.example.gersangtrade.domain.user.enums.UserStatus;
 import org.example.gersangtrade.domain.listing.BundleEquipmentDetail;
@@ -106,6 +107,23 @@ public class ListingService {
      * 번들 단위 처리 — 번들 저장 후 라인을 순서대로 처리한다.
      */
     private void processBundle(TradeListing listing, BundleCreateRequest bundleReq) {
+        // EQUIPMENT_SINGLE은 라인이 정확히 1개여야 한다
+        if (bundleReq.bundleType() == BundleType.EQUIPMENT_SINGLE
+                && bundleReq.lines().size() != 1) {
+            throw new IllegalArgumentException(
+                    "EQUIPMENT_SINGLE 번들은 라인이 정확히 1개여야 합니다. 현재 라인 수: "
+                    + bundleReq.lines().size());
+        }
+
+        // 번들 내 sortOrder 중복 검사
+        long distinctSortOrders = bundleReq.lines().stream()
+                .map(BundleLineCreateRequest::sortOrder)
+                .distinct()
+                .count();
+        if (distinctSortOrders != bundleReq.lines().size()) {
+            throw new IllegalArgumentException("번들 내 라인의 sortOrder 값이 중복되어 있습니다.");
+        }
+
         ListingBundle bundle = listingBundleRepository.save(
                 ListingBundle.builder()
                         .listing(listing)
@@ -138,6 +156,11 @@ public class ListingService {
         );
 
         if (lineReq.isEquipment()) {
+            // 장비는 수량이 1이어야 한다
+            if (lineReq.quantity() > 1) {
+                throw new IllegalArgumentException(
+                        "장비 라인의 수량은 1이어야 합니다. itemId=" + lineReq.itemId());
+            }
             // 장비 아이템이면 상세 정보 처리
             validateAndSaveEquipmentDetail(item, line, lineReq.equipmentDetail());
         } else {
@@ -200,6 +223,15 @@ public class ListingService {
      */
     private void saveRituals(BundleLine line, EquipmentItem equipmentItem,
                               List<RitualResultRequest> ritualRequests) {
+        // 요청 내 중복 ritualId 검사
+        long distinctRitualCount = ritualRequests.stream()
+                .map(RitualResultRequest::ritualId)
+                .distinct()
+                .count();
+        if (distinctRitualCount != ritualRequests.size()) {
+            throw new IllegalArgumentException("주술 목록에 중복된 ritualId가 있습니다.");
+        }
+
         // 해당 장비에 적용 가능한 주술 맵 구성 (ritualId → Ritual)
         Map<Long, Ritual> applicableRitualMap = ritualApplicabilityRepository
                 .findByEquipmentItemIdWithRitual(equipmentItem.getItemId())

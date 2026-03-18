@@ -47,12 +47,31 @@ public class EquipmentItem {
     @JoinColumn(name = "set_id")
     private EquipmentSet equipmentSet;
 
+    /**
+     * 주술 가능 여부.
+     * true이면 RitualApplicability를 통해 적용 가능한 주술 목록이 존재한다.
+     * 크롤러 Batch Job이 geota/gerniverse 파싱 결과를 바탕으로 설정한다.
+     */
+    @Column(name = "ritual_applicable", nullable = false)
+    private boolean ritualApplicable = false;
+
+    /**
+     * 홈이 있는(슬롯 옵션) 버전 존재 여부.
+     * true이면 보석을 장착할 수 있는 홈 버전이 별도로 존재함을 의미한다.
+     * 크롤러 Batch Job이 geota 아이템 정보 파싱 결과를 바탕으로 설정한다.
+     */
+    @Column(name = "has_slot_option", nullable = false)
+    private boolean hasSlotOption = false;
+
     @Builder
     public EquipmentItem(Item item, EquipmentKind equipmentKind,
-                         EquipmentSlot slot, EquipmentSet equipmentSet) {
+                         EquipmentSlot slot, EquipmentSet equipmentSet,
+                         boolean ritualApplicable, boolean hasSlotOption) {
         this.item = item;
         this.equipmentKind = equipmentKind;
         this.slot = slot;
         this.equipmentSet = equipmentSet;
+        this.ritualApplicable = ritualApplicable;
+        this.hasSlotOption = hasSlotOption;
     }
 }

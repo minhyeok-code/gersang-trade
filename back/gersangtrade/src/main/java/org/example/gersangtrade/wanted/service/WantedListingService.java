@@ -8,6 +8,7 @@ import org.example.gersangtrade.domain.catalog.EquipmentItem;
 import org.example.gersangtrade.domain.catalog.Item;
 import org.example.gersangtrade.domain.catalog.Ritual;
 import org.example.gersangtrade.domain.catalog.RitualApplicability;
+import org.example.gersangtrade.domain.catalog.enums.EquipmentKind;
 import org.example.gersangtrade.domain.catalog.enums.ItemType;
 import org.example.gersangtrade.domain.user.User;
 import org.example.gersangtrade.domain.user.UserRepository;
@@ -20,6 +21,7 @@ import org.example.gersangtrade.domain.wanted.enums.WantedStatus;
 import org.example.gersangtrade.wanted.dto.request.WantedEquipmentConditionRequest;
 import org.example.gersangtrade.wanted.dto.request.WantedItemRequest;
 import org.example.gersangtrade.wanted.dto.request.WantedListingCreateRequest;
+import org.example.gersangtrade.wanted.dto.request.WantedRitualConditionRequest;
 import org.example.gersangtrade.wanted.dto.request.WantedSearchCondition;
 import org.example.gersangtrade.wanted.dto.response.WantedListingDetailResponse;
 import org.example.gersangtrade.wanted.dto.response.WantedListingDetailResponse.ItemAssembly;
@@ -78,6 +80,15 @@ public class WantedListingService {
             throw new IllegalStateException("차단된 계정은 구매 희망 등록글을 등록할 수 없습니다. userId=" + buyerId);
         }
 
+        // 아이템 목록 내 sortOrder 중복 검사
+        long distinctSortOrders = request.items().stream()
+                .map(WantedItemRequest::sortOrder)
+                .distinct()
+                .count();
+        if (distinctSortOrders != request.items().size()) {
+            throw new IllegalArgumentException("구매 희망 아이템 목록의 sortOrder 값이 중복되어 있습니다.");
+        }
+
         WantedListing wantedListing = wantedListingRepository.save(
                 WantedListing.builder()
                         .buyer(buyer)
@@ -113,6 +124,11 @@ public class WantedListingService {
         );
 
         if (itemReq.isEquipment()) {
+            // 장비는 수량이 1이어야 한다
+            if (itemReq.quantity() > 1) {
+                throw new IllegalArgumentException(
+                        "장비 아이템의 수량은 1이어야 합니다. itemId=" + itemReq.itemId());
+            }
             validateAndSaveEquipmentCondition(item, wantedItem, itemReq.equipmentCondition());
         } else {
             if (item.getType() != ItemType.MATERIAL) {
@@ -136,6 +152,15 @@ public class WantedListingService {
         EquipmentItem equipmentItem = equipmentItemRepository.findWithItemByItemId(item.getId())
                 .orElseThrow(() -> new IllegalArgumentException(
                         "장비 아이템 상세가 존재하지 않습니다. itemId=" + item.getId()));
+
+        // 외변(APPEARANCE) 장비의 최소 강화 수치는 null 또는 5만 허용
+        if (equipmentItem.getEquipmentKind() == EquipmentKind.APPEARANCE) {
+            Integer minLevel = condReq.minEnhanceLevel();
+            if (minLevel != null && minLevel != 5) {
+                throw new IllegalArgumentException(
+                        "외변 장비의 최소 강화 수치는 null 또는 5이어야 합니다. itemId=" + item.getId());
+            }
+        }
 
         // 주술 여부와 주술 조건 목록 일관성 검사
         if (!condReq.isRitualConsistent()) {
@@ -162,6 +187,15 @@ public class WantedListingService {
      */
     private void saveRitualConditions(WantedItem wantedItem, EquipmentItem equipmentItem,
                                        WantedEquipmentConditionRequest condReq) {
+        // 요청 내 중복 ritualId 검사
+        long distinctRitualCount = condReq.ritualConditions().stream()
+                .map(WantedRitualConditionRequest::ritualId)
+                .distinct()
+                .count();
+        if (distinctRitualCount != condReq.ritualConditions().size()) {
+            throw new IllegalArgumentException("주술 조건 목록에 중복된 ritualId가 있습니다.");
+        }
+
         // 적용 가능한 주술 맵 구성 (ritualId → Ritual)
         Map<Long, Ritual> applicableRitualMap = ritualApplicabilityRepository
                 .findByEquipmentItemIdWithRitual(equipmentItem.getItemId())
