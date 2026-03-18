@@ -281,7 +281,7 @@ API/조회 로직 관점(개념):
   - `element(optional)`: 속성(화/수/풍/지/번개 등)까지 나누고 싶으면 사용
   - `value`
 
-> `ELEMENT_VALUE`는 **가성비 비교 기능**(전월 평균가 ÷ 속성값)과 **속성값 데미지 계산기**(구매 시 데미지 증가분 m%p)에서 공유 사용됨.
+> `ELEMENT_VALUE`는 **가성비 비교 기능**(속성값 ÷ 전월 평균가)과 **속성값 데미지 계산기**(구매 시 데미지 증가분 m%p)에서 공유 사용됨.
 > 별도 테이블 없이 `ItemStat` 행 하나로 두 기능을 모두 커버.
 > 세부 계산 로직은 `docs/value-for-money-feature.ko.md` 6절 참고.
 - `TradeStatMonthly`
@@ -293,7 +293,7 @@ API/조회 로직 관점(개념):
 - 카테고리(속성값/속성깎/저항깎) 선택 → `ItemStat(statType=...)` 기준으로 아이템 목록 구성
 - 각 아이템에 대해 전월 `TradeStatMonthly`를 조인
 - 화면 표시:
-  - `아이템명 / 능력치 값 / 전월 평균가 / 가성비(평균가 ÷ 능력치)`
+  - `아이템명 / 능력치 값 / 전월 평균가 / 가성비 점수(능력치 ÷ 평균가)`
 - 거래건수(`tradeCount`)가 낮으면 “표본 적음” 같은 신뢰도 힌트 제공 권장
 
 > 상세 기획은 `docs/value-for-money-feature.ko.md` 참고.
@@ -406,3 +406,58 @@ API/조회 로직 관점(개념):
 - `FIRE` | `WATER` | `WIND` | `EARTH` | `LIGHTNING` | `NONE`
 - `NONE`: 속성 구분 없는 능력치. null 대신 사용하여 유니크 제약 적용 가능하게 함
 - 실제 속성 종류는 게임 정의에 따라 확정 필요
+
+---
+
+## 14) 크롤링 기반 신규 엔티티 — `gersang-items-crawling.md` 반영
+
+> 크롤링 전략 전문은 `docs/gersang-items-crawling.md` 참고.
+
+### 14.1 `Server` (거상 서버)
+
+- **server_id** (PK, INT): 1~13 고정
+- **name**: 서버명 (백호/주작/현무/청룡/봉황/해태/세종/신구/단군/비호/태극/화랑/태왕)
+- **is_active**: boolean
+
+> `TradeListing.server`(기존 String)의 추후 FK 전환 대상. 현재는 String 유지.
+
+### 14.2 `Gem` (보석)
+
+보석은 4단계 상태를 가지는 별개 엔티티로 `Item`과는 별도 관리한다.
+
+- **gem_id** (PK)
+- **name**: 기본 보석명 (흑요석/적혈석 등 11종)
+- **gem_grade**: `기본` | `세공됨` | `강화됨` | `빛나는` | `주술됨`
+- **ritual_id** (FK → Ritual, nullable): `gem_grade="주술됨"`일 때만 값 존재
+- **image_url**
+- `UNIQUE(name, gem_grade, ritual_id)`
+
+### 14.3 `MaterialPriceHistory` (재료 월간 가격 집계)
+
+geota.co.kr 크롤링 결과를 IQR 이상치 제거 후 집계하는 테이블. 가성비 계산기 기본값으로 사용된다.
+
+- **id** (PK)
+- **item_id** (FK → Item, MaterialItem 대상)
+- **server_id** (FK → Server)
+- **year_month** (CHAR 7, 예: `'2025-03'`)
+- **avg_price**: 이상치 제거 후 평균가
+- **min_price**: 이상치 제거 후 최저가
+- **sample_count**: 집계에 사용된 거래 건수
+- `UNIQUE(item_id, server_id, year_month)`
+
+### 14.4 `BundleEquipmentGem` (장비에 박힌 보석)
+
+기존 설계에서 누락된 엔티티. 장비 피스에 박힌 보석 정보를 저장한다.
+
+- **id** (PK)
+- **bundle_line_id** (FK → BundleLine)
+- **gem_id** (FK → Gem)
+
+### 14.5 `EquipmentItem` 추가 필드 (크롤링으로 보완)
+
+| 필드 | 설명 |
+|------|------|
+| `ritualApplicable` | 주술 적용 가능 여부 |
+| `hasSlotOption` | `<홈이있는>` 버전 존재 여부 |
+
+> 두 필드 모두 gerniverse 상세 파싱 후 갱신. 기존 `RitualApplicability`로도 주술 가능 여부 판단 가능하나, 빠른 필터링을 위해 플래그 형태로도 보유.
