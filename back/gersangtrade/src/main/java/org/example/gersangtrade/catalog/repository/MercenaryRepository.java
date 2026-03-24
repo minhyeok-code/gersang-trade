@@ -20,4 +20,10 @@ public interface MercenaryRepository extends JpaRepository<Mercenary, Long> {
 
     /** 이미지 URL이 아직 없는 용병 목록 조회 — 이미지 수집 Batch Job 대상 선정에 사용된다 */
     List<Mercenary> findByImageUrlIsNull();
+
+    /** 저항깎 수치가 있는 용병 전체 조회 — 가성비 계산기 저항깎 리스트에 사용된다 */
+    List<Mercenary> findByResistPierceIsNotNull();
+
+    /** 속성값이 있는 용병 전체 조회 — 가성비 계산기 속성값 리스트에 사용된다 */
+    List<Mercenary> findByElementValueIsNotNull();
 }

@@ -25,6 +25,19 @@ public interface MercenaryMaterialRepository extends JpaRepository<MercenaryMate
     List<MercenaryMaterial> findWithItemByMercenaryId(@Param("mercenaryId") Long mercenaryId);
 
     /**
+     * 용병 ID 목록으로 재료 일괄 조회 (Item·Mercenary fetch join 포함).
+     * 가성비 계산기에서 용병 고용 총비용 산출 시 N+1 방지용으로 사용된다.
+     */
+    @Query("""
+            SELECT mm FROM MercenaryMaterial mm
+            JOIN FETCH mm.item
+            JOIN FETCH mm.mercenary
+            WHERE mm.mercenary.id IN :mercenaryIds
+            """)
+    List<MercenaryMaterial> findAllWithItemAndMercenaryByMercenaryIds(
+            @Param("mercenaryIds") List<Long> mercenaryIds);
+
+    /**
      * 용병 ID에 해당하는 재료 전체 삭제.
      * 크롤러 재파싱 시 재료 목록 초기화 후 재적재에 사용된다.
      */

@@ -44,6 +44,20 @@ public interface MaterialPriceHistoryRepository extends JpaRepository<MaterialPr
             @Param("serverId") Integer serverId);
 
     /**
+     * 서버 ID·연월 기준 전체 가격 집계 조회 (Item fetch join 포함).
+     * 가성비 계산기에서 한 번에 전체 아이템 가격 맵을 로드할 때 사용된다.
+     */
+    @Query("""
+            SELECT mph FROM MaterialPriceHistory mph
+            JOIN FETCH mph.item
+            WHERE mph.server.serverId = :serverId
+              AND mph.yearMonth = :yearMonth
+            """)
+    List<MaterialPriceHistory> findAllByServerIdAndYearMonth(
+            @Param("serverId") Integer serverId,
+            @Param("yearMonth") String yearMonth);
+
+    /**
      * 특정 연월의 전체 서버 가격 집계 조회 — 관리자 대시보드 통계 확인에 사용된다.
      */
     @Query("""

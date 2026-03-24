@@ -47,6 +47,16 @@ spring:
               - email
               - profile
 
+# ── AWS S3 (크롤러 이미지 업로드) ────────────────────────────────────────
+aws:
+  access-key: ${AWS_ACCESS_KEY:}
+  secret-key: ${AWS_SECRET_KEY:}
+  region: ${AWS_REGION:ap-northeast-2}
+  s3:
+    bucket: ${AWS_S3_BUCKET:gersang-trade-images}
+    # S3 public read URL 기반. CloudFront CDN 사용 시 CDN 도메인으로 교체.
+    base-url: ${AWS_S3_BASE_URL:https://${aws.s3.bucket}.s3.${aws.region}.amazonaws.com}
+
 # ── JWT / 앱 설정 ────────────────────────────────────────────────────────
 app:
   jwt:

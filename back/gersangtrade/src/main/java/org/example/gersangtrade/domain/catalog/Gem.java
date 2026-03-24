@@ -74,4 +74,24 @@ public class Gem extends BaseEntity {
     public void updateImageUrl(String imageUrl) {
         this.imageUrl = imageUrl;
     }
+
+    /**
+     * 주술됨 등급과 ritual 연결 정합성 검증.
+     * DB 저장·수정 직전 자동 실행되어 잘못된 상태가 영속화되는 것을 방지한다.
+     *
+     * <ul>
+     *   <li>주술됨 등급 → ritual non-null 필수</li>
+     *   <li>주술됨 이외 등급 → ritual은 반드시 null</li>
+     * </ul>
+     */
+    @PrePersist
+    @PreUpdate
+    private void validateRitual() {
+        if (GemGrade.주술됨 == this.gemGrade && this.ritual == null) {
+            throw new IllegalStateException("주술됨 등급 보석은 ritual이 반드시 필요합니다. name=" + this.name);
+        }
+        if (GemGrade.주술됨 != this.gemGrade && this.ritual != null) {
+            throw new IllegalStateException("주술됨 이외 등급 보석에는 ritual을 연결할 수 없습니다. name=" + this.name + ", grade=" + this.gemGrade);
+        }
+    }
 }

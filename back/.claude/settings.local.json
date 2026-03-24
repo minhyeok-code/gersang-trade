@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./gradlew compileJava)",
+      "Bash(./gradlew dependencies:*)",
+      "Bash(find /c/Users/29097/.gradle/caches -name spring-batch-core-*.jar)",
+      "Bash(ls C:/Users/29097/.gradle/caches/modules-*/files-*/)",
+      "Bash(./gradlew -Pdependency=\"org.springframework.batch:spring-batch-core:6.0.2\" help)",
+      "Bash(./gradlew listJars)",
+      "Read(//d/Java/gersangTrade/docs/**)",
+      "WebFetch(domain:gerniverse.app)",
+      "WebFetch(domain:geota.co.kr)",
+      "Bash(find /c/Users/29097 -name spring-batch-*.jar)",
+      "Bash(jar tf:*)"
+    ]
+  }
+}

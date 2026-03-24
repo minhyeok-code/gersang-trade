@@ -9,6 +9,7 @@ import org.example.gersangtrade.auth.service.CustomOAuth2UserService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -31,6 +32,7 @@ import java.io.IOException;
  */
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity  // @PreAuthorize 어노테이션 활성화
 @RequiredArgsConstructor
 public class SecurityConfig {
 
@@ -56,6 +58,8 @@ public class SecurityConfig {
                                 "/listings/**", "/stats/**",
                                 "/api/listings/**", "/api/wanted/**",
                                 "/api/items/**").permitAll()
+                        // 가성비 계산기 — 비로그인 허용 (세션 내 계산만, DB 저장 없음)
+                        .requestMatchers(HttpMethod.POST, "/api/calculator").permitAll()
                         // 인증 관련 경로 전체 허용
                         .requestMatchers("/auth/**", "/oauth2/**", "/login/**").permitAll()
                         // 관리자 전용 API

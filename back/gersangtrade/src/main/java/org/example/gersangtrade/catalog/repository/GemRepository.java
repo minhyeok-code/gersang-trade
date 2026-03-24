@@ -21,10 +21,11 @@ public interface GemRepository extends JpaRepository<Gem, Long> {
      */
     @Query("""
             SELECT g FROM Gem g
+            LEFT JOIN g.ritual r
             WHERE g.name = :name
               AND g.gemGrade = :gemGrade
               AND (:ritualId IS NULL AND g.ritual IS NULL
-                   OR g.ritual.id = :ritualId)
+                   OR r.id = :ritualId)
             """)
     Optional<Gem> findByNameAndGemGradeAndRitualId(
             @Param("name") String name,

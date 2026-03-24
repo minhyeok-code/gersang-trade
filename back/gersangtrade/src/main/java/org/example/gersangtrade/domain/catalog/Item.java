@@ -38,10 +38,27 @@ public class Item extends BaseEntity {
     @Column(name = "trade_category", length = 50)
     private String tradeCategory;
 
+    /**
+     * gerniverse에서 수집한 이미지 S3 URL.
+     * 크롤링 완료 전에는 null. 이 값이 null인 Item이 ItemDetailStep의 처리 대상이 된다.
+     */
+    @Column(name = "image_url", length = 500)
+    private String imageUrl;
+
     @Builder
     public Item(String name, ItemType type, String tradeCategory) {
         this.name = name;
         this.type = type;
         this.tradeCategory = tradeCategory;
+    }
+
+    /** 크롤링 상세 파싱 후 S3 이미지 URL 저장 */
+    public void updateImageUrl(String imageUrl) {
+        this.imageUrl = imageUrl;
+    }
+
+    /** gerniverse 파싱 결과에 따라 아이템 종류 수정 (MATERIAL → EQUIPMENT 전환 시 사용) */
+    public void updateType(ItemType type) {
+        this.type = type;
     }
 }

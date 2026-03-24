@@ -74,10 +74,19 @@ public class Mercenary extends BaseEntity {
         this.imageUrl = imageUrl;
     }
 
-    /** 크롤링 상세 파싱 후 스펙 정보 업데이트 */
-    public void updateSpec(Integer resistPierce, Integer elementValue, String imageUrl) {
+    /**
+     * 크롤링 상세 파싱 후 스펙 정보 업데이트.
+     * mercenaryType은 null/공백이면 기존 값을 유지한다.
+     * imageUrl은 null이면 기존 값을 유지한다 (재실행 시 S3 업로드 실패로 null이 덮어쓰이는 것을 방지).
+     */
+    public void updateSpec(String mercenaryType, Integer resistPierce, Integer elementValue, String imageUrl) {
+        if (mercenaryType != null && !mercenaryType.isBlank()) {
+            this.mercenaryType = mercenaryType;
+        }
         this.resistPierce = resistPierce;
         this.elementValue = elementValue;
-        this.imageUrl = imageUrl;
+        if (imageUrl != null) {
+            this.imageUrl = imageUrl;
+        }
     }
 }
