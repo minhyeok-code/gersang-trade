@@ -48,4 +48,9 @@ public class ListingBundle {
         this.bundleType = bundleType;
         this.titleOverride = titleOverride;
     }
+
+    /** 시스템 자동 생성 제목을 설정한다. titleOverride가 없을 때만 호출한다. */
+    public void updateTitle(String title) {
+        this.titleOverride = title;
+    }
 }

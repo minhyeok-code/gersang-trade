@@ -4,7 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.gersangtrade.catalog.repository.ItemRepository;
 import org.example.gersangtrade.domain.catalog.Item;
-import org.springframework.batch.infrastructure.item.ItemReader;
+import org.springframework.batch.item.ItemReader;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedList;

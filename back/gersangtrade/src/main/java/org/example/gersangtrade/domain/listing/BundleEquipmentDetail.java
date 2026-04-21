@@ -6,12 +6,16 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.example.gersangtrade.domain.catalog.EquipmentItem;
+import org.example.gersangtrade.domain.catalog.Gem;
 import org.example.gersangtrade.domain.catalog.enums.EquipmentKind;
 
 /**
  * 번들 라인의 장비 상세 정보 확장 엔티티.
  * BundleLine과 @MapsId 패턴으로 PK를 공유한다 (1:1, Shared PK).
- * 장비의 강화 수치, 주술 여부 등 장비 전용 정보를 보관한다.
+ * 장비의 강화 수치, 주술 여부, 보석 정보 등 장비 전용 정보를 보관한다.
+ *
+ * <p>장비 1개당 보석 최대 1개 슬롯을 가지므로, 보석 정보는 이 엔티티에 gem FK로 직접 포함한다.
+ * 별도 BundleEquipmentGem 테이블은 사용하지 않는다.
  *
  * <pre>
  * 필드 구성
@@ -24,6 +28,7 @@ import org.example.gersangtrade.domain.catalog.enums.EquipmentKind;
  * │ equipmentKindSnapshot│ EquipmentKind    │ NO   │ 등록 시점 스냅샷 (APPEARANCE | NORMAL)           │
  * │ enhanceLevel         │ Integer          │ YES  │ 강화 수치. 외변 정책: 5만 유효 / 일반: 실제 수치 │
  * │ hasRitual            │ boolean          │ NO   │ 주술 적용 여부 — true면 BundleEquipmentRitual 존재│
+ * │ gem                  │ Gem FK           │ YES  │ 장착된 보석 — 장비당 최대 1개. 없으면 null       │
  * └──────────────────────┴──────────────────┴──────┴──────────────────────────────────────────────────┘
  * </pre>
  */
@@ -72,14 +77,23 @@ public class BundleEquipmentDetail {
     @Column(name = "has_ritual", nullable = false)
     private boolean hasRitual;
 
+    /**
+     * 장착된 보석 — 장비당 최대 1개 슬롯.
+     * null이면 보석 없음. non-null이면 해당 보석이 장착된 상태.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "gem_id")
+    private Gem gem;
+
     @Builder
     public BundleEquipmentDetail(BundleLine bundleLine, EquipmentItem equipmentItem,
                                   EquipmentKind equipmentKindSnapshot,
-                                  Integer enhanceLevel, boolean hasRitual) {
+                                  Integer enhanceLevel, boolean hasRitual, Gem gem) {
         this.bundleLine = bundleLine;
         this.equipmentItem = equipmentItem;
         this.equipmentKindSnapshot = equipmentKindSnapshot;
         this.enhanceLevel = enhanceLevel;
         this.hasRitual = hasRitual;
+        this.gem = gem;
     }
 }

@@ -36,7 +36,11 @@ public class ItemStat {
     @JoinColumn(name = "item_id", nullable = false)
     private Item item;
 
-    /** 능력치 종류 — ELEMENT_VALUE(속성값), ELEMENT_PIERCE(속성깎), RESIST_PIERCE(저항깎) */
+    /**
+     * 능력치 종류.
+     * MVP statType: ELEMENT_VALUE(속성값) | ELEMENT_PIERCE(속성깎) | RESIST_PIERCE(저항깎)
+     * 확장 예정 (MVP 이후): ATTACK_POWER | CRIT_RATE | MAIN_STAT_STR | MAIN_STAT_DEX 등
+     */
     @Enumerated(EnumType.STRING)
     @Column(name = "stat_type", nullable = false, length = 30)
     private StatType statType;

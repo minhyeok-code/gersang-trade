@@ -5,18 +5,22 @@ import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.example.gersangtrade.domain.catalog.enums.MercenaryCategory;
+import org.example.gersangtrade.domain.catalog.enums.Nation;
+import org.example.gersangtrade.domain.catalog.enums.Nature;
 import org.example.gersangtrade.domain.common.BaseEntity;
+
+import java.time.LocalDateTime;
 
 /**
  * 용병 엔티티.
- * 게임 내 고용 가능한 용병의 스펙 정보를 보관한다.
- * geota 목록 + gerniverse 상세 페이지 크롤링으로 적재된다.
+ * gerniverse 목록·상세 페이지 크롤링으로 적재된다.
  *
- * <p>저항깎(resistPierce)과 속성값(elementValue)은
- * 가성비 계산기에서 데미지 계산의 입력값으로 사용된다.
- * 스킬 조건부 저항깎 용병의 경우 별도 처리 정책이 필요하다.
+ * <p>ListTasklet(Step 3)에서 name만 저장되고, DetailWriter(Step 4)에서
+ * category / nation / nature / stats / materials / imageUrl / crawledAt 이 채워진다.
  *
- * <p>고용 재료는 MercenaryMaterial을 통해 Item과 연결된다.
+ * <p>능력치(스탯)는 MercenaryStat을 통해 StatType별로 저장된다.
+ * 고용 재료는 MercenaryMaterial을 통해 연결된다.
  */
 @Entity
 @Table(name = "mercenaries")
@@ -29,64 +33,99 @@ public class Mercenary extends BaseEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    /** 용병명 — 예: "각성 군다리명왕", "채염사천왕" */
+    /** 용병 풀네임 — 예: "각성 군다리명왕", "채염사천왕" */
     @Column(name = "name", nullable = false, length = 100, unique = true)
     private String name;
 
     /**
-     * 용병 종류 — 예: "각성명왕", "사천왕", "오방신장".
-     * gerniverse 상세 페이지 카테고리 배지에서 파싱한다.
+     * gerniverse 내부 식별 키 — 예: "gakGwangmok".
+     * ListTasklet 단계에서는 null. DetailWriter 파싱 후 채워진다.
      */
-    @Column(name = "mercenary_type", length = 50)
-    private String mercenaryType;
+    @Column(name = "mercenary_key", length = 100, unique = true)
+    private String key;
+
+    /** 용병 카테고리 — 예: 각성사천왕, 명왕, 전설장수. gerniverse 배지에서 파싱한다 */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "category", length = 50)
+    private MercenaryCategory category;
+
+    /** 출신 국가 */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "nation", length = 20)
+    private Nation nation;
+
+    /** 속성 (fire / water / thunder / air / earth / 무속성) */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "nature", length = 20)
+    private Nature nature;
 
     /**
-     * 저항깎 수치.
-     * 몬스터의 저항을 감소시키는 디버프 값. 가성비 계산기의 총 저항깎 구성 요소.
-     * 저항깎이 없는 용병은 null.
-     * 스킬 조건부 저항깎(예: 공중 몬스터만)은 별도 처리가 필요하며, 현재는 고정 수치만 저장한다.
-     */
-    @Column(name = "resist_pierce")
-    private Integer resistPierce;
-
-    /**
-     * 속성값.
+     * 속성값 (natureValue).
      * 속성 추가 데미지 공식 n% = (3x - y) / 2에서 x 구성 요소.
-     * 속성값이 없는 용병은 null.
+     * MercenaryStat(ELEMENT_VALUE)에도 저장되지만, 계산기 접근 편의를 위해 여기서도 유지한다.
+     * 무속성 용병은 null.
      */
-    @Column(name = "element_value")
-    private Integer elementValue;
+    @Column(name = "nature_value")
+    private Integer natureValue;
+
+    /** 출시 예정 여부 — true이면 크롤링 대상에서 제외된다 */
+    @Column(name = "is_coming_soon", nullable = false)
+    private boolean comingSoon = false;
 
     /**
      * gerniverse에서 수집한 이미지 S3 URL.
-     * 크롤링 완료 전에는 null.
+     * DetailWriter 처리 전에는 null.
      */
     @Column(name = "image_url", length = 500)
     private String imageUrl;
 
+    /**
+     * 상세 크롤링 완료 시각.
+     * ListTasklet 직후에는 null. DetailWriter 처리 완료 후 설정된다.
+     * null이면 DetailReader가 처리 대상으로 선택한다.
+     */
+    @Column(name = "crawled_at")
+    private LocalDateTime crawledAt;
+
     @Builder
-    public Mercenary(String name, String mercenaryType,
-                     Integer resistPierce, Integer elementValue, String imageUrl) {
+    public Mercenary(String name, String key, MercenaryCategory category,
+                     Nation nation, Nature nature, Integer natureValue,
+                     boolean comingSoon, String imageUrl) {
         this.name = name;
-        this.mercenaryType = mercenaryType;
-        this.resistPierce = resistPierce;
-        this.elementValue = elementValue;
+        this.key = key;
+        this.category = category;
+        this.nation = nation;
+        this.nature = nature;
+        this.natureValue = natureValue;
+        this.comingSoon = comingSoon;
         this.imageUrl = imageUrl;
     }
 
     /**
      * 크롤링 상세 파싱 후 스펙 정보 업데이트.
-     * mercenaryType은 null/공백이면 기존 값을 유지한다.
-     * imageUrl은 null이면 기존 값을 유지한다 (재실행 시 S3 업로드 실패로 null이 덮어쓰이는 것을 방지).
+     * imageUrl은 null이면 기존 값을 유지한다 (S3 업로드 실패로 null이 덮어쓰이는 것을 방지).
+     * key는 null/공백이면 기존 값을 유지한다.
      */
-    public void updateSpec(String mercenaryType, Integer resistPierce, Integer elementValue, String imageUrl) {
-        if (mercenaryType != null && !mercenaryType.isBlank()) {
-            this.mercenaryType = mercenaryType;
+    public void updateSpec(String key, MercenaryCategory category, Nation nation,
+                           Nature nature, Integer natureValue, boolean comingSoon,
+                           String imageUrl, LocalDateTime crawledAt) {
+        if (key != null && !key.isBlank()) {
+            this.key = key;
         }
-        this.resistPierce = resistPierce;
-        this.elementValue = elementValue;
+        if (category != null) {
+            this.category = category;
+        }
+        if (nation != null) {
+            this.nation = nation;
+        }
+        if (nature != null) {
+            this.nature = nature;
+        }
+        this.natureValue = natureValue;
+        this.comingSoon = comingSoon;
         if (imageUrl != null) {
             this.imageUrl = imageUrl;
         }
+        this.crawledAt = crawledAt;
     }
 }

@@ -8,7 +8,7 @@ import org.example.gersangtrade.domain.catalog.enums.GemGrade;
  *
  * <p>분류 유형:
  * <ul>
- *   <li>GEM — 보석 (흑요석 등 11종 + 세공/강화/빛나는/주술됨 변형)</li>
+ *   <li>GEM — 보석 (흑요석 등 11종 + 세공됨/강화됨/빛나는 변형. 주술은 강화됨+ritualName 조합으로 표현)</li>
  *   <li>EQUIPMENT — 확실한 장비 (이름에 &lt;ritual&gt; 또는 &lt;홈이있는&gt; 마커 포함)</li>
  *   <li>UNKNOWN — 일반 이름만 있어 분류 불명 (gerniverse 상세에서 최종 분류)</li>
  * </ul>
@@ -30,9 +30,9 @@ public record ParsedItemDto(
         GemGrade gemGrade,
 
         /**
-         * 주술명 (GEM의 주술됨 등급 또는 EQUIPMENT의 접두사 주술명).
+         * 주술명 (GEM 강화됨+주술 조합 또는 EQUIPMENT의 접두사 주술명).
          * 해당 사항 없으면 null.
-         * 예: "&lt;태산북두&gt; 흑요석" → "태산북두"
+         * 예: "&lt;태산북두&gt; 흑요석" → ritualName="태산북두", gemGrade=강화됨
          */
         String ritualName,
 

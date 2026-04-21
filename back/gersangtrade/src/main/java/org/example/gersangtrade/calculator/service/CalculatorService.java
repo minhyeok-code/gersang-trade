@@ -9,10 +9,12 @@ import org.example.gersangtrade.calculator.dto.response.ResistPierceEntryDto;
 import org.example.gersangtrade.catalog.repository.ItemStatRepository;
 import org.example.gersangtrade.catalog.repository.MercenaryMaterialRepository;
 import org.example.gersangtrade.catalog.repository.MercenaryRepository;
+import org.example.gersangtrade.catalog.repository.MercenaryStatRepository;
 import org.example.gersangtrade.crawler.repository.MaterialPriceHistoryRepository;
 import org.example.gersangtrade.domain.catalog.ItemStat;
 import org.example.gersangtrade.domain.catalog.Mercenary;
 import org.example.gersangtrade.domain.catalog.MercenaryMaterial;
+import org.example.gersangtrade.domain.catalog.MercenaryStat;
 import org.example.gersangtrade.domain.catalog.enums.StatType;
 import org.example.gersangtrade.domain.crawler.MaterialPriceHistory;
 import org.springframework.stereotype.Service;
@@ -66,6 +68,7 @@ public class CalculatorService {
 
     private final ItemStatRepository itemStatRepository;
     private final MercenaryRepository mercenaryRepository;
+    private final MercenaryStatRepository mercenaryStatRepository;
     private final MercenaryMaterialRepository mercenaryMaterialRepository;
     private final MaterialPriceHistoryRepository materialPriceHistoryRepository;
 
@@ -188,22 +191,40 @@ public class CalculatorService {
     }
 
     /**
-     * 용병 ID 목록에 해당하는 고용 총비용 계산.
-     * 재료 가격 정보가 없는 항목은 제외하고 합산하므로 실제 비용보다 낮을 수 있다.
-     * key: mercenaryId, value: 알려진 재료 비용 합산 (골드 단위)
+     * 서버·연월 기준 아이템 이름 기준 가격 맵 로드.
+     * key: itemName (gerniverse materialItemKey와 동일), value: avgPrice (골드 단위)
+     * MercenaryMaterial.materialItemKey 기반 비용 계산에 사용된다.
      */
-    private Map<Long, Long> calcMercenaryCosts(List<Long> mercenaryIds, Map<Long, Long> priceMap) {
+    private Map<String, Long> loadPriceMapByItemName(Integer serverId, String yearMonth) {
+        List<MaterialPriceHistory> histories =
+                materialPriceHistoryRepository.findAllByServerIdAndYearMonth(serverId, yearMonth);
+        return histories.stream()
+                .collect(Collectors.toMap(
+                        mph -> mph.getItem().getName(),
+                        MaterialPriceHistory::getAvgPrice,
+                        (a, b) -> a));  // 중복 시 첫 번째 값 유지
+    }
+
+    /**
+     * 용병 ID 목록에 해당하는 고용 총비용 계산.
+     * 아이템 재료만 가격 계산 대상. 재료 가격 정보가 없는 항목은 제외한다.
+     * key: mercenaryId, value: 알려진 아이템 재료 비용 합산 (골드 단위)
+     */
+    private Map<Long, Long> calcMercenaryCosts(List<Long> mercenaryIds,
+                                               Map<String, Long> priceMapByName) {
         if (mercenaryIds.isEmpty()) return Map.of();
 
         List<MercenaryMaterial> materials =
-                mercenaryMaterialRepository.findAllWithItemAndMercenaryByMercenaryIds(mercenaryIds);
+                mercenaryMaterialRepository.findAllByResultMercenaryIdIn(mercenaryIds);
 
         Map<Long, Long> costMap = new HashMap<>();
         for (MercenaryMaterial mm : materials) {
-            Long itemPrice = priceMap.get(mm.getItem().getId());
+            // 아이템 재료만 가격 계산 (용병 재료는 별도 계산 필요 — 현재 미지원)
+            if (mm.getMaterialItemKey() == null) continue;
+            Long itemPrice = priceMapByName.get(mm.getMaterialItemKey());
             if (itemPrice != null) {
                 long materialCost = itemPrice * mm.getQuantity();
-                costMap.merge(mm.getMercenary().getId(), materialCost, Long::sum);
+                costMap.merge(mm.getResultMercenary().getId(), materialCost, Long::sum);
             }
         }
         return costMap;
@@ -224,7 +245,7 @@ public class CalculatorService {
 
     /**
      * 저항깎 아이템/용병 가성비 리스트 생성.
-     * ItemStat(RESIST_PIERCE) 아이템과 resistPierce가 있는 용병을 포함한다.
+     * ItemStat(RESIST_PIERCE) 아이템과 MercenaryStat(RESIST_PIERCE) 용병을 포함한다.
      */
     private List<ResistPierceEntryDto> buildResistPierceList(
             CalculatorRequest req, CurrentStatsDto current,
@@ -240,15 +261,21 @@ public class CalculatorService {
                     "ITEM", itemId, stat.getItem().getName(), stat.getValue(), price, req, current));
         }
 
-        // 저항깎 수치가 있는 용병
-        List<Mercenary> mercs = mercenaryRepository.findByResistPierceIsNotNull();
+        // 저항깎 스탯(RESIST_PIERCE)이 있는 용병 — MercenaryStat 기반 조회
+        List<MercenaryStat> resistStats =
+                mercenaryStatRepository.findByStatKey(StatType.RESIST_PIERCE);
+        String prevYearMonth = LocalDate.now().minusMonths(1).format(YEAR_MONTH_FORMATTER);
+        Map<String, Long> priceMapByName =
+                loadPriceMapByItemName(req.serverId(), prevYearMonth);
         Map<Long, Long> mercCosts = calcMercenaryCosts(
-                mercs.stream().map(Mercenary::getId).toList(), priceMap);
+                resistStats.stream().map(s -> s.getMercenary().getId()).distinct().toList(),
+                priceMapByName);
 
-        for (Mercenary merc : mercs) {
+        for (MercenaryStat stat : resistStats) {
+            Mercenary merc = stat.getMercenary();
             Long price = resolvePrice(overrides, "MERC_" + merc.getId(), mercCosts.get(merc.getId()));
             list.add(buildResistEntry(
-                    "MERCENARY", merc.getId(), merc.getName(), merc.getResistPierce(),
+                    "MERCENARY", merc.getId(), merc.getName(), stat.getStatValue(),
                     price, req, current));
         }
 
@@ -300,7 +327,7 @@ public class CalculatorService {
 
     /**
      * 속성값 아이템/용병 가성비 리스트 생성.
-     * ItemStat(ELEMENT_VALUE) 아이템과 elementValue가 있는 용병을 포함한다.
+     * ItemStat(ELEMENT_VALUE) 아이템과 MercenaryStat(ELEMENT_VALUE) 용병을 포함한다.
      */
     private List<ElementValueEntryDto> buildElementValueList(
             CalculatorRequest req, CurrentStatsDto current,
@@ -316,15 +343,21 @@ public class CalculatorService {
                     "ITEM", itemId, stat.getItem().getName(), stat.getValue(), price, req, current));
         }
 
-        // 속성값이 있는 용병
-        List<Mercenary> mercs = mercenaryRepository.findByElementValueIsNotNull();
+        // 속성값 스탯(ELEMENT_VALUE)이 있는 용병 — MercenaryStat 기반 조회
+        List<MercenaryStat> elementStats =
+                mercenaryStatRepository.findByStatKey(StatType.ELEMENT_VALUE);
+        String prevYearMonth = LocalDate.now().minusMonths(1).format(YEAR_MONTH_FORMATTER);
+        Map<String, Long> priceMapByName =
+                loadPriceMapByItemName(req.serverId(), prevYearMonth);
         Map<Long, Long> mercCosts = calcMercenaryCosts(
-                mercs.stream().map(Mercenary::getId).toList(), priceMap);
+                elementStats.stream().map(s -> s.getMercenary().getId()).distinct().toList(),
+                priceMapByName);
 
-        for (Mercenary merc : mercs) {
+        for (MercenaryStat stat : elementStats) {
+            Mercenary merc = stat.getMercenary();
             Long price = resolvePrice(overrides, "MERC_" + merc.getId(), mercCosts.get(merc.getId()));
             list.add(buildElementEntry(
-                    "MERCENARY", merc.getId(), merc.getName(), merc.getElementValue(),
+                    "MERCENARY", merc.getId(), merc.getName(), stat.getStatValue(),
                     price, req, current));
         }
 

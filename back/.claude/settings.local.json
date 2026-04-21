@@ -11,7 +11,21 @@
       "WebFetch(domain:gerniverse.app)",
       "WebFetch(domain:geota.co.kr)",
       "Bash(find /c/Users/29097 -name spring-batch-*.jar)",
-      "Bash(jar tf:*)"
+      "Bash(jar tf:*)",
+      "Bash(xxd \"D:/Java/gersangTrade/docs/gersang-grade-policy.md\")",
+      "Bash(./gradlew test:*)",
+      "Bash(xargs grep:*)",
+      "Bash(find D:JavagersangTradebackgersangtradesrc/main/java/org/example/gersangtrade/trade -type f -name *.java)",
+      "Bash(find D:JavagersangTradebackgersangtradesrc/main/java/org/example/gersangtrade/chat -type f -name *.java)",
+      "Bash(find D:JavagersangTradebackgersangtradesrc/main/java/org/example/gersangtrade/notification -type f -name *.java)",
+      "Bash(find D:JavagersangTradebackgersangtradesrc/main/java/org/example/gersangtrade/domain/trade -type f -name *.java)",
+      "Bash(find D:JavagersangTradebackgersangtradesrc/main/java/org/example/gersangtrade/domain/notification -type f -name *.java)",
+      "Bash(xargs cat:*)",
+      "Bash(grep -r TradeStatMonthly D:JavagersangTradebackgersangtradesrc/main/java/org/example/gersangtrade --include=*.java)",
+      "Bash(./gradlew compileJava compileTestJava)",
+      "Bash(./gradlew clean:*)",
+      "Bash(find /d/Java/gersangTrade/back/gersangtrade/src/main/java/org/example/gersangtrade/domain/user -type f -name *.java)",
+      "Bash(./gradlew compileTestJava)"
     ]
   }
 }

@@ -8,7 +8,7 @@ import java.util.Optional;
 
 /**
  * 용병 JPA 레포지토리.
- * geota 용병 목록 크롤링(Job 1) 및 gerniverse 상세 파싱(Job 1) 결과를 저장한다.
+ * gerniverse 용병 목록·상세 크롤링(Job 1) 결과를 저장한다.
  */
 public interface MercenaryRepository extends JpaRepository<Mercenary, Long> {
 
@@ -18,12 +18,9 @@ public interface MercenaryRepository extends JpaRepository<Mercenary, Long> {
      */
     Optional<Mercenary> findByName(String name);
 
-    /** 이미지 URL이 아직 없는 용병 목록 조회 — 이미지 수집 Batch Job 대상 선정에 사용된다 */
-    List<Mercenary> findByImageUrlIsNull();
-
-    /** 저항깎 수치가 있는 용병 전체 조회 — 가성비 계산기 저항깎 리스트에 사용된다 */
-    List<Mercenary> findByResistPierceIsNotNull();
-
-    /** 속성값이 있는 용병 전체 조회 — 가성비 계산기 속성값 리스트에 사용된다 */
-    List<Mercenary> findByElementValueIsNotNull();
+    /**
+     * 상세 크롤링이 완료되지 않은 용병 목록 조회 (crawledAt IS NULL).
+     * DetailReader가 처리 대상을 선정하는 데 사용된다.
+     */
+    List<Mercenary> findByCrawledAtIsNull();
 }

@@ -17,7 +17,7 @@ public interface GemRepository extends JpaRepository<Gem, Long> {
 
     /**
      * 이름·등급·주술 조합으로 보석 조회 — UPSERT 패턴에서 기존 레코드 확인에 사용된다.
-     * 주술됨 등급이 아닌 경우 ritualId는 null로 전달한다.
+     * 주술이 없는 경우 ritualId는 null로 전달한다. 주술 부착 가능 등급: 강화됨만 허용.
      */
     @Query("""
             SELECT g FROM Gem g

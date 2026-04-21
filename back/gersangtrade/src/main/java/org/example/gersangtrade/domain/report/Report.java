@@ -9,15 +9,17 @@ import org.example.gersangtrade.domain.common.BaseEntity;
 import org.example.gersangtrade.domain.report.enums.ReportReason;
 import org.example.gersangtrade.domain.report.enums.ReportStatus;
 import org.example.gersangtrade.domain.report.enums.ReportTargetType;
+import org.example.gersangtrade.domain.report.enums.ReporterType;
 import org.example.gersangtrade.domain.user.User;
 
 import java.time.LocalDateTime;
 
 /**
  * 신고(Report) 엔티티.
- * 사용자가 다른 사용자, 거래 등록글, 거래 신청을 신고하면 생성된다.
+ * USER 신고: 사용자가 다른 사용자·게시물·채팅 메시지를 신고할 때 생성.
+ * SYSTEM 신고: KeywordDetectionService가 현금거래 의심 키워드를 감지할 때 자동 생성 (reporter=null).
  * 신고 대상은 targetType + targetId로 다형적으로 참조한다 (FK 대신 ID + 타입).
- * 관리자는 신고를 검토 후 PROCESSED(처리 완료) 또는 DISMISSED(기각) 처리한다.
+ * 관리자는 신고를 REVIEWING → PROCESSED(처리 완료) 또는 DISMISSED(기각) 순으로 처리한다.
  */
 @Entity
 @Table(name = "reports")
@@ -30,12 +32,24 @@ public class Report extends BaseEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    /** 신고를 접수한 사용자 */
+    /**
+     * 신고 생성 주체 유형.
+     * USER: 사용자가 직접 신고.
+     * SYSTEM: KeywordDetectionService가 자동 생성.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "reporter_type", nullable = false, length = 10)
+    private ReporterType reporterType;
+
+    /**
+     * 신고를 접수한 사용자.
+     * SYSTEM 신고인 경우 null.
+     */
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "reporter_id", nullable = false)
+    @JoinColumn(name = "reporter_id")
     private User reporter;
 
-    /** 신고 대상 유형 — USER, TRADE_LISTING, TRADE_APPLICATION */
+    /** 신고 대상 유형 — USER, TRADE_LISTING, WANTED_LISTING, CHAT_MESSAGE */
     @Enumerated(EnumType.STRING)
     @Column(name = "target_type", nullable = false, length = 30)
     private ReportTargetType targetType;
@@ -57,7 +71,15 @@ public class Report extends BaseEntity {
     @Column(name = "evidence_url", length = 500)
     private String evidenceUrl;
 
-    /** 신고 처리 상태 — PENDING / PROCESSED / DISMISSED */
+    /**
+     * 관련 채팅방 ID.
+     * SYSTEM 신고(키워드 감지) 또는 CHAT_MESSAGE 신고 시 설정.
+     * FK 없이 ID만 저장 (다형 참조).
+     */
+    @Column(name = "chat_room_id")
+    private Long chatRoomId;
+
+    /** 신고 처리 상태 — PENDING / REVIEWING / PROCESSED / DISMISSED */
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
     private ReportStatus status;
@@ -66,31 +88,46 @@ public class Report extends BaseEntity {
     @Column(name = "admin_note", length = 500)
     private String adminNote;
 
+    /** 신고를 검토·처리한 관리자 — 처리 전에는 null */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "processed_by")
+    private User processedBy;
+
     /** 관리자가 신고를 처리한 시각 — 처리 전에는 null */
     @Column(name = "processed_at")
     private LocalDateTime processedAt;
 
     @Builder
-    public Report(User reporter, ReportTargetType targetType, Long targetId,
-                  ReportReason reasonCategory, String description, String evidenceUrl) {
+    public Report(ReporterType reporterType, User reporter,
+                  ReportTargetType targetType, Long targetId,
+                  ReportReason reasonCategory, String description,
+                  String evidenceUrl, Long chatRoomId) {
+        this.reporterType = reporterType;
         this.reporter = reporter;
         this.targetType = targetType;
         this.targetId = targetId;
         this.reasonCategory = reasonCategory;
         this.description = description;
         this.evidenceUrl = evidenceUrl;
+        this.chatRoomId = chatRoomId;
         // 초기 상태는 항상 PENDING
         this.status = ReportStatus.PENDING;
     }
 
-    /** 관리자 처리 완료 처리 */
+    /** 관리자가 검토 시작 — PENDING → REVIEWING */
+    public void startReview(User admin) {
+        this.status = ReportStatus.REVIEWING;
+        this.processedBy = admin;
+    }
+
+    /** 관리자 처리 완료 처리 — REVIEWING → PROCESSED */
     public void process(String adminNote) {
         this.status = ReportStatus.PROCESSED;
         this.adminNote = adminNote;
         this.processedAt = LocalDateTime.now();
     }
 
-    /** 신고 기각 처리 */
+    /** 신고 기각 처리 — REVIEWING → DISMISSED */
     public void dismiss(String adminNote) {
         this.status = ReportStatus.DISMISSED;
         this.adminNote = adminNote;

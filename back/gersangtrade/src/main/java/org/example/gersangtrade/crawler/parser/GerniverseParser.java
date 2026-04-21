@@ -5,6 +5,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.example.gersangtrade.domain.catalog.enums.EquipmentSlot;
+import org.example.gersangtrade.domain.catalog.enums.MercenaryCategory;
+import org.example.gersangtrade.domain.catalog.enums.Nation;
+import org.example.gersangtrade.domain.catalog.enums.Nature;
 import org.example.gersangtrade.domain.catalog.enums.StatType;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -39,6 +42,48 @@ public final class GerniverseParser {
             "https://images.gerniverse.app/tr:cm-pad_resize,w-120,h-120,f-auto,q-80/";
 
     private GerniverseParser() {}
+
+    // ── 용병 목록 파싱 ─────────────────────────────────────────────────────────
+
+    /**
+     * gerniverse 용병 목록 페이지 파싱.
+     * {@code <script type="application/ld+json">} 태그 중 {@code @type: "ItemList"}인 블록에서
+     * 용병명과 상세 URL을 추출한다.
+     *
+     * @param doc Jsoup Document (gerniverse /mercenary)
+     * @return 용병 목록 (name + url). 파싱 실패 시 빈 리스트
+     */
+    public static List<MercenaryListItem> parseMercenaryList(Document doc) {
+        List<MercenaryListItem> result = new ArrayList<>();
+        Elements scripts = doc.select("script[type=application/ld+json]");
+
+        for (Element script : scripts) {
+            try {
+                JsonNode node = MAPPER.readTree(script.html());
+                if (node == null || node.isNull()) continue;
+                if (!"ItemList".equals(node.path("@type").asText(""))) continue;
+
+                JsonNode items = node.get("itemListElement");
+                if (items == null || !items.isArray()) continue;
+
+                for (JsonNode item : items) {
+                    String name = item.path("name").asText("").trim();
+                    String url = item.path("url").asText("").trim();
+                    if (!name.isBlank() && !url.isBlank()) {
+                        result.add(new MercenaryListItem(name, url));
+                    }
+                }
+                log.debug("gerniverse 용병 목록 {}개 파싱 완료", result.size());
+                return result;
+
+            } catch (JsonProcessingException ignored) {
+                // 다음 스크립트 시도
+            }
+        }
+
+        log.warn("gerniverse 용병 목록 ItemList JSON-LD를 찾을 수 없음");
+        return result;
+    }
 
     // ── 아이템 파싱 ────────────────────────────────────────────────────────────
 
@@ -90,41 +135,56 @@ public final class GerniverseParser {
 
             JsonNode jsonLd = parseJsonLd(doc);
 
-            // 용병 종류 (badge 태그에서 파싱 — 예: "각성명왕", "사천왕")
-            String mercenaryType = parseCategoryBadge(doc);
+            // 카테고리 배지에서 MercenaryCategory 파싱 (예: "각성명왕" → MYEONG_KING_AWAKENING)
+            String categoryBadge = parseCategoryBadge(doc);
+            MercenaryCategory category = mapBadgeToCategory(categoryBadge);
 
-            // 저항깎, 속성값 파싱 (JSON-LD additionalProperty)
-            Integer resistPierce = null;
-            Integer elementValue = null;
+            // 속성(nature) 파싱 — JSON-LD additionalProperty에서 추출
+            Nature nature = null;
+            Integer natureValue = null;
+
+            // 스탯 목록 (MercenaryStat으로 저장될 항목들)
+            List<MercenaryStatEntry> stats = new ArrayList<>();
 
             if (jsonLd != null) {
                 JsonNode props = jsonLd.get("additionalProperty");
                 if (props != null && props.isArray()) {
-                    // 검증 결과: "마법 저항", "타격 저항" 두 종류가 분리됨.
-                    // 도메인 모델은 resistPierce 단일 필드 → 두 값 중 큰 값을 저장.
-                    Integer magicResist = null;
-                    Integer physicalResist = null;
-
                     for (JsonNode prop : props) {
                         String propName = prop.path("name").asText("");
-                        String propValue = prop.path("value").asText("");  // "100%" 형식
+                        String propValue = prop.path("value").asText("");
 
-                        if (propName.equals("마법 저항")) {
-                            magicResist = parseIntFromPercent(propValue);
-                        } else if (propName.equals("타격 저항")) {
-                            physicalResist = parseIntFromPercent(propValue);
-                        } else if (propName.contains("속성")) {
-                            elementValue = parseIntFromPercent(propValue);
+                        // 저항깎 (resist pierce) — 몬스터 저항 감소 디버프
+                        if (propName.contains("저항깎") || propName.contains("저항 깎")) {
+                            Integer val = parseIntFromPercent(propValue);
+                            if (val != null) stats.add(new MercenaryStatEntry(StatType.RESIST_PIERCE, val));
                         }
-                    }
-
-                    // 두 저항깎 중 큰 값 사용 (단일 필드 저장)
-                    if (magicResist != null && physicalResist != null) {
-                        resistPierce = Math.max(magicResist, physicalResist);
-                    } else if (magicResist != null) {
-                        resistPierce = magicResist;
-                    } else {
-                        resistPierce = physicalResist;
+                        // 속성값 (element value) — 속성 추가 데미지 계산 수치
+                        else if (propName.contains("속성값")) {
+                            Integer val = parseIntFromPercent(propValue);
+                            if (val != null) {
+                                natureValue = val;
+                                stats.add(new MercenaryStatEntry(StatType.ELEMENT_VALUE, val));
+                            }
+                        }
+                        // 속성깎 (element pierce)
+                        else if (propName.contains("속성깎") || propName.contains("속성 깎")) {
+                            Integer val = parseIntFromPercent(propValue);
+                            if (val != null) stats.add(new MercenaryStatEntry(StatType.ELEMENT_PIERCE, val));
+                        }
+                        // 마법저항 (magic resistance) — 용병 자신의 방어 스탯
+                        else if (propName.equals("마법 저항") || propName.equals("마법저항")) {
+                            Integer val = parseIntFromPercent(propValue);
+                            if (val != null) stats.add(new MercenaryStatEntry(StatType.MAGIC_RESISTANCE, val));
+                        }
+                        // 타격저항 (hitting resistance) — 용병 자신의 방어 스탯
+                        else if (propName.equals("타격 저항") || propName.equals("타격저항")) {
+                            Integer val = parseIntFromPercent(propValue);
+                            if (val != null) stats.add(new MercenaryStatEntry(StatType.HITTING_RESISTANCE, val));
+                        }
+                        // 속성 종류 (fire/water/thunder/air/earth)
+                        else if (propName.equals("속성") || propName.equals("nature")) {
+                            nature = mapNature(propValue);
+                        }
                     }
                 }
             }
@@ -133,11 +193,12 @@ public final class GerniverseParser {
             String imageKey = extractImageKey(jsonLd);
             String imageUrl = imageKey != null ? GERNIVERSE_IMAGE_BASE + imageKey + ".webp" : null;
 
-            // 고용 재료 파싱 (a[href^=/item/] 링크에서)
+            // 고용 재료 파싱 (a[href^=/item/] 및 a[href^=/mercenary/] 링크에서)
             List<MaterialEntry> materials = parseMaterials(doc);
 
             return Optional.of(new MercenaryData(
-                    name, mercenaryType, resistPierce, elementValue, imageKey, imageUrl, materials));
+                    name, null, category, null, nature, natureValue,
+                    false, imageKey, imageUrl, stats, materials));
 
         } catch (Exception e) {
             log.warn("용병 페이지 파싱 실패: {}", e.getMessage());
@@ -192,11 +253,10 @@ public final class GerniverseParser {
 
     /**
      * 카테고리 배지 대분류 텍스트 파싱.
-     * 검증 결과: 첫 번째 "div.inline-flex.items-center.gap-1\\.5" 내부 첫 번째 span = 대분류(예: "무기").
+     * 검증 결과: 첫 번째 "div.inline-flex.items-center.gap-1\.5" 내부 첫 번째 span = 대분류.
      * 재료 아이템은 카테고리 배지 없음 → 빈 문자열 반환.
      */
     private static String parseCategoryBadge(Document doc) {
-        // 검증된 선택자: Tailwind inline-flex 배지 div의 첫 번째 span이 대분류
         Elements badgeDivs = doc.select("div.inline-flex.items-center.gap-1\\.5");
         if (!badgeDivs.isEmpty()) {
             Elements spans = badgeDivs.get(0).select("span");
@@ -220,6 +280,51 @@ public final class GerniverseParser {
             case "장갑" -> EquipmentSlot.GLOVES;
             case "바지", "허리띠", "벨트" -> EquipmentSlot.BELT;
             case "신발", "부츠" -> EquipmentSlot.SHOES;
+            default -> null;
+        };
+    }
+
+    /**
+     * 카테고리 배지 텍스트 → MercenaryCategory 매핑.
+     * 알 수 없는 배지는 null 반환.
+     */
+    private static MercenaryCategory mapBadgeToCategory(String badge) {
+        if (badge == null || badge.isBlank()) return null;
+        return switch (badge) {
+            case "주인공" -> MercenaryCategory.PROTAGONIST;
+            case "사천왕" -> MercenaryCategory.FOUR_HEAVENLY_KINGS;
+            case "각성사천왕" -> MercenaryCategory.FOUR_HEAVENLY_KINGS_AWAKENING;
+            case "명왕" -> MercenaryCategory.MYEONG_KING;
+            case "각성명왕" -> MercenaryCategory.MYEONG_KING_AWAKENING;
+            case "전설장수" -> MercenaryCategory.LEGENDARY_GENERAL;
+            case "신수" -> MercenaryCategory.DIVINE_BEAST;
+            case "흉수" -> MercenaryCategory.EVIL_BEAST;
+            case "각성흉수" -> MercenaryCategory.EVIL_BEAST_AWAKENING;
+            case "고용몬스터" -> MercenaryCategory.HIRED_MONSTER;
+            case "전직몬스터" -> MercenaryCategory.EVOLVE_MONSTER;
+            case "정령몬스터" -> MercenaryCategory.SPIRIT_MONSTER;
+            case "각성장수" -> MercenaryCategory.GENERAL_AWAKENING;
+            case "개조장수" -> MercenaryCategory.MODIFIED_GENERAL;
+            case "2차장수" -> MercenaryCategory.SECOND_GRADE_GENERAL;
+            case "1차장수" -> MercenaryCategory.FIRST_GRADE_GENERAL;
+            case "용병" -> MercenaryCategory.MERCENARY;
+            default -> null;
+        };
+    }
+
+    /**
+     * 속성 문자열 → Nature 매핑.
+     * gerniverse JSON-LD의 "nature" 값(영문 소문자) 또는 한국어 표기 모두 처리한다.
+     */
+    private static Nature mapNature(String value) {
+        if (value == null || value.isBlank()) return null;
+        return switch (value.toLowerCase().trim()) {
+            case "fire", "화" -> Nature.FIRE;
+            case "water", "수" -> Nature.WATER;
+            case "thunder", "뇌" -> Nature.THUNDER;
+            case "air", "풍" -> Nature.AIR;
+            case "earth", "토" -> Nature.EARTH;
+            case "-", "none" -> Nature.NONE;
             default -> null;
         };
     }
@@ -259,41 +364,54 @@ public final class GerniverseParser {
 
     /**
      * 고용 재료 목록 파싱.
-     * 검증 결과:
-     * - 아이템명: {@code a[href^=/item/]} href 경로를 URL 디코딩해서 추출.
+     * a[href^=/item/] → 아이템 재료 (materialItemKey 설정)
+     * a[href^=/mercenary/] → 용병 재료 (materialMercenaryName 설정)
+     *
+     * <p>검증 결과:
+     * - 아이템명: href를 URL 디코딩 후 경로 prefix 제거.
      *   예: href="/item/%EB%AC%BC%EC%9D%98%EC%86%8D%EC%84%B1%EC%84%9D" → "물의속성석"
      * - 수량: 링크 텍스트 내 "x15" 형식. x 제거 후 정수 변환.
-     * - 재료 없는 아이템(NPC 구매만 가능)은 빈 리스트 반환.
      */
     private static List<MaterialEntry> parseMaterials(Document doc) {
         List<MaterialEntry> materials = new ArrayList<>();
 
-        Elements materialLinks = doc.select("a[href^=/item/]");
-        for (Element link : materialLinks) {
-            // 아이템명: href에서 URL 디코딩 (한글 인코딩 처리)
+        // 아이템 재료 파싱
+        Elements itemLinks = doc.select("a[href^=/item/]");
+        for (Element link : itemLinks) {
             String href = link.attr("href");
-            String itemName = URLDecoder.decode(
+            String itemKey = URLDecoder.decode(
                     href.replaceFirst("^/item/", ""), StandardCharsets.UTF_8).trim();
+            if (itemKey.isBlank()) continue;
 
-            if (itemName.isBlank()) continue;
+            int quantity = extractQuantity(link.text());
+            materials.add(new MaterialEntry(itemKey, null, quantity, null, null));
+        }
 
-            // 수량: 링크 텍스트에서 "x{숫자}" 패턴 추출 (대소문자 무관)
-            String text = link.text();
-            int quantity = 1;
-            java.util.regex.Matcher m =
-                    java.util.regex.Pattern.compile("[xX×](\\d+)").matcher(text);
-            if (m.find()) {
-                try {
-                    quantity = Integer.parseInt(m.group(1));
-                } catch (NumberFormatException ignored) {
-                    quantity = 1;
-                }
-            }
+        // 용병 재료 파싱
+        Elements mercenaryLinks = doc.select("a[href^=/mercenary/]");
+        for (Element link : mercenaryLinks) {
+            String href = link.attr("href");
+            String mercenaryName = URLDecoder.decode(
+                    href.replaceFirst("^/mercenary/", ""), StandardCharsets.UTF_8).trim();
+            if (mercenaryName.isBlank()) continue;
 
-            materials.add(new MaterialEntry(itemName, quantity));
+            int quantity = extractQuantity(link.text());
+            materials.add(new MaterialEntry(null, mercenaryName, quantity, null, null));
         }
 
         return materials;
+    }
+
+    /** 링크 텍스트에서 "x{숫자}" 패턴으로 수량 추출. 없으면 1 반환. */
+    private static int extractQuantity(String text) {
+        java.util.regex.Matcher m =
+                java.util.regex.Pattern.compile("[xX×](\\d+)").matcher(text);
+        if (m.find()) {
+            try {
+                return Integer.parseInt(m.group(1));
+            } catch (NumberFormatException ignored) {}
+        }
+        return 1;
     }
 
     /** "100%" 형식의 문자열에서 정수 추출 */
@@ -308,6 +426,9 @@ public final class GerniverseParser {
 
     // ── 결과 레코드 ────────────────────────────────────────────────────────────
 
+    /** gerniverse 용병 목록 항목 */
+    public record MercenaryListItem(String name, String url) {}
+
     /** gerniverse 아이템 파싱 결과 */
     public record ItemData(
             String name,
@@ -321,17 +442,33 @@ public final class GerniverseParser {
     /** gerniverse 용병 파싱 결과 */
     public record MercenaryData(
             String name,
-            String mercenaryType,
-            Integer resistPierce,        // null if no resist pierce
-            Integer elementValue,        // null if no element value
+            String key,                          // gerniverse 내부 키 (파싱 성공 시 설정, 아니면 null)
+            MercenaryCategory category,
+            Nation nation,                       // 파싱 성공 시 설정, 아니면 null
+            Nature nature,
+            Integer natureValue,                 // 속성값 (null이면 무속성)
+            boolean comingSoon,
             String imageKey,
-            String imageUrl,             // gerniverse CDN URL
+            String imageUrl,
+            List<MercenaryStatEntry> stats,      // RESIST_PIERCE, ELEMENT_VALUE 등
             List<MaterialEntry> materials
     ) {}
 
-    /** 능력치 엔트리 */
+    /** 아이템 능력치 엔트리 */
     public record StatEntry(StatType statType, int value) {}
 
-    /** 재료 엔트리 */
-    public record MaterialEntry(String itemName, int quantity) {}
+    /** 용병 스탯 엔트리 */
+    public record MercenaryStatEntry(StatType statKey, int statValue) {}
+
+    /**
+     * 재료 엔트리.
+     * materialItemKey와 materialMercenaryName 중 하나만 설정된다.
+     */
+    public record MaterialEntry(
+            String materialItemKey,         // 아이템 재료인 경우. null if 용병 재료
+            String materialMercenaryName,   // 용병 재료인 경우. null if 아이템 재료
+            int quantity,
+            Integer requiredLevel,
+            Integer requiredCredit
+    ) {}
 }

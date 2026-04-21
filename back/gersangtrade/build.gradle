@@ -1,7 +1,7 @@
 plugins {
-    id 'java'
-    id 'org.springframework.boot' version '4.0.3'
+    id 'org.springframework.boot' version '3.4.4'  // 4.x → 3.x로 변경
     id 'io.spring.dependency-management' version '1.1.7'
+    id 'java'
 }
 
 group = 'org.example'
@@ -52,7 +52,7 @@ dependencies {
 
     // jOOQ (ranked 검색, 집계 쿼리용)
     implementation 'org.springframework.boot:spring-boot-starter-jooq'
-    testImplementation 'org.springframework.boot:spring-boot-starter-test'       // ✅ 이거 하나로 통합
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'       // ✅ @WebMvcTest 포함 (Spring Boot 3)
     testImplementation 'org.springframework.security:spring-security-test'       // ✅
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 

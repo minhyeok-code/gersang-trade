@@ -15,10 +15,10 @@ import org.example.gersangtrade.domain.catalog.enums.GemGrade;
 import org.example.gersangtrade.domain.catalog.enums.ItemType;
 import org.jsoup.nodes.Document;
 import org.jsoup.select.Elements;
+import org.springframework.batch.core.StepContribution;
 import org.springframework.batch.core.scope.context.ChunkContext;
-import org.springframework.batch.core.step.StepContribution;
 import org.springframework.batch.core.step.tasklet.Tasklet;
-import org.springframework.batch.infrastructure.repeat.RepeatStatus;
+import org.springframework.batch.repeat.RepeatStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -95,7 +95,7 @@ public class ItemListTasklet implements Tasklet {
         int gemCount = 0, itemCount = 0;
 
         for (ParsedItemDto dto : parsed) {
-            // 중복 제거 키: GEM 주술됨 등급은 ritualName까지 포함해야 주술별 변형이 각각 저장됨
+            // 중복 제거 키: GEM 강화됨+주술 조합은 ritualName까지 포함해야 주술별 변형이 각각 저장됨
             if (!processedNames.add(dto.cleanName() + ":" + dto.type() + ":" + dto.gemGrade() + ":" + dto.ritualName())) {
                 continue;  // 동일 조합 중복 skip
             }
@@ -119,7 +119,7 @@ public class ItemListTasklet implements Tasklet {
     /** 보석 UPSERT — 이름+등급+주술 조합이 없으면 신규 저장 */
     private void upsertGem(ParsedItemDto dto) {
         Long ritualId = null;
-        if (dto.gemGrade() == GemGrade.주술됨 && dto.ritualName() != null) {
+        if (dto.gemGrade() == GemGrade.강화됨 && dto.ritualName() != null) {
             ritualId = ritualRepository.findByDisplayName(dto.ritualName())
                     .map(Ritual::getId)
                     .orElse(null);

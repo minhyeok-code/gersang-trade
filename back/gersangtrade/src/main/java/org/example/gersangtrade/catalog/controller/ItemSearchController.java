@@ -1,5 +1,6 @@
 package org.example.gersangtrade.catalog.controller;
 
+import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
 import org.example.gersangtrade.catalog.dto.ItemSearchResult;
 import org.example.gersangtrade.catalog.dto.RitualResponse;
@@ -7,6 +8,7 @@ import org.example.gersangtrade.catalog.service.ItemSearchService;
 import org.example.gersangtrade.domain.catalog.enums.EquipmentKind;
 import org.example.gersangtrade.domain.catalog.enums.ItemType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -20,6 +22,7 @@ import java.util.List;
  * GET /api/items/{itemId}/rituals
  *   — 해당 장비에 적용 가능한 주술 목록 (비로그인 허용)
  */
+@Validated
 @RestController
 @RequestMapping("/api/items")
 @RequiredArgsConstructor
@@ -39,7 +42,7 @@ public class ItemSearchController {
      */
     @GetMapping("/search")
     public ResponseEntity<List<ItemSearchResult>> search(
-            @RequestParam String q,
+            @RequestParam @NotBlank String q,
             @RequestParam(required = false) ItemType type,
             @RequestParam(required = false) EquipmentKind kind,
             @RequestParam(required = false) Integer limit

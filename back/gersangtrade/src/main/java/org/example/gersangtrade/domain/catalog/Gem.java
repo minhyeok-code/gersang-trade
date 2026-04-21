@@ -10,13 +10,15 @@ import org.example.gersangtrade.domain.common.BaseEntity;
 
 /**
  * 보석 엔티티.
- * 흑요석·적혈석 등 11종 보석이 4단계 상태를 가진다.
- * 상태 흐름: 기본 → 세공됨 → 강화됨 → 주술됨 (빛나는은 별도 제작 루트)
+ * 흑요석·적혈석 등 11종 보석이 4단계 등급을 가진다.
+ * 등급 흐름: 기본 → 세공됨 → 강화됨 (빛나는은 별도 제작 루트)
+ *
+ * <p>주술은 독립 등급이 아니라 강화됨 등급에 부가되는 상태이다.
+ * ritual_id가 non-null인 경우 = 강화됨 등급에 주술이 적용된 보석.
+ * 빛나는 등급에는 주술 부착 불가 (DB CHECK 제약 동일 조건).
  *
  * <p>장비 아이템(EquipmentItem)과는 별개로 관리되며,
- * 거래 등록 시 BundleEquipmentGem을 통해 장비 라인에 연결된다.
- *
- * <p>주술됨(gem_grade=주술됨) 상태에서만 ritual_id가 non-null이다.
+ * 거래 등록 시 BundleEquipmentDetail.gem을 통해 장비 라인에 연결된다.
  */
 @Entity
 @Table(
@@ -42,14 +44,15 @@ public class Gem extends BaseEntity {
     @Column(name = "name", nullable = false, length = 100)
     private String name;
 
-    /** 보석 등급 — 기본 | 세공됨 | 강화됨 | 빛나는 | 주술됨 */
+    /** 보석 등급 — 기본 | 세공됨 | 강화됨 | 빛나는 */
     @Enumerated(EnumType.STRING)
     @Column(name = "gem_grade", nullable = false, length = 20)
     private GemGrade gemGrade;
 
     /**
-     * 적용된 주술 — gemGrade가 주술됨일 때만 non-null.
-     * 예: "태산북두" 주술이 적용된 흑요석 → gemGrade=주술됨, ritual=태산북두 Ritual
+     * 적용된 주술 — gemGrade가 강화됨일 때만 non-null 허용.
+     * 예: "태산북두" 주술이 적용된 흑요석 → gemGrade=강화됨, ritual=태산북두 Ritual
+     * DB CHECK 제약: ritual_id IS NULL OR gem_grade = '강화됨'
      */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "ritual_id")
@@ -76,22 +79,20 @@ public class Gem extends BaseEntity {
     }
 
     /**
-     * 주술됨 등급과 ritual 연결 정합성 검증.
+     * 강화됨 등급과 ritual 연결 정합성 검증.
      * DB 저장·수정 직전 자동 실행되어 잘못된 상태가 영속화되는 것을 방지한다.
      *
      * <ul>
-     *   <li>주술됨 등급 → ritual non-null 필수</li>
-     *   <li>주술됨 이외 등급 → ritual은 반드시 null</li>
+     *   <li>강화됨 이외 등급 → ritual은 반드시 null</li>
+     *   <li>강화됨 등급 → ritual은 null(주술 없음) 또는 non-null(주술 있음) 모두 허용</li>
+     *   <li>빛나는 등급에는 주술 부착 불가</li>
      * </ul>
      */
     @PrePersist
     @PreUpdate
     private void validateRitual() {
-        if (GemGrade.주술됨 == this.gemGrade && this.ritual == null) {
-            throw new IllegalStateException("주술됨 등급 보석은 ritual이 반드시 필요합니다. name=" + this.name);
-        }
-        if (GemGrade.주술됨 != this.gemGrade && this.ritual != null) {
-            throw new IllegalStateException("주술됨 이외 등급 보석에는 ritual을 연결할 수 없습니다. name=" + this.name + ", grade=" + this.gemGrade);
+        if (GemGrade.강화됨 != this.gemGrade && this.ritual != null) {
+            throw new IllegalStateException("강화됨 이외 등급 보석에는 ritual을 연결할 수 없습니다. name=" + this.name + ", grade=" + this.gemGrade);
         }
     }
 }

@@ -41,6 +41,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.*;
 
 /**
@@ -86,6 +87,10 @@ class WantedListingServiceTest {
     private Item normalEquipItem;
     /** 일반 장비의 EquipmentItem 정보 (Mock) */
     private EquipmentItem normalEquipmentItem;
+    /** 외변 장비 아이템 (Mock) */
+    private Item appearanceEquipItem;
+    /** 외변 장비의 EquipmentItem 정보 (Mock) */
+    private EquipmentItem appearanceEquipmentItem;
 
     @BeforeEach
     void setUp() {
@@ -125,6 +130,16 @@ class WantedListingServiceTest {
         normalEquipmentItem = mock(EquipmentItem.class);
         when(normalEquipmentItem.getItemId()).thenReturn(2L);
         when(normalEquipmentItem.getEquipmentKind()).thenReturn(EquipmentKind.NORMAL);
+
+        // 외변 장비 아이템 Mock 생성
+        appearanceEquipItem = mock(Item.class);
+        when(appearanceEquipItem.getId()).thenReturn(3L);
+        when(appearanceEquipItem.getType()).thenReturn(ItemType.EQUIPMENT);
+        when(appearanceEquipItem.getName()).thenReturn("외변 갑옷");
+
+        appearanceEquipmentItem = mock(EquipmentItem.class);
+        when(appearanceEquipmentItem.getItemId()).thenReturn(3L);
+        when(appearanceEquipmentItem.getEquipmentKind()).thenReturn(EquipmentKind.APPEARANCE);
     }
 
     // ── createWantedListing 테스트 ──────────────────────────────────────────
@@ -476,6 +491,275 @@ class WantedListingServiceTest {
         assertThatThrownBy(() -> wantedListingService.getDetail(999L))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("존재하지 않는 구매 희망 등록글입니다");
+    }
+
+    // ── 강화 수치 경계값 테스트 ──────────────────────────────────────────────
+
+    @Test
+    @DisplayName("외변장비_minEnhanceLevel_null이면_통과")
+    void 외변장비_minEnhanceLevel_null이면_통과() {
+        // null은 강화 수치 무관을 의미하므로 외변 장비에 허용
+        WantedEquipmentConditionRequest condReq = new WantedEquipmentConditionRequest(
+                null, false, Collections.emptyList()
+        );
+        WantedItemRequest itemReq = new WantedItemRequest(3L, 1, 0, condReq);
+        WantedListingCreateRequest request = new WantedListingCreateRequest(
+                "서버1", 10000L, null, List.of(itemReq)
+        );
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(activeBuyer));
+        when(itemRepository.findById(3L)).thenReturn(Optional.of(appearanceEquipItem));
+        when(equipmentItemRepository.findWithItemByItemId(3L))
+                .thenReturn(Optional.of(appearanceEquipmentItem));
+
+        WantedListing savedListing = mock(WantedListing.class);
+        when(savedListing.getId()).thenReturn(300L);
+        when(wantedListingRepository.save(any(WantedListing.class))).thenReturn(savedListing);
+        when(wantedItemRepository.save(any(WantedItem.class))).thenReturn(mock(WantedItem.class));
+        when(wantedEquipmentConditionRepository.save(any()))
+                .thenReturn(mock(WantedEquipmentCondition.class));
+
+        Long resultId = wantedListingService.createWantedListing(1L, request);
+
+        // 예외 없이 정상 등록
+        assertThat(resultId).isEqualTo(300L);
+    }
+
+    @Test
+    @DisplayName("외변장비_minEnhanceLevel_5이면_통과")
+    void 외변장비_minEnhanceLevel_5이면_통과() {
+        // 5강은 외변 장비의 유일한 유효 강화 수치
+        WantedEquipmentConditionRequest condReq = new WantedEquipmentConditionRequest(
+                5, false, Collections.emptyList()
+        );
+        WantedItemRequest itemReq = new WantedItemRequest(3L, 1, 0, condReq);
+        WantedListingCreateRequest request = new WantedListingCreateRequest(
+                "서버1", 10000L, null, List.of(itemReq)
+        );
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(activeBuyer));
+        when(itemRepository.findById(3L)).thenReturn(Optional.of(appearanceEquipItem));
+        when(equipmentItemRepository.findWithItemByItemId(3L))
+                .thenReturn(Optional.of(appearanceEquipmentItem));
+
+        WantedListing savedListing = mock(WantedListing.class);
+        when(savedListing.getId()).thenReturn(301L);
+        when(wantedListingRepository.save(any(WantedListing.class))).thenReturn(savedListing);
+        when(wantedItemRepository.save(any(WantedItem.class))).thenReturn(mock(WantedItem.class));
+        when(wantedEquipmentConditionRepository.save(any()))
+                .thenReturn(mock(WantedEquipmentCondition.class));
+
+        Long resultId = wantedListingService.createWantedListing(1L, request);
+
+        assertThat(resultId).isEqualTo(301L);
+    }
+
+    @Test
+    @DisplayName("외변장비_minEnhanceLevel_5아닌경우_예외발생")
+    void 외변장비_minEnhanceLevel_5아닌경우_예외발생() {
+        // 외변 장비에 3강 조건 → 정책 위반
+        WantedEquipmentConditionRequest condReq = new WantedEquipmentConditionRequest(
+                3, false, Collections.emptyList()
+        );
+        WantedItemRequest itemReq = new WantedItemRequest(3L, 1, 0, condReq);
+        WantedListingCreateRequest request = new WantedListingCreateRequest(
+                "서버1", 10000L, null, List.of(itemReq)
+        );
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(activeBuyer));
+        when(itemRepository.findById(3L)).thenReturn(Optional.of(appearanceEquipItem));
+        when(equipmentItemRepository.findWithItemByItemId(3L))
+                .thenReturn(Optional.of(appearanceEquipmentItem));
+        when(wantedListingRepository.save(any())).thenReturn(mock(WantedListing.class));
+        when(wantedItemRepository.save(any())).thenReturn(mock(WantedItem.class));
+
+        assertThatThrownBy(() -> wantedListingService.createWantedListing(1L, request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("외변 장비의 최소 강화 수치는 null 또는 5이어야 합니다");
+    }
+
+    @Test
+    @DisplayName("일반장비_minEnhanceLevel_경계값0_통과")
+    void 일반장비_minEnhanceLevel_경계값0_통과() {
+        WantedEquipmentConditionRequest condReq = new WantedEquipmentConditionRequest(
+                0, false, Collections.emptyList()
+        );
+        WantedItemRequest itemReq = new WantedItemRequest(2L, 1, 0, condReq);
+        WantedListingCreateRequest request = new WantedListingCreateRequest(
+                "서버1", 40000L, null, List.of(itemReq)
+        );
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(activeBuyer));
+        when(itemRepository.findById(2L)).thenReturn(Optional.of(normalEquipItem));
+        when(equipmentItemRepository.findWithItemByItemId(2L))
+                .thenReturn(Optional.of(normalEquipmentItem));
+
+        WantedListing savedListing = mock(WantedListing.class);
+        when(savedListing.getId()).thenReturn(302L);
+        when(wantedListingRepository.save(any(WantedListing.class))).thenReturn(savedListing);
+        when(wantedItemRepository.save(any(WantedItem.class))).thenReturn(mock(WantedItem.class));
+        when(wantedEquipmentConditionRepository.save(any()))
+                .thenReturn(mock(WantedEquipmentCondition.class));
+
+        Long resultId = wantedListingService.createWantedListing(1L, request);
+
+        assertThat(resultId).isEqualTo(302L);
+    }
+
+    @Test
+    @DisplayName("일반장비_minEnhanceLevel_경계값20_통과")
+    void 일반장비_minEnhanceLevel_경계값20_통과() {
+        WantedEquipmentConditionRequest condReq = new WantedEquipmentConditionRequest(
+                20, false, Collections.emptyList()
+        );
+        WantedItemRequest itemReq = new WantedItemRequest(2L, 1, 0, condReq);
+        WantedListingCreateRequest request = new WantedListingCreateRequest(
+                "서버1", 40000L, null, List.of(itemReq)
+        );
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(activeBuyer));
+        when(itemRepository.findById(2L)).thenReturn(Optional.of(normalEquipItem));
+        when(equipmentItemRepository.findWithItemByItemId(2L))
+                .thenReturn(Optional.of(normalEquipmentItem));
+
+        WantedListing savedListing = mock(WantedListing.class);
+        when(savedListing.getId()).thenReturn(303L);
+        when(wantedListingRepository.save(any(WantedListing.class))).thenReturn(savedListing);
+        when(wantedItemRepository.save(any(WantedItem.class))).thenReturn(mock(WantedItem.class));
+        when(wantedEquipmentConditionRepository.save(any()))
+                .thenReturn(mock(WantedEquipmentCondition.class));
+
+        Long resultId = wantedListingService.createWantedListing(1L, request);
+
+        assertThat(resultId).isEqualTo(303L);
+    }
+
+    // ── 복수 주술 조건 및 중복 검사 ───────────────────────────────────────────
+
+    @Test
+    @DisplayName("createWantedListing_주술조건2개_모두저장")
+    void createWantedListing_주술조건2개_모두저장() {
+        // 주술 조건 2개를 동시에 등록하는 경우
+        WantedRitualConditionRequest ritual1 = new WantedRitualConditionRequest(10L, PreferredOutcome.ANY);
+        WantedRitualConditionRequest ritual2 = new WantedRitualConditionRequest(20L, PreferredOutcome.ANY);
+        WantedEquipmentConditionRequest condReq = new WantedEquipmentConditionRequest(
+                5, true, List.of(ritual1, ritual2)
+        );
+        WantedItemRequest itemReq = new WantedItemRequest(2L, 1, 0, condReq);
+        WantedListingCreateRequest request = new WantedListingCreateRequest(
+                "서버1", 80000L, null, List.of(itemReq)
+        );
+
+        // 두 주술 모두 적용 가능하도록 설정
+        Ritual r1 = mock(Ritual.class);
+        when(r1.getId()).thenReturn(10L);
+        Ritual r2 = mock(Ritual.class);
+        when(r2.getId()).thenReturn(20L);
+
+        RitualApplicability ap1 = mock(RitualApplicability.class);
+        when(ap1.getRitual()).thenReturn(r1);
+        RitualApplicability ap2 = mock(RitualApplicability.class);
+        when(ap2.getRitual()).thenReturn(r2);
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(activeBuyer));
+        when(itemRepository.findById(2L)).thenReturn(Optional.of(normalEquipItem));
+        when(equipmentItemRepository.findWithItemByItemId(2L))
+                .thenReturn(Optional.of(normalEquipmentItem));
+        when(ritualApplicabilityRepository.findByEquipmentItemIdWithRitual(2L))
+                .thenReturn(List.of(ap1, ap2));
+
+        WantedListing savedListing = mock(WantedListing.class);
+        when(savedListing.getId()).thenReturn(304L);
+        when(wantedListingRepository.save(any(WantedListing.class))).thenReturn(savedListing);
+        when(wantedItemRepository.save(any(WantedItem.class))).thenReturn(mock(WantedItem.class));
+        when(wantedEquipmentConditionRepository.save(any()))
+                .thenReturn(mock(WantedEquipmentCondition.class));
+
+        Long resultId = wantedListingService.createWantedListing(1L, request);
+
+        assertThat(resultId).isEqualTo(304L);
+        // 2개의 주술 조건이 saveAll로 저장되어야 함
+        verify(wantedRitualConditionRepository).saveAll(argThat(list ->
+                ((List<?>) list).size() == 2
+        ));
+    }
+
+    @Test
+    @DisplayName("createWantedListing_중복ritualId_예외발생")
+    void createWantedListing_중복ritualId_예외발생() {
+        // 동일한 ritualId 2개 포함 → 중복 검사에서 예외
+        WantedRitualConditionRequest ritual1 = new WantedRitualConditionRequest(10L, PreferredOutcome.ANY);
+        WantedRitualConditionRequest ritual2 = new WantedRitualConditionRequest(10L, PreferredOutcome.GREAT_SUCCESS);
+        WantedEquipmentConditionRequest condReq = new WantedEquipmentConditionRequest(
+                5, true, List.of(ritual1, ritual2)
+        );
+        WantedItemRequest itemReq = new WantedItemRequest(2L, 1, 0, condReq);
+        WantedListingCreateRequest request = new WantedListingCreateRequest(
+                "서버1", 80000L, null, List.of(itemReq)
+        );
+
+        Ritual r1 = mock(Ritual.class);
+        when(r1.getId()).thenReturn(10L);
+        RitualApplicability ap1 = mock(RitualApplicability.class);
+        when(ap1.getRitual()).thenReturn(r1);
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(activeBuyer));
+        when(itemRepository.findById(2L)).thenReturn(Optional.of(normalEquipItem));
+        when(equipmentItemRepository.findWithItemByItemId(2L))
+                .thenReturn(Optional.of(normalEquipmentItem));
+        when(ritualApplicabilityRepository.findByEquipmentItemIdWithRitual(2L))
+                .thenReturn(List.of(ap1));
+        when(wantedListingRepository.save(any())).thenReturn(mock(WantedListing.class));
+        when(wantedItemRepository.save(any())).thenReturn(mock(WantedItem.class));
+        when(wantedEquipmentConditionRepository.save(any()))
+                .thenReturn(mock(WantedEquipmentCondition.class));
+
+        assertThatThrownBy(() -> wantedListingService.createWantedListing(1L, request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("중복된 ritualId");
+    }
+
+    // ── 수량·sortOrder 경계값 테스트 ─────────────────────────────────────────
+
+    @Test
+    @DisplayName("createWantedListing_장비수량2이상_예외발생")
+    void createWantedListing_장비수량2이상_예외발생() {
+        WantedEquipmentConditionRequest condReq = new WantedEquipmentConditionRequest(
+                5, false, Collections.emptyList()
+        );
+        // 장비인데 quantity=2 입력
+        WantedItemRequest itemReq = new WantedItemRequest(2L, 2, 0, condReq);
+        WantedListingCreateRequest request = new WantedListingCreateRequest(
+                "서버1", 40000L, null, List.of(itemReq)
+        );
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(activeBuyer));
+        when(itemRepository.findById(2L)).thenReturn(Optional.of(normalEquipItem));
+        when(equipmentItemRepository.findWithItemByItemId(2L))
+                .thenReturn(Optional.of(normalEquipmentItem));
+        when(wantedListingRepository.save(any())).thenReturn(mock(WantedListing.class));
+        when(wantedItemRepository.save(any())).thenReturn(mock(WantedItem.class));
+
+        assertThatThrownBy(() -> wantedListingService.createWantedListing(1L, request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("장비 아이템의 수량은 1이어야 합니다");
+    }
+
+    @Test
+    @DisplayName("createWantedListing_sortOrder중복_예외발생")
+    void createWantedListing_sortOrder중복_예외발생() {
+        // 두 아이템이 sortOrder=0 으로 동일
+        WantedItemRequest item1 = new WantedItemRequest(1L, 10, 0, null);
+        WantedItemRequest item2 = new WantedItemRequest(2L, 1, 0, null); // sortOrder 중복
+        WantedListingCreateRequest request = new WantedListingCreateRequest(
+                "서버1", 5000L, null, List.of(item1, item2)
+        );
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(activeBuyer));
+
+        assertThatThrownBy(() -> wantedListingService.createWantedListing(1L, request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("sortOrder 값이 중복");
     }
 
     // ── cancelWantedListing 테스트 ──────────────────────────────────────────

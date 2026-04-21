@@ -81,7 +81,8 @@ public final class ItemNameParser {
         if (bracketMatcher.matches()) {
             String marker = bracketMatcher.group(1);
             // <홈이있는>은 보석에 적용되지 않으므로 주술명으로 처리
-            return ParsedItemDto.gem(gemName, GemGrade.주술됨, marker);
+            // 주술이 부착된 보석은 강화됨 등급 + ritual 조합으로 표현 (주술됨은 별도 등급이 아님)
+            return ParsedItemDto.gem(gemName, GemGrade.강화됨, marker);
         }
 
         // 빛나는 {gemName}

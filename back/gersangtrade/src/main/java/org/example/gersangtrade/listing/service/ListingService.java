@@ -43,6 +43,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -104,7 +105,16 @@ public class ListingService {
     }
 
     /**
+     * 피스별 세트명·주술 마크 정보. 세트 제목 자동 생성에 사용된다.
+     *
+     * @param setName 소속 세트명 (세트에 속하지 않으면 null)
+     * @param mark    적용된 첫 번째 주술 마크 스냅샷 (주술 없으면 null)
+     */
+    private record PieceInfo(String setName, String mark) {}
+
+    /**
      * 번들 단위 처리 — 번들 저장 후 라인을 순서대로 처리한다.
+     * EQUIPMENT_SET 번들이고 titleOverride가 없으면 세트 표기 제목을 자동 생성한다.
      */
     private void processBundle(TradeListing listing, BundleCreateRequest bundleReq) {
         // EQUIPMENT_SINGLE은 라인이 정확히 1개여야 한다
@@ -132,16 +142,30 @@ public class ListingService {
                         .build()
         );
 
+        List<PieceInfo> pieceInfos = new ArrayList<>();
         for (BundleLineCreateRequest lineReq : bundleReq.lines()) {
-            processLine(bundle, lineReq);
+            processLine(bundle, lineReq).ifPresent(pieceInfos::add);
+        }
+
+        // EQUIPMENT_SET이고 titleOverride가 없으면 세트 표기 제목 자동 생성
+        if (bundleReq.bundleType() == BundleType.EQUIPMENT_SET
+                && (bundleReq.titleOverride() == null || bundleReq.titleOverride().isBlank())
+                && !pieceInfos.isEmpty()) {
+            String setName = pieceInfos.get(0).setName();
+            if (setName != null) {
+                List<String> marks = pieceInfos.stream().map(PieceInfo::mark).toList();
+                bundle.updateTitle(SetTitleGenerator.generate(setName, marks));
+            }
         }
     }
 
     /**
      * 번들 라인 단위 처리.
      * 아이템 조회 → 라인 저장 → 장비이면 상세·주술까지 처리한다.
+     *
+     * @return 장비 라인인 경우 피스 정보(세트명·마크), 재료 라인이면 빈 Optional
      */
-    private void processLine(ListingBundle bundle, BundleLineCreateRequest lineReq) {
+    private Optional<PieceInfo> processLine(ListingBundle bundle, BundleLineCreateRequest lineReq) {
         Item item = itemRepository.findById(lineReq.itemId())
                 .orElseThrow(() -> new IllegalArgumentException(
                         "존재하지 않는 아이템입니다. itemId=" + lineReq.itemId()));
@@ -161,23 +185,26 @@ public class ListingService {
                 throw new IllegalArgumentException(
                         "장비 라인의 수량은 1이어야 합니다. itemId=" + lineReq.itemId());
             }
-            // 장비 아이템이면 상세 정보 처리
-            validateAndSaveEquipmentDetail(item, line, lineReq.equipmentDetail());
+            PieceInfo pieceInfo = validateAndSaveEquipmentDetail(item, line, lineReq.equipmentDetail());
+            return Optional.of(pieceInfo);
         } else {
             // 재료 아이템은 MATERIAL 타입이어야 한다
             if (item.getType() != ItemType.MATERIAL) {
                 throw new IllegalArgumentException(
                         "장비 상세 정보가 없는 라인의 아이템은 재료 타입이어야 합니다. itemId=" + item.getId());
             }
+            return Optional.empty();
         }
     }
 
     /**
      * 장비 상세 정보 검증 및 저장.
      * EquipmentItem 존재 확인, 외변 강화 수치 정책, 주술 일관성, 주술 적용 가능 여부를 검증한다.
+     *
+     * @return 피스 정보 — 세트명(세트 미소속이면 null)과 대표 주술 마크(주술 없으면 null)
      */
-    private void validateAndSaveEquipmentDetail(Item item, BundleLine line,
-                                                 EquipmentDetailRequest detailReq) {
+    private PieceInfo validateAndSaveEquipmentDetail(Item item, BundleLine line,
+                                                      EquipmentDetailRequest detailReq) {
         if (item.getType() != ItemType.EQUIPMENT) {
             throw new IllegalArgumentException(
                     "장비 상세 정보가 있는 라인의 아이템은 장비 타입이어야 합니다. itemId=" + item.getId());
@@ -201,7 +228,7 @@ public class ListingService {
                     "주술 적용(hasRitual=true) 시 주술 목록은 1개 이상이어야 합니다. itemId=" + item.getId());
         }
 
-        BundleEquipmentDetail detail = bundleEquipmentDetailRepository.save(
+        bundleEquipmentDetailRepository.save(
                 BundleEquipmentDetail.builder()
                         .bundleLine(line)
                         .equipmentItem(equipmentItem)
@@ -211,18 +238,30 @@ public class ListingService {
                         .build()
         );
 
+        // 세트명 추출 (세트에 속하지 않으면 null)
+        String setName = equipmentItem.getEquipmentSet() != null
+                ? equipmentItem.getEquipmentSet().getName()
+                : null;
+
+        // 주술 저장 후 대표 마크 추출 (세트 제목 생성용)
+        String mark = null;
         if (detailReq.hasRitual()) {
-            saveRituals(line, equipmentItem, detailReq.rituals());
+            List<String> marks = saveRituals(line, equipmentItem, detailReq.rituals());
+            mark = marks.isEmpty() ? null : marks.get(0);
         }
+
+        return new PieceInfo(setName, mark);
     }
 
     /**
      * 주술 결과 저장.
      * 각 주술 ID가 해당 장비에 적용 가능한지 먼저 검증한 후 저장한다.
      * 적용 가능 주술 목록을 한 번에 로드하여 N+1을 방지한다.
+     *
+     * @return 저장된 주술의 appliedMarkSnapshot 목록 (세트 제목 생성용)
      */
-    private void saveRituals(BundleLine line, EquipmentItem equipmentItem,
-                              List<RitualResultRequest> ritualRequests) {
+    private List<String> saveRituals(BundleLine line, EquipmentItem equipmentItem,
+                                      List<RitualResultRequest> ritualRequests) {
         // 요청 내 중복 ritualId 검사
         long distinctRitualCount = ritualRequests.stream()
                 .map(RitualResultRequest::ritualId)
@@ -261,6 +300,9 @@ public class ListingService {
                     .build());
         }
         bundleEquipmentRitualRepository.saveAll(ritualsToSave);
+        return ritualsToSave.stream()
+                .map(BundleEquipmentRitual::getAppliedMarkSnapshot)
+                .toList();
     }
 
     // ── 목록 조회 ────────────────────────────────────────────────────────────

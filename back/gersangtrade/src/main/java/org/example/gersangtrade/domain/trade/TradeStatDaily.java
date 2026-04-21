@@ -40,6 +40,9 @@ public class TradeStatDaily {
      * 집계 키.
      * 예: "ITEM:1" (아이템 ID 1번), "SET:2" (세트 ID 2번).
      * TradeConfirmed.statKeySnapshot과 동일한 형식을 사용한다.
+     *
+     * <p>TODO: MVP(1단계) 단순 문자열 유지. 2단계 확장(주술 조합 집계) 시
+     * stat_item_id / stat_ritual_mark / stat_set_id / stat_ritual_count 복합 컬럼으로 전환 필요.
      */
     @Column(name = "stat_key", nullable = false, length = 255)
     private String statKey;
