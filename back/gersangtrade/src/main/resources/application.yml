@@ -8,6 +8,12 @@ spring:
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:}
     driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      # 크롤링 배치처럼 장시간 실행되는 작업 중 MySQL이 커넥션을 끊는 것 방지
+      keepalive-time: 30000          # 30초마다 keepalive 쿼리 (MySQL wait_timeout 대응)
+      max-lifetime: 1800000          # 커넥션 최대 수명 30분 (MySQL default wait_timeout 8h보다 작게)
+      connection-test-query: SELECT 1 # 커넥션 반환 전 유효성 검사
+      connection-timeout: 30000      # 커넥션 획득 대기 최대 30초
 
   # ── JPA / Hibernate ───────────────────────────────────────────────────────
   jpa:

@@ -39,6 +39,10 @@ public class S3ImageService {
     @Value("${aws.s3.base-url}")
     private String s3BaseUrl;
 
+    /** true이면 S3 업로드를 건너뛰고 null 반환 — 로컬 개발 환경 전용 */
+    @Value("${crawler.s3.skip:false}")
+    private boolean s3Skip;
+
     /**
      * 아이템 이미지 다운로드 → S3 업로드 → URL 반환.
      *
@@ -61,6 +65,10 @@ public class S3ImageService {
 
     private String upload(String imageKey, String s3Key) {
         if (imageKey == null || imageKey.isBlank()) return null;
+        if (s3Skip) {
+            log.debug("S3 업로드 skip (로컬 환경): {}", imageKey);
+            return null;
+        }
 
         String sourceUrl = GERNIVERSE_IMAGE_BASE + imageKey + ".webp";
         try {

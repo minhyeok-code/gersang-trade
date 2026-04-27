@@ -390,6 +390,36 @@ public class ListingService {
         return ListingDetailResponse.from(listing, bundleAssemblies);
     }
 
+    // ── 관리자 숨김 ─────────────────────────────────────────────────────────
+
+    /**
+     * 관리자 등록글 숨김 처리.
+     * 소프트 삭제된 등록글이 아니라면 hidden=true 로 전환한다.
+     *
+     * @param listingId 숨김 대상 등록글 ID
+     */
+    @Transactional
+    public void hideListing(Long listingId) {
+        TradeListing listing = tradeListingRepository.findNotDeletedById(listingId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "존재하지 않는 등록글입니다. id=" + listingId));
+        listing.hide();
+    }
+
+    /**
+     * 관리자 등록글 숨김 해제.
+     * 소프트 삭제된 등록글이 아니라면 hidden=false 로 전환한다.
+     *
+     * @param listingId 숨김 해제 대상 등록글 ID
+     */
+    @Transactional
+    public void unhideListing(Long listingId) {
+        TradeListing listing = tradeListingRepository.findNotDeletedById(listingId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "존재하지 않는 등록글입니다. id=" + listingId));
+        listing.unhide();
+    }
+
     // ── 취소 ────────────────────────────────────────────────────────────────
 
     /**

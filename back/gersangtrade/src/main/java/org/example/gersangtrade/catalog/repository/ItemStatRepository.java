@@ -1,6 +1,7 @@
 package org.example.gersangtrade.catalog.repository;
 
 import org.example.gersangtrade.domain.catalog.ItemStat;
+import org.example.gersangtrade.domain.catalog.enums.Element;
 import org.example.gersangtrade.domain.catalog.enums.StatType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -29,11 +30,32 @@ public interface ItemStatRepository extends JpaRepository<ItemStat, Long> {
 
     /**
      * 아이템 ID와 능력치 종류로 존재 여부 확인.
-     * 크롤러 배치에서 중복 저장 방지에 사용된다.
+     * 속성 구분 없는 스탯(Element.NONE) 중복 저장 방지에 사용된다.
      */
     @Query("""
             SELECT COUNT(ist) > 0 FROM ItemStat ist
             WHERE ist.item.id = :itemId AND ist.statType = :statType
             """)
     boolean existsByItemIdAndStatType(@Param("itemId") Long itemId, @Param("statType") StatType statType);
+
+    /**
+     * 아이템 ID + 능력치 종류 + 속성 조합으로 존재 여부 확인.
+     * 속성별 스탯(불속성값 등) 중복 저장 방지에 사용된다.
+     */
+    @Query("""
+            SELECT COUNT(ist) > 0 FROM ItemStat ist
+            WHERE ist.item.id = :itemId AND ist.statType = :statType AND ist.element = :element
+            """)
+    boolean existsByItemIdAndStatTypeAndElement(
+            @Param("itemId") Long itemId,
+            @Param("statType") StatType statType,
+            @Param("element") Element element);
+
+    List<ItemStat> findByItemId(Long itemId);
+
+    /** 아이템 ID 목록에 해당하는 스탯 일괄 조회 — 목록 페이지 N+1 방지용 */
+    @Query("SELECT ist FROM ItemStat ist WHERE ist.item.id IN :itemIds")
+    List<ItemStat> findByItemIdIn(@Param("itemIds") List<Long> itemIds);
+
+    void deleteByItemId(Long itemId);
 }

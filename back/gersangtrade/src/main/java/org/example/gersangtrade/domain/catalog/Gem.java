@@ -91,7 +91,7 @@ public class Gem extends BaseEntity {
     @PrePersist
     @PreUpdate
     private void validateRitual() {
-        if (GemGrade.강화됨 != this.gemGrade && this.ritual != null) {
+        if (GemGrade.ENHANCED != this.gemGrade && this.ritual != null) {
             throw new IllegalStateException("강화됨 이외 등급 보석에는 ritual을 연결할 수 없습니다. name=" + this.name + ", grade=" + this.gemGrade);
         }
     }

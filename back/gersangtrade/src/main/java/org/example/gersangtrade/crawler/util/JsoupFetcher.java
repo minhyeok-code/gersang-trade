@@ -60,6 +60,45 @@ public class JsoupFetcher {
     }
 
     /**
+     * JSON API 응답 패치.
+     * ignoreContentType 옵션으로 JSON body를 문자열로 반환한다.
+     *
+     * @param url     API URL
+     * @param referer 요청 출처 페이지 URL (서버가 Referer로 컨텍스트를 판별하는 경우 필수)
+     * @return 응답 body 문자열
+     * @throws IOException 패치 실패 시
+     */
+    public String fetchBody(String url, String referer) throws IOException {
+        IOException lastException = null;
+
+        for (int attempt = 1; attempt <= MAX_RETRY; attempt++) {
+            try {
+                applyDelay(url, attempt);
+                return Jsoup.connect(url)
+                        .userAgent(USER_AGENT)
+                        .timeout(TIMEOUT_MS)
+                        .ignoreContentType(true)
+                        .header("Referer", referer)
+                        .header("Origin", "https://geota.co.kr")
+                        .header("Accept", "application/json, */*")
+                        .header("Accept-Language", "ko-KR,ko;q=0.9")
+                        .execute()
+                        .body();
+            } catch (IOException e) {
+                lastException = e;
+                log.warn("API 패치 실패 (시도 {}/{}): {} — {}", attempt, MAX_RETRY, url, e.getMessage());
+            }
+        }
+
+        throw new IOException("API 패치 최대 재시도 횟수 초과: " + url, lastException);
+    }
+
+    /** fetchBody(url, referer) 의 referer 생략 버전 */
+    public String fetchBody(String url) throws IOException {
+        return fetchBody(url, "https://geota.co.kr/");
+    }
+
+    /**
      * 바이너리 데이터(이미지) 패치.
      * ignoreContentType 옵션으로 이미지 URL에서 바이트 배열을 받아온다.
      *

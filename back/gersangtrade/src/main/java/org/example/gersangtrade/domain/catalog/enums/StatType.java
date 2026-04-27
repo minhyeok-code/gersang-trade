@@ -13,6 +13,10 @@ public enum StatType {
     ELEMENT_PIERCE("속성깎"),
     RESIST_PIERCE("저항깎"),
 
+    // ── 공격력 (아이템·용병 공통) ──────────────────────
+    MIN_POWER("최소공격력"),
+    MAX_POWER("최대공격력"),
+
     // ── 용병 전용 기본 스탯 ────────────────────────────
     STRENGTH("힘"),
     VITALITY("생명력"),
@@ -22,8 +26,6 @@ public enum StatType {
     SIGHT("시야"),
     HIT_RATE("명중률"),
     CRITICAL_CHANCE("크리티컬확률"),
-    MIN_POWER("최소공격력"),
-    MAX_POWER("최대공격력"),
     MAGIC_RESISTANCE("마법저항"),
     HITTING_RESISTANCE("타격저항");
 

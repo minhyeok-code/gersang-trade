@@ -24,6 +24,7 @@ import org.example.gersangtrade.listing.repository.BundleLineRepository;
 import org.example.gersangtrade.listing.repository.ListingBundleRepository;
 import org.example.gersangtrade.listing.repository.TradeListingRepository;
 import org.example.gersangtrade.notification.service.NotificationService;
+import org.example.gersangtrade.report.service.KeywordDetectionService;
 import org.example.gersangtrade.trade.repository.TradeConfirmedRepository;
 import org.example.gersangtrade.trade.repository.TradeReviewRepository;
 import org.example.gersangtrade.trade.service.TradeStatService;
@@ -71,6 +72,7 @@ class ChatServiceTest {
     @Mock private TradeReviewRepository tradeReviewRepository;
     @Mock private TradeStatService tradeStatService;
     @Mock private NotificationService notificationService;
+    @Mock private KeywordDetectionService keywordDetectionService;
 
     @InjectMocks
     private ChatService chatService;

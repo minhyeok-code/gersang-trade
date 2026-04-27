@@ -101,6 +101,17 @@ public class Mercenary extends BaseEntity {
         this.imageUrl = imageUrl;
     }
 
+    /** 관리자 수동 수정 — 이름, 카테고리, 국가, 속성, 속성값, 출시예정 여부 */
+    public void updateInfo(String name, MercenaryCategory category, Nation nation,
+                           Nature nature, Integer natureValue, boolean comingSoon) {
+        if (name != null && !name.isBlank()) this.name = name;
+        if (category != null) this.category = category;
+        if (nation != null) this.nation = nation;
+        if (nature != null) this.nature = nature;
+        this.natureValue = natureValue;
+        this.comingSoon = comingSoon;
+    }
+
     /**
      * 크롤링 상세 파싱 후 스펙 정보 업데이트.
      * imageUrl은 null이면 기존 값을 유지한다 (S3 업로드 실패로 null이 덮어쓰이는 것을 방지).

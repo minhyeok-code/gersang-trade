@@ -11,11 +11,21 @@ package org.example.gersangtrade.domain.catalog.enums;
  */
 public enum GemGrade {
     /** 가공되지 않은 기본 상태 */
-    기본,
+    BASIC("기본"),
     /** 세공된 상태 */
-    세공됨,
+    REFINED("세공됨"),
     /** 강화된 상태 — 이 단계에서만 주술(ritual) 부착 가능 */
-    강화됨,
+    ENHANCED("강화됨"),
     /** 빛나는 상태 — 별도 제작 루트. 주술 부착 불가 */
-    빛나는
+    SHINING("빛나는");
+
+    private final String displayName;
+
+    GemGrade(String displayName) {
+        this.displayName = displayName;
+    }
+
+    public String getDisplayName() {
+        return displayName;
+    }
 }

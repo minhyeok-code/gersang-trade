@@ -52,6 +52,13 @@ public class Item extends BaseEntity {
         this.tradeCategory = tradeCategory;
     }
 
+    /** 관리자 수동 수정 — 이름, 타입, 거래 카테고리 */
+    public void updateInfo(String name, ItemType type, String tradeCategory) {
+        if (name != null && !name.isBlank()) this.name = name;
+        if (type != null) this.type = type;
+        this.tradeCategory = tradeCategory;
+    }
+
     /** 크롤링 상세 파싱 후 S3 이미지 URL 저장 */
     public void updateImageUrl(String imageUrl) {
         this.imageUrl = imageUrl;

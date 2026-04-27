@@ -6,24 +6,18 @@ import org.example.gersangtrade.calculator.dto.response.CalculatorResponse;
 import org.example.gersangtrade.calculator.dto.response.CurrentStatsDto;
 import org.example.gersangtrade.calculator.dto.response.ElementValueEntryDto;
 import org.example.gersangtrade.calculator.dto.response.ResistPierceEntryDto;
+import org.example.gersangtrade.common.GoldFormatter;
 import org.example.gersangtrade.catalog.repository.ItemStatRepository;
-import org.example.gersangtrade.catalog.repository.MercenaryMaterialRepository;
 import org.example.gersangtrade.catalog.repository.MercenaryRepository;
 import org.example.gersangtrade.catalog.repository.MercenaryStatRepository;
-import org.example.gersangtrade.crawler.repository.MaterialPriceHistoryRepository;
 import org.example.gersangtrade.domain.catalog.ItemStat;
 import org.example.gersangtrade.domain.catalog.Mercenary;
-import org.example.gersangtrade.domain.catalog.MercenaryMaterial;
 import org.example.gersangtrade.domain.catalog.MercenaryStat;
 import org.example.gersangtrade.domain.catalog.enums.StatType;
-import org.example.gersangtrade.domain.crawler.MaterialPriceHistory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.stream.Collectors;
 
 /**
  * 가성비 계산기 서비스.
@@ -33,7 +27,7 @@ import java.util.stream.Collectors;
  *   <li>저항 통과율(%) = 깎은 뒤 저항 >= 260 → 1.4% 고정; 미만 → 100 - (저항 × 0.16 + 57), 최솟값 0</li>
  *   <li>속성 보정(%) = clamp((3 × 용병 속성값 - 몬스터 속성값) / 2, -50, +50)</li>
  *   <li>종합 데미지 배율 = (100 + 속성 보정) × (통과율 / 100)</li>
- *   <li>가성비 점수 = 데미지 상승률(%) / 가격(만 골드)</li>
+ *   <li>가성비 점수 = 데미지 상승률(%) / 가격(억 전)</li>
  * </ul>
  *
  * <p>가격 기본값: MaterialPriceHistory 직전 달 평균가. priceOverrides로 덮어쓸 수 있다.
@@ -57,38 +51,28 @@ public class CalculatorService {
     /** 속성 보정 최댓값(%) */
     private static final double ELEMENT_BONUS_MAX = 50.0;
 
-    /** 골드 → 만 골드 환산 단위 */
-    private static final double MAN_GOLD_UNIT = 10_000.0;
-
-    /** 직전 달 연월 포맷 */
-    private static final DateTimeFormatter YEAR_MONTH_FORMATTER =
-            DateTimeFormatter.ofPattern("yyyy-MM");
+    /** 전(錢) → 억 환산 단위. 가성비 점수 = 데미지 상승률(%) ÷ 가격(억 전) */
+    private static final double EOK_UNIT = 100_000_000.0;
 
     // ── 의존성 ────────────────────────────────────────────────────────────────
 
     private final ItemStatRepository itemStatRepository;
     private final MercenaryRepository mercenaryRepository;
     private final MercenaryStatRepository mercenaryStatRepository;
-    private final MercenaryMaterialRepository mercenaryMaterialRepository;
-    private final MaterialPriceHistoryRepository materialPriceHistoryRepository;
 
     // ── 메인 계산 ─────────────────────────────────────────────────────────────
 
     /**
      * 유저 입력을 바탕으로 현재 데미지 현황과 저항깎·속성값 가성비 리스트를 계산한다.
      *
-     * <p>가격 조회는 직전 달 MaterialPriceHistory를 기준으로 하며,
-     * priceOverrides가 있으면 해당 항목 가격을 덮어쓴다.
+     * <p>가격은 priceOverrides로만 입력받는다. 미입력 항목은 price=null로 처리되어 가성비 점수가 표시되지 않는다.
      *
      * @param request 유저 스펙 및 몬스터 정보 입력값
      * @return 현재 데미지 현황 + 저항깎/속성값 리스트
      */
     public CalculatorResponse calculate(CalculatorRequest request) {
-        // 직전 달 연월 계산 (가격 기본값 조회 기준)
-        String prevYearMonth = LocalDate.now().minusMonths(1).format(YEAR_MONTH_FORMATTER);
-
-        // 서버별 전체 아이템 가격 맵 로드 (itemId → avgPrice)
-        Map<Long, Long> priceMap = loadPriceMap(request.serverId(), prevYearMonth);
+        // 가격은 유저 직접 입력(priceOverrides)만 사용 — DB 조회 없음
+        Map<Long, Long> priceMap = Map.of();
 
         // priceOverrides가 null이면 빈 맵으로 처리
         Map<String, Long> overrides =
@@ -147,12 +131,12 @@ public class CalculatorService {
 
     /**
      * 가성비 점수 계산.
-     * = 데미지 상승률(%) / 가격(만 골드).
+     * = 데미지 상승률(%) / 가격(억 전).
      * 가격이 null이거나 0이면 null 반환 (계산 제외 처리).
      */
     private Double calcEfficiencyScore(Long price, double increaseRate) {
         if (price == null || price == 0L) return null;
-        return increaseRate / (price / MAN_GOLD_UNIT);
+        return increaseRate / (price / EOK_UNIT);
     }
 
     // ── 현재 데미지 현황 ──────────────────────────────────────────────────────
@@ -177,57 +161,12 @@ public class CalculatorService {
     // ── 가격 로딩 ─────────────────────────────────────────────────────────────
 
     /**
-     * 서버·연월 기준 아이템 가격 맵 로드.
-     * key: itemId, value: avgPrice (골드 단위)
-     */
-    private Map<Long, Long> loadPriceMap(Integer serverId, String yearMonth) {
-        List<MaterialPriceHistory> histories =
-                materialPriceHistoryRepository.findAllByServerIdAndYearMonth(serverId, yearMonth);
-        return histories.stream()
-                .collect(Collectors.toMap(
-                        mph -> mph.getItem().getId(),
-                        MaterialPriceHistory::getAvgPrice,
-                        (a, b) -> a));  // 중복 시 첫 번째 값 유지
-    }
-
-    /**
-     * 서버·연월 기준 아이템 이름 기준 가격 맵 로드.
-     * key: itemName (gerniverse materialItemKey와 동일), value: avgPrice (골드 단위)
-     * MercenaryMaterial.materialItemKey 기반 비용 계산에 사용된다.
-     */
-    private Map<String, Long> loadPriceMapByItemName(Integer serverId, String yearMonth) {
-        List<MaterialPriceHistory> histories =
-                materialPriceHistoryRepository.findAllByServerIdAndYearMonth(serverId, yearMonth);
-        return histories.stream()
-                .collect(Collectors.toMap(
-                        mph -> mph.getItem().getName(),
-                        MaterialPriceHistory::getAvgPrice,
-                        (a, b) -> a));  // 중복 시 첫 번째 값 유지
-    }
-
-    /**
-     * 용병 ID 목록에 해당하는 고용 총비용 계산.
-     * 아이템 재료만 가격 계산 대상. 재료 가격 정보가 없는 항목은 제외한다.
-     * key: mercenaryId, value: 알려진 아이템 재료 비용 합산 (골드 단위)
+     * 용병 비용 자동 계산은 미지원.
+     * 유저가 priceOverrides에서 "MERC_{mercenaryId}" 키로 직접 입력해야 한다.
      */
     private Map<Long, Long> calcMercenaryCosts(List<Long> mercenaryIds,
-                                               Map<String, Long> priceMapByName) {
-        if (mercenaryIds.isEmpty()) return Map.of();
-
-        List<MercenaryMaterial> materials =
-                mercenaryMaterialRepository.findAllByResultMercenaryIdIn(mercenaryIds);
-
-        Map<Long, Long> costMap = new HashMap<>();
-        for (MercenaryMaterial mm : materials) {
-            // 아이템 재료만 가격 계산 (용병 재료는 별도 계산 필요 — 현재 미지원)
-            if (mm.getMaterialItemKey() == null) continue;
-            Long itemPrice = priceMapByName.get(mm.getMaterialItemKey());
-            if (itemPrice != null) {
-                long materialCost = itemPrice * mm.getQuantity();
-                costMap.merge(mm.getResultMercenary().getId(), materialCost, Long::sum);
-            }
-        }
-        return costMap;
+                                               Map<String, Long> overrides) {
+        return Map.of();
     }
 
     /**
@@ -264,12 +203,9 @@ public class CalculatorService {
         // 저항깎 스탯(RESIST_PIERCE)이 있는 용병 — MercenaryStat 기반 조회
         List<MercenaryStat> resistStats =
                 mercenaryStatRepository.findByStatKey(StatType.RESIST_PIERCE);
-        String prevYearMonth = LocalDate.now().minusMonths(1).format(YEAR_MONTH_FORMATTER);
-        Map<String, Long> priceMapByName =
-                loadPriceMapByItemName(req.serverId(), prevYearMonth);
         Map<Long, Long> mercCosts = calcMercenaryCosts(
                 resistStats.stream().map(s -> s.getMercenary().getId()).distinct().toList(),
-                priceMapByName);
+                overrides);
 
         for (MercenaryStat stat : resistStats) {
             Mercenary merc = stat.getMercenary();
@@ -296,7 +232,8 @@ public class CalculatorService {
 
         return new ResistPierceEntryDto(
                 sourceType, sourceId, name, resistValue,
-                price, newPassRate, increaseRate, effScore, false);
+                price, newPassRate, increaseRate, effScore, false,
+                GoldFormatter.format(price));
     }
 
     /**
@@ -318,7 +255,7 @@ public class CalculatorService {
             list.set(0, new ResistPierceEntryDto(
                     top.sourceType(), top.sourceId(), top.name(), top.resistPierceValue(),
                     top.price(), top.newResistPassRate(), top.damageIncreaseRate(),
-                    top.efficiencyScore(), true));
+                    top.efficiencyScore(), true, top.formattedPrice()));
         }
         return list;
     }
@@ -346,12 +283,9 @@ public class CalculatorService {
         // 속성값 스탯(ELEMENT_VALUE)이 있는 용병 — MercenaryStat 기반 조회
         List<MercenaryStat> elementStats =
                 mercenaryStatRepository.findByStatKey(StatType.ELEMENT_VALUE);
-        String prevYearMonth = LocalDate.now().minusMonths(1).format(YEAR_MONTH_FORMATTER);
-        Map<String, Long> priceMapByName =
-                loadPriceMapByItemName(req.serverId(), prevYearMonth);
         Map<Long, Long> mercCosts = calcMercenaryCosts(
                 elementStats.stream().map(s -> s.getMercenary().getId()).distinct().toList(),
-                priceMapByName);
+                overrides);
 
         for (MercenaryStat stat : elementStats) {
             Mercenary merc = stat.getMercenary();
@@ -381,7 +315,8 @@ public class CalculatorService {
 
         return new ElementValueEntryDto(
                 sourceType, sourceId, name, elementIncrease,
-                price, newElementBonus, increaseRate, effScore, false);
+                price, newElementBonus, increaseRate, effScore, false,
+                GoldFormatter.format(price));
     }
 
     /**
@@ -401,7 +336,7 @@ public class CalculatorService {
             list.set(0, new ElementValueEntryDto(
                     top.sourceType(), top.sourceId(), top.name(), top.elementValueIncrease(),
                     top.price(), top.newElementBonus(), top.damageIncreaseRate(),
-                    top.efficiencyScore(), true));
+                    top.efficiencyScore(), true, top.formattedPrice()));
         }
         return list;
     }

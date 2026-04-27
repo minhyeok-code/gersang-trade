@@ -25,7 +25,15 @@
       "Bash(./gradlew compileJava compileTestJava)",
       "Bash(./gradlew clean:*)",
       "Bash(find /d/Java/gersangTrade/back/gersangtrade/src/main/java/org/example/gersangtrade/domain/user -type f -name *.java)",
-      "Bash(./gradlew compileTestJava)"
+      "Bash(./gradlew compileTestJava)",
+      "Bash(git stash *)",
+      "Bash(./gradlew compileJava --quiet)",
+      "Bash(grep -o '[가-힣]\\\\{2,10\\\\}.*[0-9,]\\\\+냥' \"D:/Java/gersangTrade/back/gersangtrade/docs/geta-yukeuijeon.md\")",
+      "Bash(grep -o 'inline-flex items-center gap-1\\\\.5.\\\\{0,200\\\\}' \"D:/Java/gersangTrade/back/gersangtrade/docs/gerniverse-mercenary-detail.md\")",
+      "Bash(grep -o '\"statistics\".\\\\{0,200\\\\}' \"D:/Java/gersangTrade/back/gersangtrade/docs/gerniverse-mercenary-detail.md\")",
+      "Bash(grep -o '\\\\\\\\\\\\\"characteristics\\\\\\\\\\\\\"' \"D:/Java/gersangTrade/back/gersangtrade/docs/gerniverse-mercenary-detail.md\")",
+      "Bash(grep -o '.\\\\{100\\\\}\\\\\\\\\\\\\"characteristics\\\\\\\\\\\\\".\\\\{200\\\\}' \"D:/Java/gersangTrade/back/gersangtrade/docs/gerniverse-mercenary-detail.md\")",
+      "Bash(./gradlew build *)"
     ]
   }
 }

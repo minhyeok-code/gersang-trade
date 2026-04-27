@@ -82,26 +82,26 @@ public final class ItemNameParser {
             String marker = bracketMatcher.group(1);
             // <홈이있는>은 보석에 적용되지 않으므로 주술명으로 처리
             // 주술이 부착된 보석은 강화됨 등급 + ritual 조합으로 표현 (주술됨은 별도 등급이 아님)
-            return ParsedItemDto.gem(gemName, GemGrade.강화됨, marker);
+            return ParsedItemDto.gem(gemName, GemGrade.ENHANCED, marker);
         }
 
         // 빛나는 {gemName}
         if (raw.startsWith(PREFIX_SHINING)) {
-            return ParsedItemDto.gem(gemName, GemGrade.빛나는, null);
+            return ParsedItemDto.gem(gemName, GemGrade.SHINING, null);
         }
 
         // 강화된 {gemName}
         if (raw.startsWith(PREFIX_GANG)) {
-            return ParsedItemDto.gem(gemName, GemGrade.강화됨, null);
+            return ParsedItemDto.gem(gemName, GemGrade.ENHANCED, null);
         }
 
         // 세공된 {gemName}
         if (raw.startsWith(PREFIX_SEONG)) {
-            return ParsedItemDto.gem(gemName, GemGrade.세공됨, null);
+            return ParsedItemDto.gem(gemName, GemGrade.REFINED, null);
         }
 
         // {gemName} (기본)
-        return ParsedItemDto.gem(gemName, GemGrade.기본, null);
+        return ParsedItemDto.gem(gemName, GemGrade.BASIC, null);
     }
 
     // ── 장비/미분류 파싱 ───────────────────────────────────────────────────────

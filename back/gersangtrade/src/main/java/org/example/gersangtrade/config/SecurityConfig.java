@@ -6,8 +6,10 @@ import org.example.gersangtrade.auth.handler.OAuth2LoginFailureHandler;
 import org.example.gersangtrade.auth.handler.OAuth2LoginSuccessHandler;
 import org.example.gersangtrade.auth.jwt.JwtTokenizer;
 import org.example.gersangtrade.auth.service.CustomOAuth2UserService;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -34,12 +36,17 @@ import java.io.IOException;
 @EnableWebSecurity
 @EnableMethodSecurity  // @PreAuthorize 어노테이션 활성화
 @RequiredArgsConstructor
+@Order(2)
 public class SecurityConfig {
 
     private final CustomOAuth2UserService customOAuth2UserService;
     private final OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler;
     private final OAuth2LoginFailureHandler oAuth2LoginFailureHandler;
     private final JwtTokenizer jwtTokenizer;
+
+    /** 로컬 개발 전용 — true이면 /admin/** 인증 없이 허용 (application-local.yml) */
+    @Value("${local.security.permit-admin:false}")
+    private boolean permitAdmin;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -52,21 +59,25 @@ public class SecurityConfig {
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
                 // 경로별 접근 권한 설정
-                .authorizeHttpRequests(auth -> auth
-                        // 공개 API — 비로그인도 조회 가능
-                        .requestMatchers(HttpMethod.GET,
-                                "/listings/**", "/stats/**",
-                                "/api/listings/**", "/api/wanted/**",
-                                "/api/items/**").permitAll()
-                        // 가성비 계산기 — 비로그인 허용 (세션 내 계산만, DB 저장 없음)
-                        .requestMatchers(HttpMethod.POST, "/api/calculator").permitAll()
-                        // 인증 관련 경로 전체 허용
-                        .requestMatchers("/auth/**", "/oauth2/**", "/login/**").permitAll()
-                        // 관리자 전용 API
-                        .requestMatchers("/admin/**").hasRole("ADMIN")
-                        // 그 외 모든 요청은 로그인 필요
-                        .anyRequest().authenticated()
-                )
+                .authorizeHttpRequests(auth -> {
+                    // 공개 API — 비로그인도 조회 가능
+                    auth.requestMatchers(HttpMethod.GET,
+                            "/listings/**", "/stats/**",
+                            "/api/listings/**", "/api/wanted/**",
+                            "/api/items/**").permitAll();
+                    // 가성비 계산기 — 비로그인 허용 (세션 내 계산만, DB 저장 없음)
+                    auth.requestMatchers(HttpMethod.POST, "/api/calculator").permitAll();
+                    // 인증 관련 경로 전체 허용
+                    auth.requestMatchers("/auth/**", "/oauth2/**", "/login/**").permitAll();
+                    // 관리자 전용 API — 로컬 개발 시 permit-admin=true로 인증 우회 가능
+                    if (permitAdmin) {
+                        auth.requestMatchers("/admin/**").permitAll();
+                    } else {
+                        auth.requestMatchers("/admin/**").hasRole("ADMIN");
+                    }
+                    // 그 외 모든 요청은 로그인 필요
+                    auth.anyRequest().authenticated();
+                })
 
                 // OAuth2 소셜 로그인 설정 (현재 Google만 MVP 범위)
                 .oauth2Login(oauth2 -> oauth2

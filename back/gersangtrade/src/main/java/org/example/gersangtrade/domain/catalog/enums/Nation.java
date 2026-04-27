@@ -10,6 +10,7 @@ public enum Nation {
     JAPAN("일본"),
     TAIWAN("대만"),
     INDIA("인도"),
+    MONGOL("몽골"),
     NONE("-");
 
     /** 화면에 표시할 한국어 명칭 */

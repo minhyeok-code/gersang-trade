@@ -1,0 +1,84 @@
+package org.example.gersangtrade.domain.deck;
+
+import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import org.example.gersangtrade.domain.user.User;
+
+import java.time.LocalDateTime;
+
+/**
+ * 유저 용병 덱 엔티티.
+ * 유저가 구성한 용병 슬롯 12개의 스냅샷이다.
+ * 저장 시점에 attrXValue·totalResDown을 계산해 캐싱한다.
+ *
+ * <p>덱은 불변 스냅샷이므로 updatedAt이 없다.
+ * 동일 유저가 여러 덱을 보유할 수 있으며, isActive=true인 덱이 현재 활성 덱이다.
+ */
+@Entity
+@Table(name = "user_decks")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class UserDeck {
+
+    /** 덱 고유 식별자 (자동 증가) */
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    /** 덱 소유자 */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false)
+    private User user;
+
+    /** 현재 활성 덱 여부. 유저당 최대 1개만 true */
+    @Column(name = "is_active", nullable = false)
+    private boolean active = false;
+
+    /**
+     * 속성값(x) 합산 캐시.
+     * 덱 저장 시 UserDeckService.calculateTotalStats()가 계산해 저장한다.
+     */
+    @Column(name = "attr_x_value")
+    private Integer attrXValue;
+
+    /**
+     * 저항깎 합산 캐시.
+     * 덱 저장 시 UserDeckService.calculateTotalStats()가 계산해 저장한다.
+     */
+    @Column(name = "total_res_down")
+    private Integer totalResDown;
+
+    /** 덱 생성 시각 (불변) */
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @PrePersist
+    private void prePersist() {
+        this.createdAt = LocalDateTime.now();
+    }
+
+    @Builder
+    public UserDeck(User user, boolean active) {
+        this.user = user;
+        this.active = active;
+    }
+
+    /** 계산된 합산 스탯 캐싱 */
+    public void applyStats(Integer attrXValue, Integer totalResDown) {
+        this.attrXValue = attrXValue;
+        this.totalResDown = totalResDown;
+    }
+
+    /** 활성 덱 전환 */
+    public void activate() {
+        this.active = true;
+    }
+
+    /** 비활성 전환 */
+    public void deactivate() {
+        this.active = false;
+    }
+}
