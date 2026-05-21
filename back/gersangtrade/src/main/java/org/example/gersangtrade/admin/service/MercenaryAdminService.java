@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.example.gersangtrade.admin.dto.request.CharacteristicCreateRequest;
 import org.example.gersangtrade.admin.dto.request.CharacteristicLevelSaveRequest;
 import org.example.gersangtrade.admin.dto.request.CharacteristicUpdateRequest;
+import org.example.gersangtrade.admin.dto.request.MercenaryBulkUpdateRequest;
 import org.example.gersangtrade.admin.dto.request.MercenaryStatReplaceRequest;
 import org.example.gersangtrade.admin.dto.request.MercenaryUpdateRequest;
 import org.example.gersangtrade.admin.dto.request.SkillReplaceRequest;
@@ -20,12 +21,18 @@ import org.example.gersangtrade.domain.catalog.MercenaryCharacteristic;
 import org.example.gersangtrade.domain.catalog.MercenaryCharacteristicLevel;
 import org.example.gersangtrade.domain.catalog.MercenarySkill;
 import org.example.gersangtrade.domain.catalog.MercenaryStat;
+import org.example.gersangtrade.domain.catalog.enums.MercenaryCategory;
+import org.example.gersangtrade.domain.catalog.enums.Nation;
+import org.example.gersangtrade.domain.catalog.enums.Nature;
+import org.example.gersangtrade.domain.catalog.enums.StatType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+
+import java.util.List;
 
 import java.util.List;
 import java.util.Map;
@@ -116,22 +123,75 @@ public class MercenaryAdminService {
 
     /**
      * 용병 목록을 페이지 단위로 조회한다.
-     * 각 용병의 특성 등록 수를 포함해 관리자가 미입력 항목을 확인할 수 있도록 한다.
+     * category, nature, nation 필터 적용 가능 (모두 null이면 전체).
+     * 특성 수와 스탯 목록을 포함해 관리자가 미입력 항목을 확인할 수 있도록 한다.
      */
     @Transactional(readOnly = true)
-    public Page<MercenaryAdminResponse> listMercenaries(Pageable pageable) {
-        Page<Mercenary> page = mercenaryRepository.findAll(pageable);
+    public Page<MercenaryAdminResponse> listMercenaries(MercenaryCategory category,
+                                                        Nature nature, Nation nation,
+                                                        Pageable pageable) {
+        Page<Mercenary> page = mercenaryRepository.findByFilters(category, nature, nation, pageable);
+
+        List<Long> mercenaryIds = page.getContent().stream().map(Mercenary::getId).toList();
 
         // 특성 수 일괄 조회 (N+1 방지)
-        List<Long> mercenaryIds = page.getContent().stream().map(Mercenary::getId).toList();
         Map<Long, Long> characteristicCounts = characteristicRepository
                 .findByMercenaryIdIn(mercenaryIds)
                 .stream()
-                .collect(Collectors.groupingBy(
-                        c -> c.getMercenary().getId(), Collectors.counting()));
+                .collect(Collectors.groupingBy(c -> c.getMercenary().getId(), Collectors.counting()));
+
+        // 스탯 일괄 조회 (N+1 방지)
+        Map<Long, List<MercenaryStat>> statsByMercId = statRepository
+                .findByMercenaryIdIn(mercenaryIds)
+                .stream()
+                .collect(Collectors.groupingBy(s -> s.getMercenary().getId()));
 
         return page.map(m -> MercenaryAdminResponse.of(
-                m, characteristicCounts.getOrDefault(m.getId(), 0L).intValue()));
+                m,
+                characteristicCounts.getOrDefault(m.getId(), 0L).intValue(),
+                statsByMercId.getOrDefault(m.getId(), List.of())));
+    }
+
+    /**
+     * 용병 스탯 단건 추가/수정 (UPSERT).
+     * 해당 statType이 이미 있으면 값을 업데이트하고, 없으면 새로 추가한다.
+     */
+    @Transactional
+    public MercenaryAdminResponse.StatEntry patchStat(Long mercenaryId, StatType statType, int value) {
+        Mercenary mercenary = getMercenaryOrThrow(mercenaryId);
+        MercenaryStat stat = statRepository
+                .findByMercenaryIdAndStatKey(mercenaryId, statType)
+                .map(existing -> {
+                    existing.updateValue(value);
+                    return existing;
+                })
+                .orElseGet(() -> statRepository.save(MercenaryStat.builder()
+                        .mercenary(mercenary)
+                        .statKey(statType)
+                        .statValue(value)
+                        .build()));
+        return new MercenaryAdminResponse.StatEntry(stat.getStatKey(), stat.getStatValue());
+    }
+
+    /**
+     * 용병 대량 nature/nation 변경.
+     * nature, nation 중 null이 아닌 항목만 반영한다.
+     *
+     * @return 변경된 총 행 수
+     */
+    @Transactional
+    public int bulkUpdate(MercenaryBulkUpdateRequest req) {
+        if (req.ids() == null || req.ids().isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "ids는 1개 이상이어야 합니다.");
+        }
+        if (req.nature() == null && req.nation() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "nature 또는 nation 중 하나 이상을 지정해야 합니다.");
+        }
+        int updated = 0;
+        if (req.nature() != null) updated += mercenaryRepository.bulkUpdateNature(req.ids(), req.nature());
+        if (req.nation() != null) updated += mercenaryRepository.bulkUpdateNation(req.ids(), req.nation());
+        return updated;
     }
 
     // ── 특성 조회 ────────────────────────────────────────────────────────────────

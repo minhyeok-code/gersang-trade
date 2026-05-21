@@ -55,4 +55,8 @@ public class MercenaryStat {
         this.statKey = statKey;
         this.statValue = statValue;
     }
+
+    public void updateValue(int value) {
+        this.statValue = value;
+    }
 }

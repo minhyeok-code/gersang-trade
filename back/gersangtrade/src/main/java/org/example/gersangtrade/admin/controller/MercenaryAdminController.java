@@ -5,6 +5,8 @@ import lombok.RequiredArgsConstructor;
 import org.example.gersangtrade.admin.dto.request.CharacteristicCreateRequest;
 import org.example.gersangtrade.admin.dto.request.CharacteristicLevelSaveRequest;
 import org.example.gersangtrade.admin.dto.request.CharacteristicUpdateRequest;
+import org.example.gersangtrade.admin.dto.request.MercenaryBulkUpdateRequest;
+import org.example.gersangtrade.admin.dto.request.MercenaryStatPatchRequest;
 import org.example.gersangtrade.admin.dto.request.MercenaryStatReplaceRequest;
 import org.example.gersangtrade.admin.dto.request.MercenaryUpdateRequest;
 import org.example.gersangtrade.admin.dto.request.SkillReplaceRequest;
@@ -12,6 +14,10 @@ import org.example.gersangtrade.admin.dto.response.CharacteristicAdminResponse;
 import org.example.gersangtrade.admin.dto.response.MercenaryAdminResponse;
 import org.example.gersangtrade.admin.dto.response.MercenaryDetailAdminResponse;
 import org.example.gersangtrade.admin.service.MercenaryAdminService;
+import org.example.gersangtrade.domain.catalog.enums.MercenaryCategory;
+import org.example.gersangtrade.domain.catalog.enums.Nation;
+import org.example.gersangtrade.domain.catalog.enums.Nature;
+import org.example.gersangtrade.domain.catalog.enums.StatType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -22,6 +28,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 용병 특성 수동 관리 API.
@@ -30,7 +37,8 @@ import java.util.List;
  *
  * <p>엔드포인트:
  * <ul>
- *   <li>GET  /admin/mercenaries                              — 용병 목록 (특성 수 포함)</li>
+ *   <li>GET   /admin/mercenaries                              — 용병 목록 (nature·nation 필터, 특성 수 포함)</li>
+ *   <li>PATCH /admin/mercenaries/bulk                         — 대량 nature/nation 변경</li>
  *   <li>GET  /admin/mercenaries/{id}/characteristics         — 특성 목록 (레벨 수치 포함)</li>
  *   <li>POST /admin/mercenaries/{id}/characteristics         — 특성 추가</li>
  *   <li>PUT  /admin/mercenaries/{id}/characteristics/{charId} — 특성 수정</li>
@@ -69,6 +77,22 @@ public class MercenaryAdminController {
         return ResponseEntity.ok(mercenaryAdminService.replaceStats(mercenaryId, request));
     }
 
+    /**
+     * 용병 스탯 단건 추가/수정 (UPSERT).
+     * 해당 statType이 없으면 추가하고, 이미 있으면 값만 업데이트한다.
+     *
+     * <p>예시: PATCH /admin/mercenaries/1/stats/MIN_POWER  { "value": 600 }
+     *          PATCH /admin/mercenaries/1/stats/MAX_POWER  { "value": 600 }
+     *          PATCH /admin/mercenaries/1/stats/ATTACK_POWER { "value": 600 }
+     */
+    @PatchMapping("/{mercenaryId}/stats/{statType}")
+    public ResponseEntity<MercenaryAdminResponse.StatEntry> patchStat(
+            @PathVariable Long mercenaryId,
+            @PathVariable StatType statType,
+            @Valid @RequestBody MercenaryStatPatchRequest request) {
+        return ResponseEntity.ok(mercenaryAdminService.patchStat(mercenaryId, statType, request.value()));
+    }
+
     /** 용병 스킬 전체 교체 (PUT 의미론 — 기존 전부 삭제 후 재적재). */
     @PutMapping("/{mercenaryId}/skills")
     public ResponseEntity<MercenaryDetailAdminResponse> replaceSkills(
@@ -79,12 +103,34 @@ public class MercenaryAdminController {
 
     /**
      * 용병 목록 조회.
-     * characteristicCount로 특성 미입력 용병을 빠르게 파악할 수 있다.
+     * category, nature, nation 필터 적용 가능 (모두 생략 시 전체).
+     * 스탯 목록 포함으로 공격력 미입력 용병을 빠르게 파악할 수 있다.
+     *
+     * @param category LEGENDARY_GENERAL | FOUR_HEAVENLY_KINGS | ... (생략 시 전체)
+     * @param nature   FIRE | WATER | THUNDER | WIND | EARTH | NONE (생략 시 전체)
+     * @param nation   JOSEON | CHINA | JAPAN | TAIWAN | INDIA | MONGOL | NONE (생략 시 전체)
      */
     @GetMapping
     public ResponseEntity<Page<MercenaryAdminResponse>> listMercenaries(
+            @RequestParam(required = false) MercenaryCategory category,
+            @RequestParam(required = false) Nature nature,
+            @RequestParam(required = false) Nation nation,
             @PageableDefault(size = 30, sort = "name", direction = Sort.Direction.ASC) Pageable pageable) {
-        return ResponseEntity.ok(mercenaryAdminService.listMercenaries(pageable));
+        return ResponseEntity.ok(mercenaryAdminService.listMercenaries(category, nature, nation, pageable));
+    }
+
+    /**
+     * 용병 대량 nature/nation 변경.
+     * ids 목록의 용병을 일괄 변경한다. nature, nation 중 null이 아닌 항목만 반영된다.
+     *
+     * 요청 예시:
+     * { "ids": [1, 2, 3], "nature": "FIRE" }
+     * { "ids": [4, 5], "nature": "WATER", "nation": "JOSEON" }
+     */
+    @PatchMapping("/bulk")
+    public ResponseEntity<Map<String, Integer>> bulkUpdate(
+            @RequestBody MercenaryBulkUpdateRequest req) {
+        return ResponseEntity.ok(Map.of("updated", mercenaryAdminService.bulkUpdate(req)));
     }
 
     /**
