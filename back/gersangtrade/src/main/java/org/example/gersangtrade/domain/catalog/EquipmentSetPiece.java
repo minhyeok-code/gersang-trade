@@ -44,11 +44,19 @@ public class EquipmentSetPiece {
     @JoinColumn(name = "equipment_item_id", nullable = false)
     private EquipmentItem equipmentItem;
 
+    /**
+     * 세트 내 이 슬롯 아이템의 착용 개수.
+     * 대부분 1. 반지(RING)는 2개 착용이므로 2.
+     */
+    @Column(name = "piece_count", nullable = false, columnDefinition = "TINYINT DEFAULT 1")
+    private int pieceCount = 1;
+
     @Builder
     public EquipmentSetPiece(EquipmentSet equipmentSet, EquipmentSlot slot,
-                              EquipmentItem equipmentItem) {
+                              EquipmentItem equipmentItem, int pieceCount) {
         this.equipmentSet = equipmentSet;
         this.slot = slot;
         this.equipmentItem = equipmentItem;
+        this.pieceCount = pieceCount > 0 ? pieceCount : 1;
     }
 }

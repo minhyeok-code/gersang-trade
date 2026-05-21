@@ -70,6 +70,23 @@ public class ReportService {
     }
 
     // ──────────────────────────────────────────────────────────────────────
+    // 사용자 신고 내역 조회
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * 내가 접수한 신고 내역 페이징 조회.
+     *
+     * @param reporterId 조회할 사용자 ID
+     * @param pageable   페이징 정보
+     * @return 신고 응답 DTO 페이지
+     */
+    @Transactional(readOnly = true)
+    public Page<ReportResponse> getMyReports(Long reporterId, Pageable pageable) {
+        return reportRepository.findByReporterId(reporterId, pageable)
+                .map(ReportResponse::from);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
     // 관리자 신고 처리
     // ──────────────────────────────────────────────────────────────────────
 

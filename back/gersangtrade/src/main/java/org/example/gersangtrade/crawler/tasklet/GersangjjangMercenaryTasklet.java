@@ -31,12 +31,15 @@ import java.util.Set;
  *
  * <p>URL: https://www.gersangjjang.com/yongbing/index.asp
  *
+ * <p>역할: 거니버스 크롤링이 primary source다. 거상짱은 거니버스 이후 실행되어
+ * 누락된 용병·스탯·스킬을 보완하는 보조 역할만 수행한다.
+ *
  * <p>처리 흐름:
  * <ol>
  *   <li>인덱스 페이지에서 카테고리 URL 목록 수집 (없으면 인덱스 페이지 직접 파싱)</li>
  *   <li>페이지별 parsePage() → 용병명·카테고리·스탯·스킬·특성명 추출</li>
- *   <li>Mercenary UPSERT</li>
- *   <li>MercenaryStat 재적재 (기존 삭제 후 신규 삽입)</li>
+ *   <li>Mercenary — 거니버스에 없는 용병만 신규 저장. 기존 용병은 비어있는 필드만 보완.</li>
+ *   <li>MercenaryStat — 거니버스가 이미 적재한 스탯을 덮어쓰지 않는다. 누락 스탯만 추가.</li>
  *   <li>MercenarySkill UPSERT (중복 skip)</li>
  *   <li>MercenaryCharacteristic UPSERT (특성명만 저장 — 수치는 관리자 수동 입력)</li>
  * </ol>
@@ -114,42 +117,69 @@ public class GersangjjangMercenaryTasklet implements Tasklet {
         Mercenary mercenary = mercenaryRepository.findByName(row.name()).orElse(null);
 
         if (mercenary == null) {
+            // 거니버스에도 없는 용병 — 신규 저장
             mercenary = mercenaryRepository.save(Mercenary.builder()
                     .name(row.name())
                     .category(row.category())
                     .nation(row.nation() != null ? row.nation() : Nation.NONE)
                     .nature(row.nature() != null ? row.nature() : Nature.NONE)
                     .build());
-            log.debug("용병 신규 저장: {}", row.name());
+            log.debug("용병 신규 저장 (거상짱): {}", row.name());
         } else {
+            // 거니버스가 이미 적재한 용병 — 비어있는 필드만 보완
+            boolean fromGerniverse = mercenary.getKey() != null;
+            if (fromGerniverse) {
+                log.debug("거니버스 기적재 용병 — 거상짱은 보완만 수행: {}", row.name());
+            }
             mercenary.updateSpec(
                     mercenary.getKey(),
-                    row.category() != null ? row.category() : mercenary.getCategory(),
-                    row.nation() != null && row.nation() != Nation.NONE ? row.nation() : mercenary.getNation(),
-                    row.nature() != null && row.nature() != Nature.NONE ? row.nature() : mercenary.getNature(),
+                    selectValue(mercenary.getCategory(), row.category()),
+                    selectNation(mercenary.getNation(), row.nation()),
+                    selectNature(mercenary.getNature(), row.nature()),
                     mercenary.getNatureValue(),
                     mercenary.isComingSoon(),
                     mercenary.getImageUrl(),
                     LocalDateTime.now());
-            log.debug("용병 업데이트: {}", row.name());
         }
 
-        upsertStats(mercenary, row.stats());
+        fillMissingStats(mercenary, row.stats());
         upsertSkills(mercenary, row.skills());
         upsertCharacteristics(mercenary, row.characteristicNames());
     }
 
-    /** 용병 스탯 재적재 — 기존 전체 삭제 후 신규 삽입 */
-    private void upsertStats(Mercenary mercenary,
-                             List<GersangjjangMercenaryParser.ParsedStat> parsedStats) {
-        mercenaryStatRepository.deleteByMercenaryId(mercenary.getId());
+    /**
+     * 용병 스탯 누락분 보완 — 거니버스가 이미 적재한 스탯은 덮어쓰지 않는다.
+     * 거상짱에서 수집한 스탯 중 DB에 없는 타입만 추가한다.
+     */
+    private void fillMissingStats(Mercenary mercenary,
+                                  List<GersangjjangMercenaryParser.ParsedStat> parsedStats) {
         for (GersangjjangMercenaryParser.ParsedStat ps : parsedStats) {
+            if (mercenaryStatRepository.findByMercenaryIdAndStatKey(
+                    mercenary.getId(), ps.statType()).isPresent()) {
+                continue; // 거니버스가 이미 적재한 스탯 — 유지
+            }
             mercenaryStatRepository.save(MercenaryStat.builder()
                     .mercenary(mercenary)
                     .statKey(ps.statType())
                     .statValue(ps.value())
                     .build());
+            log.debug("스탯 보완 (거상짱): {} → {}", mercenary.getName(), ps.statType());
         }
+    }
+
+    /** 거니버스 값이 있으면 유지, 없으면 거상짱 값 사용 */
+    private <T> T selectValue(T existing, T fromGeosang) {
+        return existing != null ? existing : fromGeosang;
+    }
+
+    private Nation selectNation(Nation existing, Nation fromGeosang) {
+        if (existing != null && existing != Nation.NONE) return existing;
+        return fromGeosang != null ? fromGeosang : Nation.NONE;
+    }
+
+    private Nature selectNature(Nature existing, Nature fromGeosang) {
+        if (existing != null && existing != Nature.NONE) return existing;
+        return fromGeosang != null ? fromGeosang : Nature.NONE;
     }
 
     /** 용병 스킬 UPSERT — 이미 존재하는 스킬은 건너뜀 */

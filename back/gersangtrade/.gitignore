@@ -38,3 +38,6 @@ out/
 
 ### 로컬 개발 전용 설정 (DB 비밀번호 등 민감 정보 포함) ###
 src/main/resources/application-local.yml
+
+### 로그 파일 ###
+logs/

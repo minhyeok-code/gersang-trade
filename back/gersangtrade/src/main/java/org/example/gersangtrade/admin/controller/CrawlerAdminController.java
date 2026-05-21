@@ -17,10 +17,13 @@ import org.springframework.web.bind.annotation.RestController;
  * 크롤링 Job 수동 트리거 관리자 API.
  *
  * <ul>
- *   <li>POST /admin/crawler/master      — 아이템 + 용병 전체 수집</li>
- *   <li>POST /admin/crawler/items       — 아이템만 수집</li>
- *   <li>POST /admin/crawler/mercenaries — 용병만 수집</li>
- *   <li>POST /admin/crawler/price       — 서버별 가격 수집</li>
+ *   <li>POST /admin/crawler/master      — 아이템 + 재료 + 세트 + 용병 + 주술 전체 수집</li>
+ *   <li>POST /admin/crawler/items       — 장비/보석만 수집</li>
+ *   <li>POST /admin/crawler/materials   — 잡화/소모품/재료만 수집</li>
+ *   <li>POST /admin/crawler/mercenaries — 용병만 수집 (거상짱)</li>
+ *   <li>POST /admin/crawler/sets        — 장비 세트만 수집</li>
+ *   <li>POST /admin/crawler/rituals     — 주술만 수집 (아이템/세트 크롤러 완료 후)</li>
+ *   <li>POST /admin/crawler/monsters    — 몬스터만 수집 (거상짱)</li>
  * </ul>
  */
 @Slf4j
@@ -31,47 +34,77 @@ public class CrawlerAdminController {
     private final JobLauncher jobLauncher;
     private final Job masterDataJob;
     private final Job itemDataJob;
+    private final Job materialDataJob;
     private final Job mercenaryDataJob;
-    private final Job priceCrawlJob;
+    private final Job setDataJob;
+    private final Job ritualDataJob;
+    private final Job monsterDataJob;
 
     public CrawlerAdminController(JobLauncher jobLauncher,
                                   @Qualifier("masterDataJob") Job masterDataJob,
                                   @Qualifier("itemDataJob") Job itemDataJob,
+                                  @Qualifier("materialDataJob") Job materialDataJob,
                                   @Qualifier("mercenaryDataJob") Job mercenaryDataJob,
-                                  @Qualifier("priceCrawlJob") Job priceCrawlJob) {
+                                  @Qualifier("setDataJob") Job setDataJob,
+                                  @Qualifier("ritualDataJob") Job ritualDataJob,
+                                  @Qualifier("monsterDataJob") Job monsterDataJob) {
         this.jobLauncher = jobLauncher;
         this.masterDataJob = masterDataJob;
         this.itemDataJob = itemDataJob;
+        this.materialDataJob = materialDataJob;
         this.mercenaryDataJob = mercenaryDataJob;
-        this.priceCrawlJob = priceCrawlJob;
+        this.setDataJob = setDataJob;
+        this.ritualDataJob = ritualDataJob;
+        this.monsterDataJob = monsterDataJob;
     }
 
-    /** 아이템 + 용병 전체 수집 */
+    /** 아이템 + 재료 + 세트 + 용병 + 주술 전체 수집 */
     @PostMapping("/master")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<String> triggerMasterDataJob() {
         return runJob(masterDataJob, "마스터 데이터(아이템+용병) 수집");
     }
 
-    /** 아이템만 수집 */
+    /** 장비/보석만 수집 */
     @PostMapping("/items")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<String> triggerItemDataJob() {
-        return runJob(itemDataJob, "아이템 수집");
+        return runJob(itemDataJob, "장비/보석 수집");
     }
 
-    /** 용병만 수집 */
+    /** 잡화/소모품/재료만 수집 */
+    @PostMapping("/materials")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<String> triggerMaterialDataJob() {
+        return runJob(materialDataJob, "잡화/소모품/재료 수집");
+    }
+
+    /** 용병만 수집 (거상짱) */
     @PostMapping("/mercenaries")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<String> triggerMercenaryDataJob() {
         return runJob(mercenaryDataJob, "용병 수집");
     }
 
-    /** 서버별 가격 수집 */
-    @PostMapping("/price")
+    /** 장비 세트만 수집 */
+    @PostMapping("/sets")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<String> triggerPriceCrawlJob() {
-        return runJob(priceCrawlJob, "가격 데이터 수집");
+    public ResponseEntity<String> triggerSetDataJob() {
+        return runJob(setDataJob, "장비 세트 수집");
+    }
+
+    /** 주술 수집 — 아이템/세트 크롤러 완료 후 실행 권장 */
+    @PostMapping("/rituals")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<String> triggerRitualDataJob() {
+        return runJob(ritualDataJob, "주술 수집");
+    }
+
+    /** 몬스터 수집 (거상짱) */
+    @PostMapping("/monsters")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<String> triggerMonsterDataJob() {
+        return runJob(monsterDataJob, "몬스터 수집");
     }
 
     private ResponseEntity<String> runJob(Job job, String jobName) {

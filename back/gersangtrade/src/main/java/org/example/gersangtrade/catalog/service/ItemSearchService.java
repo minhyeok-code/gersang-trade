@@ -1,16 +1,25 @@
 package org.example.gersangtrade.catalog.service;
 
 import lombok.RequiredArgsConstructor;
+import org.example.gersangtrade.catalog.dto.EquipmentSlotItemResponse;
 import org.example.gersangtrade.catalog.dto.ItemSearchResult;
 import org.example.gersangtrade.catalog.dto.RitualResponse;
+import org.example.gersangtrade.catalog.repository.EquipmentItemRepository;
 import org.example.gersangtrade.catalog.repository.ItemJooqRepository;
+import org.example.gersangtrade.catalog.repository.ItemStatRepository;
 import org.example.gersangtrade.catalog.repository.RitualApplicabilityRepository;
+import org.example.gersangtrade.domain.catalog.EquipmentItem;
+import org.example.gersangtrade.domain.catalog.ItemStat;
 import org.example.gersangtrade.domain.catalog.enums.EquipmentKind;
+import org.example.gersangtrade.domain.catalog.enums.EquipmentSlot;
 import org.example.gersangtrade.domain.catalog.enums.ItemType;
+import org.example.gersangtrade.domain.deck.enums.EquipSlot;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 아이템 검색 및 주술 목록 조회 서비스.
@@ -29,6 +38,8 @@ public class ItemSearchService {
 
     private final ItemJooqRepository itemJooqRepository;
     private final RitualApplicabilityRepository ritualApplicabilityRepository;
+    private final EquipmentItemRepository equipmentItemRepository;
+    private final ItemStatRepository itemStatRepository;
 
     /**
      * 아이템 자동완성 검색.
@@ -57,6 +68,34 @@ public class ItemSearchService {
                 .findByEquipmentItemIdWithRitual(equipmentItemId)
                 .stream()
                 .map(ra -> RitualResponse.from(ra.getRitual()))
+                .toList();
+    }
+
+    /**
+     * 덱 슬롯에 착용 가능한 장비 목록 조회.
+     * 슬롯 타입에 따라 RING_1/RING_2는 EquipmentSlot.RING으로, 나머지는 EquipSlot으로 조회한다.
+     *
+     * @param slot 덱 장비 슬롯 (EquipSlot enum)
+     */
+    public List<EquipmentSlotItemResponse> getEquipmentBySlot(EquipSlot slot) {
+        List<EquipmentItem> items;
+        if (slot == EquipSlot.RING_1 || slot == EquipSlot.RING_2) {
+            items = equipmentItemRepository.findBySlotWithItem(EquipmentSlot.RING);
+        } else {
+            items = equipmentItemRepository.findByEquipSlot(slot);
+        }
+
+        if (items.isEmpty()) {
+            return List.of();
+        }
+
+        List<Long> itemIds = items.stream().map(EquipmentItem::getItemId).toList();
+        Map<Long, List<ItemStat>> statsByItemId = itemStatRepository.findByItemIdIn(itemIds).stream()
+                .collect(Collectors.groupingBy(ist -> ist.getItem().getId()));
+
+        return items.stream()
+                .map(item -> EquipmentSlotItemResponse.of(item,
+                        statsByItemId.getOrDefault(item.getItemId(), List.of())))
                 .toList();
     }
 }

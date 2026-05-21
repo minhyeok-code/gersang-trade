@@ -5,6 +5,7 @@ import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.example.gersangtrade.domain.catalog.EquipmentSet;
 import org.example.gersangtrade.domain.listing.enums.BundleType;
 
 /**
@@ -35,6 +36,14 @@ public class ListingBundle {
     private BundleType bundleType;
 
     /**
+     * 세트 매물일 때 해당 장비 세트 참조.
+     * bundleType=EQUIPMENT_SET일 때만 non-null. 나머지는 null.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "equipment_set_id")
+    private EquipmentSet equipmentSet;
+
+    /**
      * 사용자 임의 제목 오버라이드.
      * null: 시스템이 번들 구성을 기반으로 자동 생성한 제목을 사용.
      * non-null: 판매자가 직접 입력한 제목으로 표시.
@@ -43,9 +52,11 @@ public class ListingBundle {
     private String titleOverride;
 
     @Builder
-    public ListingBundle(TradeListing listing, BundleType bundleType, String titleOverride) {
+    public ListingBundle(TradeListing listing, BundleType bundleType,
+                         EquipmentSet equipmentSet, String titleOverride) {
         this.listing = listing;
         this.bundleType = bundleType;
+        this.equipmentSet = equipmentSet;
         this.titleOverride = titleOverride;
     }
 

@@ -27,9 +27,12 @@ spring:
         # MySQL 8 방언 명시 (자동 감지 실패 방지)
         dialect: org.hibernate.dialect.MySQLDialect
 
-  # ── Flyway (초기 개발 단계 비활성화 → 운영 전환 시 true로 변경) ─────────────
+  # ── Flyway ────────────────────────────────────────────────────────────────
+  # 로컬 개발: false (ddl-auto=create가 스키마 담당)
+  # 운영 전환 시: enabled=true, ddl-auto=validate, batch.jdbc.initialize-schema=never
   flyway:
-    enabled: false
+    enabled: ${FLYWAY_ENABLED:false}
+    locations: classpath:db/migration
 
   # ── Spring Batch ──────────────────────────────────────────────────────────
   batch:
@@ -41,17 +44,19 @@ spring:
       initialize-schema: ${BATCH_SCHEMA_INIT:always}
 
   # ── OAuth2 ────────────────────────────────────────────────────────────────
-  # MVP 범위: Google만 지원. Kakao는 추가기능(확장) 단계에서 별도 프로파일로 추가 예정.
-  security:
-    oauth2:
-      client:
-        registration:
-          google:
-            client-id: ${GOOGLE_CLIENT_ID:}
-            client-secret: ${GOOGLE_CLIENT_SECRET:}
-            scope:
-              - email
-              - profile
+  # MVP 범위: Google + Naver.
+  # spring.security.oauth2.client.registration에 직접 정의하지 않고
+  # OAuth2ClientRegistrationConfig 빈에서 env var 유무를 확인해 동적으로 등록한다.
+  # → env var 미설정 시 Spring Boot 시작 실패 방지.
+
+# ── OAuth2 클라이언트 자격증명 (OAuth2ClientRegistrationConfig에서 주입) ─────
+oauth2:
+  google:
+    client-id: ${GOOGLE_CLIENT_ID:}
+    client-secret: ${GOOGLE_CLIENT_SECRET:}
+  naver:
+    client-id: ${NAVER_CLIENT_ID:}
+    client-secret: ${NAVER_CLIENT_SECRET:}
 
 # ── AWS S3 (크롤러 이미지 업로드) ────────────────────────────────────────
 aws:
@@ -86,3 +91,10 @@ logging:
     org.hibernate.SQL: INFO
     org.springframework.security: INFO
     org.springframework.batch: INFO
+  file:
+    # 로그 파일 경로 — 크롤러 실행 후 이 파일에서 DEBUG 로그 확인 가능
+    name: ${LOG_FILE:logs/gersangtrade.log}
+  logback:
+    rollingpolicy:
+      max-file-size: 10MB
+      max-history: 7

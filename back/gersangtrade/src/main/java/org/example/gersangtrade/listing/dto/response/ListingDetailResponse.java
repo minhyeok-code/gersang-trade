@@ -8,6 +8,8 @@ import org.example.gersangtrade.domain.listing.TradeListing;
 import org.example.gersangtrade.domain.listing.enums.BundleType;
 import org.example.gersangtrade.domain.listing.enums.ListingStatus;
 import org.example.gersangtrade.domain.listing.enums.RitualOutcome;
+import org.example.gersangtrade.domain.user.User;
+import org.example.gersangtrade.domain.user.enums.GradeLevel;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -18,7 +20,7 @@ import java.util.List;
  */
 public record ListingDetailResponse(
         Long id,
-        String sellerName,
+        SellerProfile seller,
         String server,
         ListingStatus status,
         Long price,
@@ -27,6 +29,27 @@ public record ListingDetailResponse(
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {
+
+    /**
+     * 상세 모달 프로필 패널용 판매자 정보.
+     */
+    public record SellerProfile(
+            Long id,
+            String nickname,
+            String gameNickname,
+            String gameAccessTime,
+            GradeLevel grade
+    ) {
+        public static SellerProfile from(User user) {
+            return new SellerProfile(
+                    user.getId(),
+                    user.getNickname(),
+                    user.getGameNickname(),
+                    user.getGameAccessTime(),
+                    user.getGrade()
+            );
+        }
+    }
     /**
      * 번들 상세 정보.
      *
@@ -132,7 +155,7 @@ public record ListingDetailResponse(
                 .toList();
         return new ListingDetailResponse(
                 listing.getId(),
-                listing.getSeller().getNickname(),
+                SellerProfile.from(listing.getSeller()),
                 listing.getServer(),
                 listing.getStatus(),
                 listing.getPrice(),

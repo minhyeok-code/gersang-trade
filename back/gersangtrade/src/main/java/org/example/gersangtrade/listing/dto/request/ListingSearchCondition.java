@@ -10,6 +10,7 @@ import org.example.gersangtrade.domain.listing.enums.ListingStatus;
  * @param server     서버 필터 (null이면 전체)
  * @param status     등록글 상태 필터 (null이면 ACTIVE만 기본 조회는 서비스에서 처리)
  * @param bundleType 번들 유형 필터 (null이면 전체)
+ * @param itemId     아이템 ID 필터 (null이면 전체)
  * @param keyword    아이템명 키워드 검색 (null이면 전체)
  * @param page       페이지 번호 (0부터 시작, 기본 0)
  * @param size       페이지당 결과 수 (기본 20, 최대 50)
@@ -18,6 +19,7 @@ public record ListingSearchCondition(
         String server,
         ListingStatus status,
         BundleType bundleType,
+        Long itemId,
         String keyword,
         Integer page,
         Integer size

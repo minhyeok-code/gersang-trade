@@ -146,4 +146,17 @@ public class NotificationService {
     public void markAllRead(Long userId) {
         notificationRepository.markAllReadByUserId(userId);
     }
+
+    /**
+     * 특정 알림 읽음 처리.
+     * 본인 소유가 아니거나 존재하지 않으면 404 반환.
+     */
+    @Transactional
+    public void markRead(Long userId, Long notificationId) {
+        int updated = notificationRepository.markReadByIdAndUserId(notificationId, userId);
+        if (updated == 0) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.NOT_FOUND, "알림을 찾을 수 없습니다.");
+        }
+    }
 }

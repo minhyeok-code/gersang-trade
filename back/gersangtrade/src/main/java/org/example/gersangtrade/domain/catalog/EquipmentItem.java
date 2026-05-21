@@ -7,6 +7,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.example.gersangtrade.domain.catalog.enums.EquipmentKind;
 import org.example.gersangtrade.domain.catalog.enums.EquipmentSlot;
+import org.example.gersangtrade.domain.deck.enums.EquipSlot;
 
 /**
  * 장비 아이템 상세 정보 엔티티.
@@ -56,6 +57,15 @@ public class EquipmentItem {
     private boolean ritualApplicable = false;
 
     /**
+     * 덱 장비 슬롯 매핑.
+     * APPEARANCE 아이템: APP_* 값 (어느 외변 슬롯에 착용되는지). 수동 관리.
+     * NORMAL 아이템: 대응하는 일반 슬롯 값. RING 아이템은 null (RING_1/RING_2 둘 다 가능).
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "equip_slot", length = 30)
+    private EquipSlot equipSlot;
+
+    /**
      * 홈이 있는(슬롯 옵션) 버전 존재 여부.
      * true이면 보석을 장착할 수 있는 홈 버전이 별도로 존재함을 의미한다.
      * 크롤러 Batch Job이 geota 아이템 정보 파싱 결과를 바탕으로 설정한다.
@@ -66,12 +76,31 @@ public class EquipmentItem {
     @Builder
     public EquipmentItem(Item item, EquipmentKind equipmentKind,
                          EquipmentSlot slot, EquipmentSet equipmentSet,
-                         boolean ritualApplicable, boolean hasSlotOption) {
+                         boolean ritualApplicable, boolean hasSlotOption,
+                         EquipSlot equipSlot) {
         this.item = item;
         this.equipmentKind = equipmentKind;
         this.slot = slot;
         this.equipmentSet = equipmentSet;
         this.ritualApplicable = ritualApplicable;
         this.hasSlotOption = hasSlotOption;
+        this.equipSlot = equipSlot;
+    }
+
+    /** 세트 크롤러 upsert 시 세트 소속 FK 갱신 */
+    public void updateEquipmentSet(EquipmentSet equipmentSet) {
+        this.equipmentSet = equipmentSet;
+    }
+
+    /** 관리자 수동 수정 — 슬롯, 장비 종류, 주술 가능 여부, 홈 옵션 여부, 세트 소속, 덱 슬롯 */
+    public void updateInfo(EquipmentSlot slot, EquipmentKind equipmentKind,
+                           boolean ritualApplicable, boolean hasSlotOption,
+                           EquipmentSet equipmentSet, EquipSlot equipSlot) {
+        if (slot != null) this.slot = slot;
+        if (equipmentKind != null) this.equipmentKind = equipmentKind;
+        this.ritualApplicable = ritualApplicable;
+        this.hasSlotOption = hasSlotOption;
+        this.equipmentSet = equipmentSet;
+        this.equipSlot = equipSlot;
     }
 }

@@ -77,6 +77,12 @@ public class TradeListing extends BaseEntity {
         this.hidden = false;
     }
 
+    /** 가격·메모 수정 — ACTIVE 상태에서만 호출해야 한다 */
+    public void updatePriceAndNote(Long price, String note) {
+        this.price = price;
+        this.note = note;
+    }
+
     /** 거래 신청 수락 시 IN_TRADE 상태로 전환 */
     public void startTrade() {
         this.status = ListingStatus.IN_TRADE;

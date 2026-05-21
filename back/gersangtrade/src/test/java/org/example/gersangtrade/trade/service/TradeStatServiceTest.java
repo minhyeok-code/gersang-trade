@@ -128,7 +128,7 @@ class TradeStatServiceTest {
         when(tradeStatDailyRepository.findByStatKeyAndDateRange(STAT_KEY, from, to))
                 .thenReturn(List.of(stat));
 
-        List<DailyPriceHistoryResponse> result = tradeStatService.getDailyHistory(1L, from, to);
+        List<DailyPriceHistoryResponse> result = tradeStatService.getDailyHistory(1L, from, to, 10);
 
         assertThat(result).hasSize(1);
         DailyPriceHistoryResponse response = result.get(0);
@@ -140,21 +140,21 @@ class TradeStatServiceTest {
     }
 
     @Test
-    @DisplayName("getDailyHistory_기간미지정_30일_기본범위사용")
-    void getDailyHistory_기간미지정_30일_기본범위사용() {
+    @DisplayName("getDailyHistory_기간미지정_days=10_기본범위사용")
+    void getDailyHistory_기간미지정_days_기본범위사용() {
         when(tradeStatDailyRepository.findByStatKeyAndDateRange(any(), any(), any()))
                 .thenReturn(List.of());
 
-        List<DailyPriceHistoryResponse> result = tradeStatService.getDailyHistory(1L, null, null);
+        List<DailyPriceHistoryResponse> result = tradeStatService.getDailyHistory(1L, null, null, 10);
 
         assertThat(result).isEmpty();
-        // 날짜 범위가 (오늘 - 30일 ~ 오늘)으로 호출됐는지 검증
+        // 날짜 범위가 (오늘 - 10일 ~ 오늘)으로 호출됐는지 검증
         ArgumentCaptor<LocalDate> fromCaptor = ArgumentCaptor.forClass(LocalDate.class);
         ArgumentCaptor<LocalDate> toCaptor = ArgumentCaptor.forClass(LocalDate.class);
         verify(tradeStatDailyRepository).findByStatKeyAndDateRange(
                 eq(STAT_KEY), fromCaptor.capture(), toCaptor.capture());
         assertThat(toCaptor.getValue()).isEqualTo(LocalDate.now());
-        assertThat(fromCaptor.getValue()).isEqualTo(LocalDate.now().minusDays(30));
+        assertThat(fromCaptor.getValue()).isEqualTo(LocalDate.now().minusDays(10));
     }
 
     @Test
@@ -164,7 +164,7 @@ class TradeStatServiceTest {
                 .thenReturn(List.of());
 
         List<DailyPriceHistoryResponse> result =
-                tradeStatService.getDailyHistory(999L, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31));
+                tradeStatService.getDailyHistory(999L, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31), 10);
 
         assertThat(result).isEmpty();
     }
@@ -186,7 +186,7 @@ class TradeStatServiceTest {
                 .thenReturn(List.of(stat));
 
         List<DailyPriceHistoryResponse> result =
-                tradeStatService.getDailyHistory(2L, TODAY, TODAY);
+                tradeStatService.getDailyHistory(2L, TODAY, TODAY, 10);
 
         assertThat(result.get(0).avgPrice()).isEqualTo(1_000_000L);  // 1억 / 100
     }

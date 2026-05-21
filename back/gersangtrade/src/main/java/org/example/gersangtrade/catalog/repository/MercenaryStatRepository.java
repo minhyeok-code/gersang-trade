@@ -3,6 +3,8 @@ package org.example.gersangtrade.catalog.repository;
 import org.example.gersangtrade.domain.catalog.MercenaryStat;
 import org.example.gersangtrade.domain.catalog.enums.StatType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
@@ -35,4 +37,8 @@ public interface MercenaryStatRepository extends JpaRepository<MercenaryStat, Lo
      * 크롤러 재파싱 시 스탯 목록 초기화 후 재적재에 사용된다.
      */
     void deleteByMercenaryId(Long mercenaryId);
+
+    /** 용병 ID 목록으로 스탯 일괄 조회 — DPS 계산기 배치 로딩용 */
+    @Query("SELECT ms FROM MercenaryStat ms WHERE ms.mercenary.id IN :mercenaryIds")
+    List<MercenaryStat> findByMercenaryIdIn(@Param("mercenaryIds") List<Long> mercenaryIds);
 }

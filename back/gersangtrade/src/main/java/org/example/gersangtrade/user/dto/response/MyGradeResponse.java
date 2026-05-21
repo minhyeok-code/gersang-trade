@@ -1,0 +1,31 @@
+package org.example.gersangtrade.user.dto.response;
+
+import org.example.gersangtrade.domain.user.User;
+import org.example.gersangtrade.domain.user.enums.GradeLevel;
+
+/**
+ * 내 등급·경험치 응답 DTO — 마이페이지 등급 패널용.
+ *
+ * @param grade      현재 등급
+ * @param gradeStep  현재 호봉 (거상은 null)
+ * @param totalExp   누적 EXP
+ * @param mannerScore 매너점수 (0~100)
+ * @param tradeCount 거래 완료 횟수
+ */
+public record MyGradeResponse(
+        GradeLevel grade,
+        Integer gradeStep,
+        long totalExp,
+        int mannerScore,
+        int tradeCount
+) {
+    public static MyGradeResponse from(User user) {
+        return new MyGradeResponse(
+                user.getGrade(),
+                user.getGradeStep(),
+                user.getTotalExp(),
+                user.getMannerScore(),
+                user.getTradeCount()
+        );
+    }
+}

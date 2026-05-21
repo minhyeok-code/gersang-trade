@@ -45,6 +45,15 @@ public class Item extends BaseEntity {
     @Column(name = "image_url", length = 500)
     private String imageUrl;
 
+    /**
+     * 거니버스 image_path 마지막 세그먼트 기반 아이템 식별 키.
+     * 예: "tkdlsrja-tn"(뇌속성 사인검), "whdflrnjsdmldlsgud"(종리권의 인형).
+     * ItemSkill / SkillCoefficient 적재 시 조회 기준으로 사용된다.
+     * 수동 입력 전에는 null.
+     */
+    @Column(name = "item_key", length = 100, unique = true)
+    private String itemKey;
+
     @Builder
     public Item(String name, ItemType type, String tradeCategory) {
         this.name = name;
@@ -67,5 +76,10 @@ public class Item extends BaseEntity {
     /** gerniverse 파싱 결과에 따라 아이템 종류 수정 (MATERIAL → EQUIPMENT 전환 시 사용) */
     public void updateType(ItemType type) {
         this.type = type;
+    }
+
+    /** 거니버스 image_path 마지막 세그먼트로 아이템 키 저장 */
+    public void updateItemKey(String itemKey) {
+        this.itemKey = itemKey;
     }
 }

@@ -6,7 +6,9 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.example.gersangtrade.domain.catalog.enums.Element;
+import org.example.gersangtrade.domain.catalog.enums.BuffTarget;
 import org.example.gersangtrade.domain.catalog.enums.StatType;
+import org.example.gersangtrade.domain.catalog.enums.StatUnit;
 
 /**
  * 아이템 능력치 정의 엔티티.
@@ -18,8 +20,8 @@ import org.example.gersangtrade.domain.catalog.enums.StatType;
 @Table(
         name = "item_stats",
         uniqueConstraints = @UniqueConstraint(
-                name = "uq_item_stats_item_stat_element",
-                columnNames = {"item_id", "stat_type", "element"}
+                name = "uq_item_stats_item_stat_element_scope",
+                columnNames = {"item_id", "stat_type", "element", "scope"}
         )
 )
 @Getter
@@ -47,7 +49,7 @@ public class ItemStat {
 
     /**
      * 속성 구분.
-     * FIRE/WATER/WIND/EARTH/LIGHTNING: 속성별 능력치
+     * FIRE/WATER/WIND/EARTH/THUNDER: 속성별 능력치. ADAPTIVE: 용병 속성 추종
      * NONE: 속성 구분이 없는 경우 (null 대체값 — UNIQUE 제약 동작 보장용)
      */
     @Enumerated(EnumType.STRING)
@@ -58,12 +60,28 @@ public class ItemStat {
     @Column(name = "value", nullable = false)
     private Integer value;
 
+    /** 능력치 단위 — FLAT / PERCENT / LEVEL */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "stat_unit", nullable = false, length = 10)
+    private StatUnit statUnit;
+
+    /**
+     * 스탯 적용 범위.
+     * SELF : 장착 용병 본인에게만 적용 (기본값, 대부분의 아이템).
+     * PARTY: 덱 전체 용병에게 적용되는 파티 버프 아이템.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "scope", nullable = false, length = 10)
+    private BuffTarget scope;
+
     @Builder
-    public ItemStat(Item item, StatType statType, Element element, Integer value) {
+    public ItemStat(Item item, StatType statType, Element element,
+                    Integer value, StatUnit statUnit, BuffTarget scope) {
         this.item = item;
         this.statType = statType;
-        // element 미지정 시 NONE으로 기본 설정
         this.element = (element != null) ? element : Element.NONE;
         this.value = value;
+        this.statUnit = statUnit;
+        this.scope = (scope != null) ? scope : BuffTarget.SELF;
     }
 }

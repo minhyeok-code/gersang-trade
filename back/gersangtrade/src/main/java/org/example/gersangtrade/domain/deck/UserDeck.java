@@ -33,6 +33,10 @@ public class UserDeck {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
+    /** 덱 이름 */
+    @Column(name = "name", nullable = false, length = 50)
+    private String name;
+
     /** 현재 활성 덱 여부. 유저당 최대 1개만 true */
     @Column(name = "is_active", nullable = false)
     private boolean active = false;
@@ -61,9 +65,15 @@ public class UserDeck {
     }
 
     @Builder
-    public UserDeck(User user, boolean active) {
+    public UserDeck(User user, String name, boolean active) {
         this.user = user;
+        this.name = name;
         this.active = active;
+    }
+
+    /** 덱 이름 수정 */
+    public void rename(String name) {
+        this.name = name;
     }
 
     /** 계산된 합산 스탯 캐싱 */

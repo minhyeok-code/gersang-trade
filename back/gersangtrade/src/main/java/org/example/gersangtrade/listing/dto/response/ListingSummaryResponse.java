@@ -23,6 +23,8 @@ import java.util.List;
 public record ListingSummaryResponse(
         Long id,
         String sellerName,
+        String sellerGameNickname,
+        String sellerGameAccessTime,
         String server,
         ListingStatus status,
         Long price,
@@ -52,6 +54,8 @@ public record ListingSummaryResponse(
         return new ListingSummaryResponse(
                 listing.getId(),
                 listing.getSeller().getNickname(),
+                listing.getSeller().getGameNickname(),
+                listing.getSeller().getGameAccessTime(),
                 listing.getServer(),
                 listing.getStatus(),
                 listing.getPrice(),

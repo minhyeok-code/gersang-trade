@@ -8,6 +8,7 @@ import org.example.gersangtrade.auth.handler.OAuth2LoginSuccessHandler;
 import org.example.gersangtrade.auth.jwt.JwtTokenizer;
 import org.example.gersangtrade.auth.service.AuthService;
 import org.example.gersangtrade.auth.service.CustomOAuth2UserService;
+import org.example.gersangtrade.config.OAuth2ClientRegistrationConfig;
 import org.example.gersangtrade.config.SecurityConfig;
 import org.example.gersangtrade.auth.service.AuthService.RefreshResult;
 import org.junit.jupiter.api.DisplayName;
@@ -45,10 +46,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * OAuth2ClientProperties 검증이 실패하므로 @TestPropertySource로 테스트용 더미 값을 주입한다.
  */
 @WebMvcTest(controllers = {AuthController.class, CrawlerAdminController.class})
-@Import(SecurityConfig.class)
+@Import({SecurityConfig.class, OAuth2ClientRegistrationConfig.class})
 @TestPropertySource(properties = {
-        "spring.security.oauth2.client.registration.google.client-id=test-client-id",
-        "spring.security.oauth2.client.registration.google.client-secret=test-client-secret"
+        // OAuth2ClientRegistrationConfig가 읽는 프로퍼티 경로로 변경
+        "oauth2.google.client-id=test-google-client-id",
+        "oauth2.google.client-secret=test-google-client-secret"
 })
 class AuthSecurityIntegrationTest {
 
@@ -75,6 +77,18 @@ class AuthSecurityIntegrationTest {
 
     @MockitoBean(name = "masterDataJob")
     private Job masterDataJob;
+
+    @MockitoBean(name = "itemDataJob")
+    private Job itemDataJob;
+
+    @MockitoBean(name = "materialDataJob")
+    private Job materialDataJob;
+
+    @MockitoBean(name = "mercenaryDataJob")
+    private Job mercenaryDataJob;
+
+    @MockitoBean(name = "setDataJob")
+    private Job setDataJob;
 
     @MockitoBean(name = "priceCrawlJob")
     private Job priceCrawlJob;

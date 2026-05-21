@@ -37,14 +37,21 @@ public class Ritual {
     @Column(name = "success_mark", nullable = false, length = 20)
     private String successMark;
 
-    /** 주술 대성공 시 장비에 표시되는 마크 — 예: "**" */
-    @Column(name = "great_success_mark", nullable = false, length = 20)
+    /** 주술 대성공 시 장비에 표시되는 마크 — 예: "&lt;북두칠성&gt;". 대성공 없는 주술은 null */
+    @Column(name = "great_success_mark", nullable = true, length = 20)
     private String greatSuccessMark;
 
     @Builder
     public Ritual(String displayName, RitualType ritualType,
                   String successMark, String greatSuccessMark) {
         this.displayName = displayName;
+        this.ritualType = ritualType;
+        this.successMark = successMark;
+        this.greatSuccessMark = greatSuccessMark;
+    }
+
+    /** 성공/대성공 마크 및 주술 타입 업데이트 — 크롤러 재실행 시 보정용 */
+    public void updateMarks(RitualType ritualType, String successMark, String greatSuccessMark) {
         this.ritualType = ritualType;
         this.successMark = successMark;
         this.greatSuccessMark = greatSuccessMark;

@@ -78,6 +78,11 @@ public class Gem extends BaseEntity {
         this.imageUrl = imageUrl;
     }
 
+    /** 보석 이름 보정 — 크롤러 재실행 시 오염된 이름("+5 (힘100)" 등 잔여 텍스트 포함) 정제용 */
+    public void updateName(String name) {
+        this.name = name;
+    }
+
     /**
      * 강화됨 등급과 ritual 연결 정합성 검증.
      * DB 저장·수정 직전 자동 실행되어 잘못된 상태가 영속화되는 것을 방지한다.

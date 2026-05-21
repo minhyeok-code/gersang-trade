@@ -5,6 +5,7 @@ import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.example.gersangtrade.domain.catalog.Server;
 import org.example.gersangtrade.domain.common.BaseEntity;
 import org.example.gersangtrade.domain.user.enums.GradeLevel;
 import org.example.gersangtrade.domain.user.enums.Role;
@@ -111,6 +112,30 @@ public class User extends BaseEntity {
     private Integer tradeCount;
 
     /**
+     * 사용자가 선택한 기본 서버.
+     * null: 미설정 (전체 서버 조회). 비로그인 유저는 세션·쿼리 파라미터로 처리.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "server_id")
+    private Server server;
+
+    /**
+     * 거상 게임 닉네임 — 유저가 직접 입력하는 인게임 캐릭터명.
+     * null: 미입력.
+     */
+    @Column(name = "game_nickname", length = 50)
+    private String gameNickname;
+
+    /**
+     * 게임 접속 가능 시간대 — 유저가 직접 입력하는 자유 텍스트.
+     * 거래 상대방이 언제 연락 가능한지 판단하는 데 사용된다.
+     * 예: "평일 저녁 7~10시", "주말 오후"
+     * null: 미입력.
+     */
+    @Column(name = "game_access_time", length = 100)
+    private String gameAccessTime;
+
+    /**
      * 소프트 삭제 시각.
      * null: 활성 계정, non-null: 탈퇴 처리된 계정 (1년 후 배치 하드딜리트 대상).
      */
@@ -138,6 +163,21 @@ public class User extends BaseEntity {
     /** 닉네임 변경 */
     public void updateNickname(String nickname) {
         this.nickname = nickname;
+    }
+
+    /** 게임 닉네임 변경 — null 전달 시 미입력 상태로 초기화 */
+    public void updateGameNickname(String gameNickname) {
+        this.gameNickname = gameNickname;
+    }
+
+    /** 게임 접속 가능 시간대 변경 — null 전달 시 미입력 상태로 초기화 */
+    public void updateGameAccessTime(String gameAccessTime) {
+        this.gameAccessTime = gameAccessTime;
+    }
+
+    /** 기본 서버 설정 — null 전달 시 선택 해제 */
+    public void updateServer(Server server) {
+        this.server = server;
     }
 
     /** 차단 처리 — blockedUntil이 null이면 영구 차단 */

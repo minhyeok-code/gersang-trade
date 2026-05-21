@@ -6,6 +6,7 @@ import org.example.gersangtrade.domain.listing.enums.BundleType;
 import org.example.gersangtrade.domain.listing.enums.ListingStatus;
 import org.example.gersangtrade.listing.dto.request.ListingCreateRequest;
 import org.example.gersangtrade.listing.dto.request.ListingSearchCondition;
+import org.example.gersangtrade.listing.dto.request.ListingUpdateRequest;
 import org.example.gersangtrade.listing.dto.response.ListingDetailResponse;
 import org.example.gersangtrade.listing.dto.response.ListingSummaryResponse;
 import org.example.gersangtrade.listing.service.ListingService;
@@ -24,6 +25,7 @@ import java.util.List;
  * POST   /api/listings              — 등록글 신규 등록 (로그인 필수)
  * GET    /api/listings              — 등록글 목록 조회 (비로그인 허용)
  * GET    /api/listings/{listingId}  — 등록글 상세 조회 (비로그인 허용)
+ * PATCH  /api/listings/{listingId}  — 등록글 가격·메모 수정 (본인, ACTIVE 상태만)
  * DELETE /api/listings/{listingId}  — 등록글 소프트 삭제 (본인 또는 관리자)
  * </pre>
  */
@@ -62,6 +64,7 @@ public class ListingController {
      * @param server     서버 필터 (선택)
      * @param status     상태 필터 (선택, 미입력 시 ACTIVE)
      * @param bundleType 번들 유형 필터 (선택)
+     * @param itemId     아이템 ID 필터 (선택, 카탈로그 검색 후 선택한 값)
      * @param keyword    아이템명 키워드 (선택)
      * @param page       페이지 번호 (0부터, 기본 0)
      * @param size       페이지당 결과 수 (기본 20, 최대 50)
@@ -71,6 +74,7 @@ public class ListingController {
             @RequestParam(required = false) String server,
             @RequestParam(required = false) ListingStatus status,
             @RequestParam(required = false) BundleType bundleType,
+            @RequestParam(required = false) Long itemId,
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) Integer page,
             @RequestParam(required = false) Integer size
@@ -79,7 +83,7 @@ public class ListingController {
         ListingStatus resolvedStatus = (status != null) ? status : ListingStatus.ACTIVE;
 
         ListingSearchCondition cond = new ListingSearchCondition(
-                server, resolvedStatus, bundleType, keyword, page, size);
+                server, resolvedStatus, bundleType, itemId, keyword, page, size);
         List<ListingSummaryResponse> result = listingService.getListings(cond);
         return ResponseEntity.ok(result);
     }
@@ -93,6 +97,25 @@ public class ListingController {
     @GetMapping("/{listingId}")
     public ResponseEntity<ListingDetailResponse> getDetail(@PathVariable Long listingId) {
         return ResponseEntity.ok(listingService.getDetail(listingId));
+    }
+
+    /**
+     * 거래 등록글 수정 (가격·메모).
+     * ACTIVE 상태인 본인 등록글만 수정 가능하다.
+     *
+     * @param userId    인증된 사용자 ID (JWT principal)
+     * @param listingId 수정 대상 등록글 ID
+     * @param request   수정 요청 DTO
+     */
+    @PatchMapping("/{listingId}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Void> update(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long listingId,
+            @Valid @RequestBody ListingUpdateRequest request
+    ) {
+        listingService.updateListing(userId, listingId, request);
+        return ResponseEntity.noContent().build();
     }
 
     /**

@@ -25,4 +25,6 @@ public interface RitualApplicabilityRepository extends JpaRepository<RitualAppli
             WHERE ra.equipmentItem.itemId = :equipmentItemId
             """)
     List<RitualApplicability> findByEquipmentItemIdWithRitual(@Param("equipmentItemId") Long equipmentItemId);
+
+    boolean existsByRitual_IdAndEquipmentItem_ItemId(Long ritualId, Long equipmentItemId);
 }

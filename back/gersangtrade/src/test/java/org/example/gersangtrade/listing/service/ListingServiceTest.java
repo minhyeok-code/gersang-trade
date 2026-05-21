@@ -467,7 +467,7 @@ class ListingServiceTest {
     @DisplayName("getListings_정상조회_요약목록반환")
     void getListings_정상조회_요약목록반환() {
         // 준비: Mock TradeListing과 ListingBundle 설정
-        ListingSearchCondition cond = new ListingSearchCondition(null, null, null, null, 0, 20);
+        ListingSearchCondition cond = new ListingSearchCondition(null, null, null, null, null, 0, 20);
 
         TradeListing listing = mock(TradeListing.class);
         when(listing.getId()).thenReturn(1L);
@@ -497,7 +497,7 @@ class ListingServiceTest {
     @DisplayName("getListings_결과없음_빈목록반환")
     void getListings_결과없음_빈목록반환() {
         // 준비: 검색 결과 없는 조건
-        ListingSearchCondition cond = new ListingSearchCondition("없는서버", null, null, null, 0, 20);
+        ListingSearchCondition cond = new ListingSearchCondition("없는서버", null, null, null, null, 0, 20);
 
         when(listingQueryRepository.search(cond)).thenReturn(Collections.emptyList());
 

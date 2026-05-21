@@ -21,7 +21,7 @@ import java.util.Map;
  * OAuth2 로그인 흐름에서 사용자 정보를 처리하는 서비스.
  *
  * 처리 순서:
- *   1. OAuth2 제공자(Google)에서 사용자 정보 조회 (super.loadUser)
+ *   1. OAuth2 제공자(Google/Naver)에서 사용자 정보 조회 (super.loadUser)
  *   2. DB에서 기존 사용자 조회
  *   3. 없으면 신규 가입 처리, 있으면 차단 여부 확인
  *   4. CustomOAuth2UserDetails 반환 → Spring Security 인증 컨텍스트에 저장됨
@@ -55,6 +55,7 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
     }
 
     /** 제공자별 사용자 정보 파싱 */
+    @SuppressWarnings("unchecked")
     private OAuthUserInfo extractUserInfo(String registrationId, Map<String, Object> attributes) {
         return switch (registrationId) {
             case "google" -> new OAuthUserInfo(
@@ -62,6 +63,16 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
                     (String) attributes.get("email"),
                     (String) attributes.get("name")
             );
+            case "naver" -> {
+                // 네이버 응답 구조: { "resultcode": "00", "response": { "id": "...", "email": "...", "name": "..." } }
+                // application.yml에서 user-name-attribute=response 설정으로 attributes에 "response" 키로 진입
+                Map<String, Object> response = (Map<String, Object>) attributes.get("response");
+                yield new OAuthUserInfo(
+                        (String) response.get("id"),
+                        (String) response.get("email"),
+                        (String) response.get("name")
+                );
+            }
             // Kakao는 MVP 범위 외 — 추후 확장 시 추가
             default -> throw new OAuth2AuthenticationException(
                     new OAuth2Error("unsupported_provider"),

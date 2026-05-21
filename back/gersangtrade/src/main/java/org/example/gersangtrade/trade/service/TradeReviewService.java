@@ -82,6 +82,16 @@ public class TradeReviewService {
                 .toList();
     }
 
+    /**
+     * 특정 유저가 받은 공개된 평가 목록을 반환한다 (published=true만).
+     * 타 유저 프로필 화면에서 사용된다.
+     */
+    public List<TradeReviewResponse> getPublishedReviews(Long targetUserId) {
+        return tradeReviewRepository.findByTargetIdAndPublishedTrue(targetUserId).stream()
+                .map(TradeReviewResponse::of)
+                .toList();
+    }
+
     // ──────────────────────────────────────────────────────────────────────
     // 배치 Job — 평가 공개
     // ──────────────────────────────────────────────────────────────────────

@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.example.gersangtrade.domain.catalog.enums.MercenaryCategory;
+import org.example.gersangtrade.domain.catalog.enums.MercenaryType;
 import org.example.gersangtrade.domain.catalog.enums.Nation;
 import org.example.gersangtrade.domain.catalog.enums.Nature;
 import org.example.gersangtrade.domain.common.BaseEntity;
@@ -68,6 +69,14 @@ public class Mercenary extends BaseEntity {
     @Column(name = "nature_value")
     private Integer natureValue;
 
+    /**
+     * 용병 종류 — 계산기 로직 분기에 사용한다.
+     * 크롤링으로 적재된 일반 용병은 null 허용 (추후 배치로 채움).
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "mercenary_type", length = 30)
+    private MercenaryType mercenaryType;
+
     /** 출시 예정 여부 — true이면 크롤링 대상에서 제외된다 */
     @Column(name = "is_coming_soon", nullable = false)
     private boolean comingSoon = false;
@@ -89,11 +98,13 @@ public class Mercenary extends BaseEntity {
 
     @Builder
     public Mercenary(String name, String key, MercenaryCategory category,
+                     MercenaryType mercenaryType,
                      Nation nation, Nature nature, Integer natureValue,
                      boolean comingSoon, String imageUrl) {
         this.name = name;
         this.key = key;
         this.category = category;
+        this.mercenaryType = mercenaryType;
         this.nation = nation;
         this.nature = nature;
         this.natureValue = natureValue;

@@ -41,12 +41,12 @@ public class ListingQueryRepository {
                 .from(tradeListing)
                 .leftJoin(tradeListing.seller).fetchJoin();
 
-        // 번들 유형 필터 또는 아이템명 키워드 검색 시 bundle JOIN 필요
-        if (cond.bundleType() != null || StringUtils.hasText(cond.keyword())) {
+        // 번들 유형·아이템ID·아이템명 키워드 검색 시 bundle JOIN 필요
+        if (cond.bundleType() != null || cond.itemId() != null || StringUtils.hasText(cond.keyword())) {
             query = query.leftJoin(listingBundle).on(listingBundle.listing.eq(tradeListing));
         }
-        // 아이템명 키워드 검색 시 line JOIN 추가 필요
-        if (StringUtils.hasText(cond.keyword())) {
+        // 아이템ID 필터 또는 아이템명 키워드 검색 시 line JOIN 추가 필요
+        if (cond.itemId() != null || StringUtils.hasText(cond.keyword())) {
             query = query.leftJoin(bundleLine).on(bundleLine.bundle.eq(listingBundle));
         }
 
@@ -56,6 +56,7 @@ public class ListingQueryRepository {
                 serverEq(cond.server()),
                 statusEq(cond.status()),
                 bundleTypeEq(cond.bundleType()),
+                itemIdEq(cond.itemId()),
                 itemNameContains(cond.keyword())
         )
         .orderBy(tradeListing.createdAt.desc())
@@ -75,10 +76,10 @@ public class ListingQueryRepository {
                 .select(tradeListing.id.countDistinct())
                 .from(tradeListing);
 
-        if (cond.bundleType() != null || StringUtils.hasText(cond.keyword())) {
+        if (cond.bundleType() != null || cond.itemId() != null || StringUtils.hasText(cond.keyword())) {
             query = query.leftJoin(listingBundle).on(listingBundle.listing.eq(tradeListing));
         }
-        if (StringUtils.hasText(cond.keyword())) {
+        if (cond.itemId() != null || StringUtils.hasText(cond.keyword())) {
             query = query.leftJoin(bundleLine).on(bundleLine.bundle.eq(listingBundle));
         }
 
@@ -88,6 +89,7 @@ public class ListingQueryRepository {
                 serverEq(cond.server()),
                 statusEq(cond.status()),
                 bundleTypeEq(cond.bundleType()),
+                itemIdEq(cond.itemId()),
                 itemNameContains(cond.keyword())
         ).fetchOne();
         return result != null ? result : 0L;
@@ -116,6 +118,11 @@ public class ListingQueryRepository {
     /** 번들 유형 필터 — null이면 조건 제외 */
     private BooleanExpression bundleTypeEq(BundleType bundleType) {
         return bundleType != null ? listingBundle.bundleType.eq(bundleType) : null;
+    }
+
+    /** 번들 라인의 아이템 ID 필터 — null이면 조건 제외 */
+    private BooleanExpression itemIdEq(Long itemId) {
+        return itemId != null ? bundleLine.item.id.eq(itemId) : null;
     }
 
     /** 번들 라인의 아이템명 contains 검색 — null이면 조건 제외 */

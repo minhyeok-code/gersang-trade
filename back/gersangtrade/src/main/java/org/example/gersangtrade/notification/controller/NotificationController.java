@@ -54,4 +54,15 @@ public class NotificationController {
     public void markAllRead(@AuthenticationPrincipal Long userId) {
         notificationService.markAllRead(userId);
     }
+
+    /**
+     * 알림 개별 읽음 처리.
+     * 본인 소유 알림이 아니면 404 반환.
+     *
+     * PATCH /api/notifications/{id}/read
+     */
+    @PatchMapping("/{id}/read")
+    public void markRead(@AuthenticationPrincipal Long userId, @PathVariable Long id) {
+        notificationService.markRead(userId, id);
+    }
 }

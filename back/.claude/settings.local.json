@@ -33,7 +33,21 @@
       "Bash(grep -o '\"statistics\".\\\\{0,200\\\\}' \"D:/Java/gersangTrade/back/gersangtrade/docs/gerniverse-mercenary-detail.md\")",
       "Bash(grep -o '\\\\\\\\\\\\\"characteristics\\\\\\\\\\\\\"' \"D:/Java/gersangTrade/back/gersangtrade/docs/gerniverse-mercenary-detail.md\")",
       "Bash(grep -o '.\\\\{100\\\\}\\\\\\\\\\\\\"characteristics\\\\\\\\\\\\\".\\\\{200\\\\}' \"D:/Java/gersangTrade/back/gersangtrade/docs/gerniverse-mercenary-detail.md\")",
-      "Bash(./gradlew build *)"
+      "Bash(./gradlew build *)",
+      "WebFetch(domain:www.gersangjjang.com)",
+      "Bash(curl -s -A \"Mozilla/5.0\" \"https://www.gersangjjang.com/item/index.asp\")",
+      "Bash(iconv -f euc-kr -t utf-8)",
+      "Bash(curl -s -A \"Mozilla/5.0\" \"https://www.gersangjjang.com/item/index.asp\" -o /tmp/itemindex.html)",
+      "Bash(grep -v \"^$\")",
+      "Bash(grep -o '\"sim-coefficients\":\\\\[.\\\\{0,500\\\\}' \"/d/Java/gersangTrade/back/gersangtrade/docs/gerniverse-mercenary-detail.md\")",
+      "Bash(grep -o 'coef_str[^}]\\\\{0,200\\\\}' \"/d/Java/gersangTrade/back/gersangtrade/docs/gerniverse-mercenary-detail.md\")",
+      "Bash(grep -o '__next_f.push[^;]\\\\{0,300\\\\}' \"/d/Java/gersangTrade/back/gersangtrade/docs/gerniverse-mercenary-detail.md\")",
+      "Bash(grep -o '\"row_id\"[^}]\\\\{0,400\\\\}' \"/d/Java/gersangTrade/back/gersangtrade/docs/gerniverse-mercenary-detail.md\")",
+      "Bash(grep -o '\"mercenary_key\"[^}]\\\\{0,500\\\\}' \"/d/Java/gersangTrade/back/gersangtrade/docs/gerniverse-mercenary-detail.md\")",
+      "Bash(node *)",
+      "Bash(git *)",
+      "Bash(./gradlew compileJava -q)",
+      "Bash(awk '{print length, $0}')"
     ]
   }
 }

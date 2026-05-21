@@ -94,7 +94,7 @@ public final class GersangjjangMercenaryParser {
             "회속성", Nature.FIRE,  // 거상짱 타이핑 오류 대응
             "수속성", Nature.WATER,
             "뇌속성", Nature.THUNDER,
-            "풍속성", Nature.AIR,
+            "풍속성", Nature.WIND,
             "땅속성", Nature.EARTH
     );
 

@@ -2,11 +2,13 @@ package org.example.gersangtrade.catalog.controller;
 
 import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
+import org.example.gersangtrade.catalog.dto.EquipmentSlotItemResponse;
 import org.example.gersangtrade.catalog.dto.ItemSearchResult;
 import org.example.gersangtrade.catalog.dto.RitualResponse;
 import org.example.gersangtrade.catalog.service.ItemSearchService;
 import org.example.gersangtrade.domain.catalog.enums.EquipmentKind;
 import org.example.gersangtrade.domain.catalog.enums.ItemType;
+import org.example.gersangtrade.domain.deck.enums.EquipSlot;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
@@ -21,6 +23,9 @@ import java.util.List;
  *
  * GET /api/items/{itemId}/rituals
  *   — 해당 장비에 적용 가능한 주술 목록 (비로그인 허용)
+ *
+ * GET /api/items/equipment?slot={EquipSlot}
+ *   — 덱 슬롯별 착용 가능 장비 목록 (비로그인 허용)
  */
 @Validated
 @RestController
@@ -61,5 +66,17 @@ public class ItemSearchController {
     public ResponseEntity<List<RitualResponse>> getRituals(@PathVariable Long itemId) {
         List<RitualResponse> rituals = itemSearchService.findAvailableRituals(itemId);
         return ResponseEntity.ok(rituals);
+    }
+
+    /**
+     * 덱 슬롯에 착용 가능한 장비 목록 조회.
+     * 덱 편집 UI에서 슬롯 클릭 시 해당 슬롯에 착용 가능한 아이템 목록을 표시할 때 사용된다.
+     *
+     * @param slot 덱 장비 슬롯 (예: HELMET, WEAPON, APP_SPIRIT, RING_1 등)
+     */
+    @GetMapping("/equipment")
+    public ResponseEntity<List<EquipmentSlotItemResponse>> getEquipmentBySlot(
+            @RequestParam EquipSlot slot) {
+        return ResponseEntity.ok(itemSearchService.getEquipmentBySlot(slot));
     }
 }

@@ -19,4 +19,12 @@ public interface ItemSkillRepository extends JpaRepository<ItemSkill, Long> {
                                        @Param("skillName") String skillName);
 
     void deleteByItemId(Long itemId);
+
+    /** item_id + 스킬명으로 단건 조회 — 스킬 계수 적재 시 find-or-create에 사용된다 */
+    @Query("""
+            SELECT isk FROM ItemSkill isk
+            WHERE isk.item.id = :itemId AND isk.skillName = :skillName
+            """)
+    java.util.Optional<ItemSkill> findByItemIdAndSkillName(@Param("itemId") Long itemId,
+                                                           @Param("skillName") String skillName);
 }

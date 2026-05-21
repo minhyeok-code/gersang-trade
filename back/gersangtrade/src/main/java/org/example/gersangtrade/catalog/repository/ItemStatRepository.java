@@ -2,6 +2,7 @@ package org.example.gersangtrade.catalog.repository;
 
 import org.example.gersangtrade.domain.catalog.ItemStat;
 import org.example.gersangtrade.domain.catalog.enums.Element;
+import org.example.gersangtrade.domain.catalog.enums.BuffTarget;
 import org.example.gersangtrade.domain.catalog.enums.StatType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -39,17 +40,21 @@ public interface ItemStatRepository extends JpaRepository<ItemStat, Long> {
     boolean existsByItemIdAndStatType(@Param("itemId") Long itemId, @Param("statType") StatType statType);
 
     /**
-     * 아이템 ID + 능력치 종류 + 속성 조합으로 존재 여부 확인.
-     * 속성별 스탯(불속성값 등) 중복 저장 방지에 사용된다.
+     * 아이템 ID + 능력치 종류 + 속성 + 범위 조합으로 존재 여부 확인.
+     * UNIQUE 제약(item_id, stat_type, element, scope) 기준 중복 저장 방지에 사용된다.
      */
     @Query("""
             SELECT COUNT(ist) > 0 FROM ItemStat ist
-            WHERE ist.item.id = :itemId AND ist.statType = :statType AND ist.element = :element
+            WHERE ist.item.id = :itemId
+              AND ist.statType = :statType
+              AND ist.element = :element
+              AND ist.scope = :scope
             """)
     boolean existsByItemIdAndStatTypeAndElement(
             @Param("itemId") Long itemId,
             @Param("statType") StatType statType,
-            @Param("element") Element element);
+            @Param("element") Element element,
+            @Param("scope") BuffTarget scope);
 
     List<ItemStat> findByItemId(Long itemId);
 

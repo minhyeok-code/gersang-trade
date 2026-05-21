@@ -16,6 +16,8 @@ import java.time.LocalDateTime;
  * @param totalExp     누적 EXP
  * @param mannerScore  매너점수 (0~100)
  * @param tradeCount   거래 완료 횟수
+ * @param serverId     기본 서버 ID (미설정 시 null)
+ * @param serverName   기본 서버명 (미설정 시 null)
  * @param createdAt    가입 일시
  */
 public record UserProfileResponse(
@@ -26,9 +28,12 @@ public record UserProfileResponse(
         Long totalExp,
         Integer mannerScore,
         Integer tradeCount,
+        Integer serverId,
+        String serverName,
         LocalDateTime createdAt
 ) {
     public static UserProfileResponse from(User user) {
+        var server = user.getServer();
         return new UserProfileResponse(
                 user.getId(),
                 user.getNickname(),
@@ -37,6 +42,8 @@ public record UserProfileResponse(
                 user.getTotalExp(),
                 user.getMannerScore(),
                 user.getTradeCount(),
+                server != null ? server.getServerId() : null,
+                server != null ? server.getName() : null,
                 user.getCreatedAt()
         );
     }

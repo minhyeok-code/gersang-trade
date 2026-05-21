@@ -35,4 +35,13 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
     @Modifying
     @Query("UPDATE Notification n SET n.read = true WHERE n.user.id = :userId AND n.read = false")
     void markAllReadByUserId(@Param("userId") Long userId);
+
+    /**
+     * 특정 알림 읽음 처리 (본인 소유 확인 포함).
+     * 다른 유저의 알림을 임의로 읽음 처리하는 것을 방지한다.
+     * 반환값이 0이면 알림이 없거나 타인 소유.
+     */
+    @Modifying
+    @Query("UPDATE Notification n SET n.read = true WHERE n.id = :id AND n.user.id = :userId")
+    int markReadByIdAndUserId(@Param("id") Long id, @Param("userId") Long userId);
 }

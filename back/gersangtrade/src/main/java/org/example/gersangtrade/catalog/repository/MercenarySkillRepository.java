@@ -16,4 +16,13 @@ public interface MercenarySkillRepository extends JpaRepository<MercenarySkill, 
                                             @Param("skillName") String skillName);
 
     void deleteByMercenaryId(Long mercenaryId);
+
+    /** 용병 ID + 스킬명으로 단건 조회 — skillKey 업데이트 시 사용 */
+    @Query("SELECT ms FROM MercenarySkill ms WHERE ms.mercenary.id = :mercenaryId AND ms.skillName = :skillName")
+    java.util.Optional<MercenarySkill> findByMercenaryIdAndSkillName(
+            @Param("mercenaryId") Long mercenaryId, @Param("skillName") String skillName);
+
+    /** skillKey가 null인 스킬 목록 조회 — 거니버스 데이터 보완 대상 선정 */
+    @Query("SELECT ms FROM MercenarySkill ms WHERE ms.skillKey IS NULL")
+    List<MercenarySkill> findBySkillKeyIsNull();
 }

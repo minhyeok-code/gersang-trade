@@ -32,6 +32,12 @@ public interface GemRepository extends JpaRepository<Gem, Long> {
             @Param("gemGrade") GemGrade gemGrade,
             @Param("ritualId") Long ritualId);
 
+    /**
+     * 등급·주술 조합으로 보석 조회 — 주술당 ENHANCED 보석은 하나.
+     * upsertGem에서 이름 오염 여부 확인 및 보정에 사용된다.
+     */
+    Optional<Gem> findByGemGradeAndRitual_Id(GemGrade gemGrade, Long ritualId);
+
     /** 이미지 URL이 아직 없는 보석 목록 조회 — 이미지 수집 Batch Job에서 대상 선정에 사용된다 */
     List<Gem> findByImageUrlIsNull();
 }

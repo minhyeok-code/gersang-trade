@@ -26,6 +26,7 @@ import org.example.gersangtrade.listing.dto.request.BundleLineCreateRequest;
 import org.example.gersangtrade.listing.dto.request.EquipmentDetailRequest;
 import org.example.gersangtrade.listing.dto.request.ListingCreateRequest;
 import org.example.gersangtrade.listing.dto.request.ListingSearchCondition;
+import org.example.gersangtrade.listing.dto.request.ListingUpdateRequest;
 import org.example.gersangtrade.listing.dto.request.RitualResultRequest;
 import org.example.gersangtrade.listing.dto.response.ListingDetailResponse;
 import org.example.gersangtrade.listing.dto.response.ListingDetailResponse.BundleAssembly;
@@ -388,6 +389,33 @@ public class ListingService {
                 .toList();
 
         return ListingDetailResponse.from(listing, bundleAssemblies);
+    }
+
+    // ── 수정 ────────────────────────────────────────────────────────────────
+
+    /**
+     * 거래 등록글 수정 (가격·메모).
+     * ACTIVE 상태인 본인 등록글만 수정 가능하다.
+     *
+     * @param sellerId  요청자 사용자 ID
+     * @param listingId 수정 대상 등록글 ID
+     * @param request   수정 요청 DTO (price, note)
+     */
+    @Transactional
+    public void updateListing(Long sellerId, Long listingId, ListingUpdateRequest request) {
+        TradeListing listing = tradeListingRepository.findNotDeletedById(listingId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "존재하지 않는 등록글입니다. id=" + listingId));
+
+        if (!listing.getSeller().getId().equals(sellerId)) {
+            throw new IllegalArgumentException("본인의 등록글만 수정할 수 있습니다.");
+        }
+        if (listing.getStatus() != ListingStatus.ACTIVE) {
+            throw new IllegalStateException(
+                    "ACTIVE 상태의 등록글만 수정 가능합니다. status=" + listing.getStatus());
+        }
+
+        listing.updatePriceAndNote(request.price(), request.note());
     }
 
     // ── 관리자 숨김 ─────────────────────────────────────────────────────────

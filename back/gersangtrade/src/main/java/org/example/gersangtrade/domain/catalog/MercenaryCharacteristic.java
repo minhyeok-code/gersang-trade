@@ -5,6 +5,7 @@ import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.example.gersangtrade.domain.catalog.enums.CharacteristicApplyType;
 
 /**
  * 용병 특성(Characteristic) 엔티티.
@@ -66,16 +67,27 @@ public class MercenaryCharacteristic {
     @Column(name = "required_characteristic_key", length = 100)
     private String requiredCharacteristicKey;
 
+    /**
+     * 특성 적용 방식.
+     * NORMAL: 포인트 배분형, SELF_AUTO: 각성 사천왕 각성 특성, ALLY_AUTO: 주인공 국적 버프.
+     * SELF_AUTO는 point/level이 null이며 MercenaryCharacteristicLevel 행이 생성되지 않는다.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "apply_type", nullable = false, length = 20)
+    private CharacteristicApplyType applyType = CharacteristicApplyType.NORMAL;
+
     @Builder
     public MercenaryCharacteristic(Mercenary mercenary, String key, String name,
                                    Integer point, String description,
-                                   String requiredCharacteristicKey) {
+                                   String requiredCharacteristicKey,
+                                   CharacteristicApplyType applyType) {
         this.mercenary = mercenary;
         this.key = key;
         this.name = name;
         this.point = point;
         this.description = description;
         this.requiredCharacteristicKey = requiredCharacteristicKey;
+        this.applyType = applyType != null ? applyType : CharacteristicApplyType.NORMAL;
     }
 
     /** 관리자 수동 수정 — 이름·포인트·설명·선행특성키 갱신 */

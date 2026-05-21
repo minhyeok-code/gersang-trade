@@ -1,5 +1,6 @@
 package org.example.gersangtrade.user.service;
 
+import org.example.gersangtrade.catalog.repository.ServerRepository;
 import org.example.gersangtrade.domain.listing.ListingBundle;
 import org.example.gersangtrade.domain.listing.TradeListing;
 import org.example.gersangtrade.domain.user.User;
@@ -8,6 +9,9 @@ import org.example.gersangtrade.domain.user.enums.Role;
 import org.example.gersangtrade.domain.user.enums.UserStatus;
 import org.example.gersangtrade.listing.repository.ListingBundleRepository;
 import org.example.gersangtrade.listing.repository.TradeListingRepository;
+import org.example.gersangtrade.user.dto.request.UserProfileUpdateRequest;
+import org.example.gersangtrade.user.dto.response.MyGradeResponse;
+import org.example.gersangtrade.user.dto.response.PublicUserProfileResponse;
 import org.example.gersangtrade.user.dto.response.UserProfileResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -30,7 +34,7 @@ import static org.mockito.Mockito.*;
 
 /**
  * UserService 단위 테스트.
- * 프로필 조회·내 등록글 조회·회원 탈퇴 서비스 로직을 검증한다.
+ * 프로필 조회·수정·내 등록글 조회·등급 조회·회원 탈퇴 서비스 로직을 검증한다.
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("UserService")
@@ -39,6 +43,7 @@ class UserServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private TradeListingRepository tradeListingRepository;
     @Mock private ListingBundleRepository listingBundleRepository;
+    @Mock private ServerRepository serverRepository;
 
     @InjectMocks
     private UserService userService;
@@ -114,6 +119,121 @@ class UserServiceTest {
             assertThatThrownBy(() -> userService.getUserProfile(3L))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("차단된 사용자");
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // updateProfile
+    // ──────────────────────────────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("updateProfile")
+    class UpdateProfile {
+
+        @Test
+        @DisplayName("닉네임만_전달하면_닉네임만_변경")
+        void 닉네임만변경() {
+            given(userRepository.findById(1L)).willReturn(Optional.of(activeUser));
+            UserProfileUpdateRequest request =
+                    new UserProfileUpdateRequest("새닉네임", null, null);
+
+            UserProfileResponse response = userService.updateProfile(1L, request);
+
+            assertThat(activeUser.getNickname()).isEqualTo("새닉네임");
+            assertThat(response.nickname()).isEqualTo("새닉네임");
+        }
+
+        @Test
+        @DisplayName("모든_필드_변경")
+        void 모든필드변경() {
+            given(userRepository.findById(1L)).willReturn(Optional.of(activeUser));
+            UserProfileUpdateRequest request =
+                    new UserProfileUpdateRequest("새닉네임", "게임닉", "저녁7시이후");
+
+            userService.updateProfile(1L, request);
+
+            assertThat(activeUser.getNickname()).isEqualTo("새닉네임");
+            assertThat(activeUser.getGameNickname()).isEqualTo("게임닉");
+            assertThat(activeUser.getGameAccessTime()).isEqualTo("저녁7시이후");
+        }
+
+        @Test
+        @DisplayName("null_필드는_변경하지_않음")
+        void null필드_변경안함() {
+            given(userRepository.findById(1L)).willReturn(Optional.of(activeUser));
+            String originalNickname = activeUser.getNickname();
+            UserProfileUpdateRequest request =
+                    new UserProfileUpdateRequest(null, null, null);
+
+            userService.updateProfile(1L, request);
+
+            assertThat(activeUser.getNickname()).isEqualTo(originalNickname);
+        }
+
+        @Test
+        @DisplayName("탈퇴한_사용자_수정시_예외")
+        void 탈퇴한사용자_수정시_예외() {
+            User deletedUser = spy(activeUser);
+            given(deletedUser.getDeletedAt()).willReturn(LocalDateTime.now().minusDays(1));
+            given(userRepository.findById(2L)).willReturn(Optional.of(deletedUser));
+
+            assertThatThrownBy(() -> userService.updateProfile(2L,
+                    new UserProfileUpdateRequest("닉", null, null)))
+                    .isInstanceOf(IllegalStateException.class);
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // getPublicProfile
+    // ──────────────────────────────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("getPublicProfile")
+    class GetPublicProfile {
+
+        @Test
+        @DisplayName("활성_사용자_공개_프로필_반환")
+        void 활성사용자_공개프로필() {
+            given(userRepository.findById(1L)).willReturn(Optional.of(activeUser));
+
+            PublicUserProfileResponse response = userService.getPublicProfile(1L);
+
+            assertThat(response.nickname()).isEqualTo("테스트유저");
+        }
+
+        @Test
+        @DisplayName("차단된_사용자_공개_프로필_조회시_예외")
+        void 차단된사용자_예외() {
+            User blockedUser = User.builder()
+                    .oauthProvider("google").oauthId("o3")
+                    .nickname("차단유저").email("b@b.com")
+                    .role(Role.USER).status(UserStatus.BLOCKED)
+                    .build();
+            given(userRepository.findById(3L)).willReturn(Optional.of(blockedUser));
+
+            assertThatThrownBy(() -> userService.getPublicProfile(3L))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("차단된 사용자");
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // getMyGrade
+    // ──────────────────────────────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("getMyGrade")
+    class GetMyGrade {
+
+        @Test
+        @DisplayName("활성_사용자_등급정보_반환")
+        void 활성사용자_등급반환() {
+            given(userRepository.findById(1L)).willReturn(Optional.of(activeUser));
+
+            MyGradeResponse response = userService.getMyGrade(1L);
+
+            assertThat(response.grade()).isEqualTo(activeUser.getGrade());
+            assertThat(response.totalExp()).isEqualTo(activeUser.getTotalExp());
         }
     }
 

@@ -2,6 +2,8 @@ package org.example.gersangtrade.catalog.repository;
 
 import org.example.gersangtrade.domain.catalog.Item;
 import org.example.gersangtrade.domain.catalog.enums.ItemType;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -19,6 +21,12 @@ public interface ItemRepository extends JpaRepository<Item, Long> {
 
     /** 아이템 타입으로 조회 (MATERIAL | EQUIPMENT) */
     List<Item> findByType(ItemType type);
+
+    /** 관리자 목록: 타입 + 이름 검색 (이름 없으면 전체) — 페이징 */
+    @Query("SELECT i FROM Item i WHERE (:type IS NULL OR i.type = :type) AND (:name IS NULL OR i.name LIKE %:name%)")
+    Page<Item> findByTypeAndNameContaining(@Param("type") ItemType type,
+                                           @Param("name") String name,
+                                           Pageable pageable);
 
     /** 아이템명으로 단건 조회 — 크롤러 UPSERT 패턴에서 기존 레코드 확인에 사용된다 */
     Optional<Item> findByName(String name);
@@ -49,4 +57,7 @@ public interface ItemRepository extends JpaRepository<Item, Long> {
      */
     @Query("SELECT i FROM Item i WHERE i.id IN :ids")
     List<Item> findAllByIds(@Param("ids") List<Long> ids);
+
+    /** itemKey로 단건 조회 — 거니버스 스킬 계수 적재 시 아이템 FK 조회에 사용된다 */
+    Optional<Item> findByItemKey(String itemKey);
 }

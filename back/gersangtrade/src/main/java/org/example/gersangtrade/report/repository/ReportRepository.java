@@ -34,4 +34,11 @@ public interface ReportRepository extends JpaRepository<Report, Long> {
            "LEFT JOIN FETCH r.processedBy " +
            "ORDER BY r.createdAt ASC")
     Page<Report> findAllWithDetails(Pageable pageable);
+
+    /** 내 신고 내역 페이징 조회 (최신순) */
+    @Query("SELECT r FROM Report r " +
+           "LEFT JOIN FETCH r.processedBy " +
+           "WHERE r.reporter.id = :reporterId " +
+           "ORDER BY r.createdAt DESC")
+    Page<Report> findByReporterId(@Param("reporterId") Long reporterId, Pageable pageable);
 }

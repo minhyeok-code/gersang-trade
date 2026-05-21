@@ -5,6 +5,7 @@ import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.example.gersangtrade.domain.catalog.EquipmentSetPiece;
 import org.example.gersangtrade.domain.catalog.Item;
 
 /**
@@ -34,7 +35,15 @@ public class BundleLine {
     @JoinColumn(name = "item_id", nullable = false)
     private Item item;
 
-    /** 수량 — 재료: 1 이상, 장비: 보통 1 */
+    /**
+     * 세트 매물일 때 이 라인이 어느 세트 피스(투구/갑옷 등)인지 참조.
+     * bundleType=EQUIPMENT_SET일 때만 non-null. 단품·재료 매물은 null.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "equipment_set_piece_id")
+    private EquipmentSetPiece equipmentSetPiece;
+
+    /** 수량 — 재료: 1 이상, 장비: 보통 1. 반지 쌍은 2 */
     @Column(name = "quantity", nullable = false)
     private Integer quantity;
 
@@ -43,9 +52,11 @@ public class BundleLine {
     private Integer sortOrder;
 
     @Builder
-    public BundleLine(ListingBundle bundle, Item item, Integer quantity, Integer sortOrder) {
+    public BundleLine(ListingBundle bundle, Item item, EquipmentSetPiece equipmentSetPiece,
+                      Integer quantity, Integer sortOrder) {
         this.bundle = bundle;
         this.item = item;
+        this.equipmentSetPiece = equipmentSetPiece;
         this.quantity = quantity;
         this.sortOrder = sortOrder;
     }

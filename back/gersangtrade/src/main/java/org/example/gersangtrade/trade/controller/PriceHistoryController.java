@@ -24,19 +24,21 @@ public class PriceHistoryController {
     /**
      * 아이템 일별 시세 조회.
      * from~to 기간의 거래 통계를 최신순으로 반환한다.
-     * from/to 미입력 시 최근 30일 기준으로 조회한다.
+     * from 미입력 시 days 기준(기본 10일)으로 시작일을 계산한다.
      *
      * @param itemId 아이템 ID
      * @param from   조회 시작일 (yyyy-MM-dd, 선택)
      * @param to     조회 종료일 (yyyy-MM-dd, 선택)
+     * @param days   조회 일수 — 5|10|15 중 선택, from 없을 때만 적용 (기본 10)
      */
     @GetMapping("/{itemId}/price-history")
     public ResponseEntity<List<DailyPriceHistoryResponse>> getPriceHistory(
             @PathVariable Long itemId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(defaultValue = "10") int days) {
 
-        List<DailyPriceHistoryResponse> history = tradeStatService.getDailyHistory(itemId, from, to);
+        List<DailyPriceHistoryResponse> history = tradeStatService.getDailyHistory(itemId, from, to, days);
         return ResponseEntity.ok(history);
     }
 }

@@ -8,7 +8,7 @@ public enum Nature {
     FIRE("화"),
     WATER("수"),
     THUNDER("뇌"),
-    AIR("풍"),
+    WIND("풍"),
     EARTH("토"),
     NONE("-");
 

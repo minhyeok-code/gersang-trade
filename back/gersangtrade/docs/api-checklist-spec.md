@@ -1,8 +1,10 @@
 # 거상 거래 플랫폼 — API 설계 및 구현 명세
 
-> 작성 기준일: 2026-05-07  
+> 작성 기준일: 2026-05-20  
 > 목적: API 구현 점검 및 미구현 항목 명세  
 > 대상: 백엔드 개발자 / Claude Code
+
+> **경로 규칙**: 유저 API는 `/api/` 접두사 사용. 관리자 API는 `/admin/` 접두사 사용.
 
 ---
 
@@ -40,7 +42,7 @@
   모든 API 요청 헤더에 X-Server-Id: "{serverId}" 포함
 
 로그인 유저:
-  로그인 시 localStorage에 serverId가 있으면 → DB에 PATCH /users/me/server 동기화
+  로그인 시 localStorage에 serverId가 있으면 → DB에 PATCH /api/users/me/server 동기화
   localStorage에 serverId가 없으면 → DB에서 꺼내 localStorage에 씀
   이후 서버 변경 시 → localStorage + DB 동시 업데이트
 
@@ -51,10 +53,12 @@
 
 ### 1.2 API
 
-| 메서드 | 경로 | 설명 | 인증 |
-|---|---|---|---|
-| `GET` | `/servers` | 게임 서버 목록 조회 | 불필요 |
-| `PATCH` | `/users/me/server` | 로그인 유저 서버 설정 저장 | 필요 |
+| 메서드 | 경로 | 설명 | 인증 | 구현 여부 |
+|---|---|---|---|---|
+| `GET` | `/api/servers` | 게임 서버 목록 조회 | 불필요 | ✅ |
+| `PATCH` | `/api/users/me/server` | 로그인 유저 서버 설정 저장 | 필요 | ✅ |
+
+
 
 ### 1.3 헤더 규칙
 
@@ -75,28 +79,39 @@
 
 | 메서드 | 경로 | 설명 | 인증 | 구현 여부 |
 |---|---|---|---|---|
-| `GET` | `/users/me` | 내 프로필 조회 | 필요 | ✅ |
-| `PATCH` | `/users/me` | 닉네임·사진·접속시간 등 수정 | 필요 | ✅ |
-| `PATCH` | `/users/me/server` | 서버 설정 저장 | 필요 | ❓ 점검 필요 |
-| `GET` | `/users/me/deck` | 내 덱 조회 | 필요 | ❓ 점검 필요 |
-| `POST` | `/users/me/deck` | 덱 저장 (경험치 지급) | 필요 | ❓ 점검 필요 |
-| `POST` | `/users/me/clear-time` | 클리어타임 저장 (경험치 지급) | 필요 | ❓ 점검 필요 |
-| `GET` | `/users/{userId}` | 타 유저 프로필 조회 | 불필요 | ✅ |
+| `GET` | `/api/users/me` | 내 프로필 조회 | 필요 | ✅ |
+| `PATCH` | `/api/users/me` | 닉네임·사진·접속시간 등 수정 | 필요 | ❌ 미구현 |
+| `PATCH` | `/api/users/me/server` | 서버 설정 저장 | 필요 | ✅ |
+| `GET` | `/api/users/{userId}` | 타 유저 프로필 조회 | 불필요 | ❌ 미구현 |
+| `POST` | `/api/users/me/clear-time` | 클리어타임 저장 (경험치 지급) | 필요 | ❌ 미구현 |
+| `GET` | `/api/decks` | 내 덱 목록 조회 | 필요 | ✅ |
+| `POST` | `/api/decks` | 덱 생성 | 필요 | ✅ |
+| `GET` | `/api/decks/{deckId}` | 덱 상세 (멤버·슬롯 포함) | 필요 | ✅ |
+| `PATCH` | `/api/decks/{deckId}` | 덱 이름·활성 여부 수정 | 필요 | ✅ |
+| `DELETE` | `/api/decks/{deckId}` | 덱 삭제 | 필요 | ✅ |
+| `POST` | `/api/decks/{deckId}/members` | 덱에 용병 추가 (최대 12) | 필요 | ✅ |
+| `DELETE` | `/api/decks/{deckId}/members/{memberId}` | 덱에서 용병 제거 | 필요 | ✅ |
+| `GET` | `/api/decks/{deckId}/members/{memberId}/stats` | 용병 합산 스탯 조회 (기본+장비 합산) | 필요 | ✅ |
+| `PUT` | `/api/decks/{deckId}/members/{memberId}/slots/{slot}` | 슬롯 장비 착용/교체 | 필요 | ✅ |
+| `DELETE` | `/api/decks/{deckId}/members/{memberId}/slots/{slot}` | 슬롯 장비 해제 | 필요 | ✅ |
+| `PUT` | `/api/decks/{deckId}/members/{memberId}/slots/{slot}/ritual` | 슬롯 주술 등록/교체 | 필요 | ✅ |
+| `DELETE` | `/api/decks/{deckId}/members/{memberId}/slots/{slot}/ritual` | 슬롯 주술 해제 | 필요 | ✅ |
 
-### 2.3 덱 저장 상세
+### 2.3 덱 구조 상세
 
 ```
-저장 대상:
-  - 주인공 포함 용병 최대 12명
-  - 각 용병의 레벨 (250 또는 260만 선택 가능 — 버튼 UI)
-  - 각 용병의 착용 장비
-  - 각 용병의 보너스 스탯, 주스탯/체력 배분
-  - 각 용병의 특성 포인트 배분
+엔티티 레이어 구현 완료 (2026-05-20):
+  UserDeck           — name + isActive + 스탯 캐시(attrXValue, totalResDown)
+  UserDeckMember     — 덱 내 용병 (최대 12, 중복 불가)
+  UserDeckMemberSlot — 용병별 18슬롯 (일반 9 + 외변 9). 착용 시만 row 생성
+  UserDeckMemberSlotRitual — 슬롯별 주술 (1:1, 미적용 시 row 없음)
 
-레벨 한정 이유:
-  거상의 유효 전투 레벨은 사실상 250·260 두 가지.
-  자유 입력 대신 버튼 선택으로 구현하여 UX 단순화.
-  약 80~90%의 유저가 이 두 레벨 중 하나에 해당함.
+슬롯 구성 (EquipSlot enum):
+  일반 (9슬롯): HELMET / ARMOR / WEAPON / SHOES / GLOVES / BELT / CHARM / RING_1 / RING_2
+  외변 (9슬롯): APP_SPIRIT / APP_HELMET / APP_ARMOR / APP_WEAPON / APP_WAR_GOD
+                / APP_EARRING / APP_NECKLACE / APP_BRACELET / APP_GREAVES
+
+세트효과·주술 세트효과: DB 저장 없음. 계산기 호출 시 런타임 계산.
 ```
 
 ---
@@ -110,12 +125,12 @@
 
 ```
 1단계: 자동완성 (카탈로그 API)
-  GET /items/autocomplete?q=지국
+  GET /api/items/search?q=지국
   → 리스팅 유무와 무관하게 아이템명 목록 반환
   → 유저가 아이템을 선택
 
 2단계: 리스팅 조회 (거래 API)
-  GET /listings?itemId=123
+  GET /api/listings?itemId=123
   → 결과 0건이면 "현재 등록된 매물이 없어요" 표시
 ```
 
@@ -126,21 +141,24 @@
 
 | 메서드 | 경로 | 설명 | 인증 | 구현 여부 |
 |---|---|---|---|---|
-| `GET` | `/items/autocomplete` | 아이템명 자동완성 | 불필요 | ❓ 점검 필요 |
-| `GET` | `/items/{itemId}` | 아이템 단품 상세 | 불필요 | ✅ |
-| `GET` | `/items` | 아이템 목록 조회 (필터) | 불필요 | ✅ |
-| `GET` | `/sets` | 세트 목록 조회 | 불필요 | ✅ |
-| `GET` | `/sets/{setId}` | 세트 상세 (피스·세트효과 포함) | 불필요 | ✅ |
+| `GET` | `/api/items/search` | 아이템명 자동완성 (`q` 파라미터) | 불필요 | ✅ |
+| `GET` | `/api/items/{itemId}/rituals` | 장비 적용 가능 주술 목록 | 불필요 | ✅ |
+| `GET` | `/api/items/equipment?slot={EquipSlot}` | 덱 슬롯별 착용 가능 장비 목록 + 스탯 | 불필요 | ✅ |
+| `GET` | `/api/sets` | 세트 목록 조회 | 불필요 | ✅ |
+| `GET` | `/api/sets/{setId}` | 세트 상세 | 불필요 | ✅ |
+
+> **참고**: 설계서에 있던 `GET /items/autocomplete`는 `/api/items/search`로 구현되었고 응답 구조도 유사함.  
+> `GET /api/items/{itemId}` 단건 조회는 아이템 CRUD out-of-scope 정책으로 미구현. 필요 시 추가 결정 필요.  
+> `/api/sets`는 `isTradeable=true` 세트만 노출한다. 피스·세트효과 상세는 현재 미포함.
 
 ### 3.3 자동완성 응답 예시
 
 ```json
-GET /items/autocomplete?q=지국
+GET /api/items/search?q=지국
 
 [
-  { "itemId": 123, "name": "지국천왕 투구", "type": "EQUIPMENT" },
-  { "itemId": 124, "name": "지국천왕 갑옷", "type": "EQUIPMENT" },
-  { "itemId": 125, "name": "지국천왕 세트", "type": "SET" }
+  { "id": 123, "name": "지국천왕 투구", "type": "EQUIPMENT" },
+  { "id": 124, "name": "지국천왕 갑옷", "type": "EQUIPMENT" }
 ]
 ```
 
@@ -154,6 +172,9 @@ GET /items/autocomplete?q=지국
 - 나머지(닉네임, 접속 가능 시간, 서버)는 유저 프로필에서 자동으로 가져옴
 - 목록 조회 시 구매 리스팅과 판매 리스팅을 함께 반환, 프론트에서 좌/우 분리 표시
 - 단품과 세트 모두 등록·조회 가능
+
+> **구현 현황**: 현재 판매 리스팅(`/api/listings`)과 구매 희망(`/api/wanted`)이 별도 컨트롤러로 분리되어 있음.  
+> 설계서는 `type=SELL|BUY`로 통합 조회를 원하나, 현재 구조는 분리됨. 통합 여부 결정 필요.
 
 ### 4.2 리스팅 목록 노출 항목
 
@@ -188,18 +209,22 @@ GET /items/autocomplete?q=지국
 
 | 메서드 | 경로 | 설명 | 인증 | 구현 여부 |
 |---|---|---|---|---|
-| `GET` | `/listings` | 리스팅 목록 (itemId·type·server 필터) | 불필요 | ✅ |
-| `GET` | `/listings/{listingId}` | 리스팅 상세 | 불필요 | ✅ |
-| `POST` | `/listings` | 리스팅 등록 (단품/세트) | 필요 | ✅ |
-| `PATCH` | `/listings/{listingId}` | 리스팅 수정 | 필요 | ✅ |
-| `DELETE` | `/listings/{listingId}` | 리스팅 삭제 | 필요 | ✅ |
-| `GET` | `/listings/me` | 내 리스팅 목록 | 필요 | ✅ |
+| `GET` | `/api/listings` | 판매 리스팅 목록 (itemId·type·server 필터) | 불필요 | ⚠️ 구현됨 — `itemId` 필터 미구현 |
+| `GET` | `/api/listings/{listingId}` | 판매 리스팅 상세 | 불필요 | ✅ |
+| `POST` | `/api/listings` | 판매 리스팅 등록 (단품/세트) | 필요 | ✅ |
+| `PATCH` | `/api/listings/{listingId}` | 판매 리스팅 수정 | 필요 | ❌ 미구현 |
+| `DELETE` | `/api/listings/{listingId}` | 판매 리스팅 취소 | 필요 | ✅ |
+| `GET` | `/api/users/me/listings` | 내 판매 리스팅 목록 | 필요 | ✅ |
+| `GET` | `/api/wanted` | 구매 희망 목록 | 불필요 | ✅ |
+| `POST` | `/api/wanted` | 구매 희망 등록 | 필요 | ✅ |
+| `GET` | `/api/wanted/{wantedId}` | 구매 희망 상세 | 불필요 | ✅ |
+| `DELETE` | `/api/wanted/{wantedId}` | 구매 희망 취소 | 필요 | ✅ |
 
 ### 4.5 목록 조회 쿼리 파라미터
 
 ```
-itemId      : 아이템 ID (카탈로그 자동완성에서 선택한 값)
-type        : SELL | BUY | ALL (기본값 ALL)
+itemId      : 아이템 ID (카탈로그 자동완성에서 선택한 값) — ⚠️ 미구현, 추가 필요
+type        : SELL | BUY | ALL (기본값 ALL) — ⚠️ 현재 판매/구매 컨트롤러 분리 구조
 X-Server-Id : 헤더로 서버 필터 자동 적용
 page, size  : 페이지네이션
 sort        : latest | price_asc | price_desc
@@ -230,15 +255,19 @@ sort        : latest | price_asc | price_desc
   → N 기준값: 추후 결정, 카운트 컬럼은 미리 생성
 ```
 
+> **구현 현황**: 거래 확정은 2단계로 분리 구현됨.  
+> 게시자 먼저 확정(`poster-confirm`) → 상대방이 최종 확정(`counterparty-confirm`) 시 거래 완료.
+
 ### 5.2 API
 
 | 메서드 | 경로 | 설명 | 인증 | 구현 여부 |
 |---|---|---|---|---|
-| `POST` | `/chats` | 채팅방 생성 (listingId 기반) | 필요 | ✅ |
-| `GET` | `/chats/{chatId}/messages` | 채팅 메시지 목록 | 필요 | ✅ |
-| `POST` | `/chats/{chatId}/messages` | 메시지 전송 | 필요 | ✅ |
-| `POST` | `/chats/{chatId}/complete` | 거래완료 버튼 클릭 | 필요 | ✅ |
-| `GET` | `/chats/me` | 내 채팅방 목록 | 필요 | ✅ |
+| `POST` | `/api/chat-rooms` | 채팅방 생성 (listingId 기반) | 필요 | ✅ |
+| `GET` | `/api/chat-rooms` | 내 채팅방 목록 | 필요 | ✅ |
+| `GET` | `/api/chat-rooms/{chatRoomId}` | 채팅방 상세 + 메시지 목록 | 필요 | ✅ |
+| `POST` | `/api/chat-rooms/{chatRoomId}/messages` | 메시지 전송 | 필요 | ✅ |
+| `POST` | `/api/chat-rooms/{chatRoomId}/poster-confirm` | 게시자 거래완료 (1단계) | 필요 | ✅ |
+| `POST` | `/api/chat-rooms/{chatRoomId}/counterparty-confirm` | 상대방 거래완료 확인 (2단계) | 필요 | ✅ |
 
 ---
 
@@ -255,13 +284,16 @@ sort        : latest | price_asc | price_desc
   (채팅방이 닫혀 있으므로 구조적으로 차단)
 ```
 
+> **구현 현황**: 거래 완료 시 Review 레코드가 양쪽에 자동 생성되며, 유저는 기존 레코드에 rating을 제출.  
+> 리뷰 ID(`reviewId`)는 거래 완료 응답 또는 내 리뷰 목록 API에서 확인 가능.
+
 ### 6.2 API
 
 | 메서드 | 경로 | 설명 | 인증 | 구현 여부 |
 |---|---|---|---|---|
-| `POST` | `/trades/{tradeId}/review` | 블라인드 리뷰 등록 | 필요 | ✅ |
-| `GET` | `/trades/{tradeId}/review` | 리뷰 조회 (만료 후 공개) | 필요 | ✅ |
-| `GET` | `/users/{userId}/reviews` | 유저 리뷰 목록 | 불필요 | ✅ |
+| `POST` | `/api/reviews/{reviewId}` | 블라인드 리뷰 등록 (`GOOD`\|`NEUTRAL`\|`BAD`) | 필요 | ✅ |
+| `GET` | `/api/reviews/received` | 내가 받은 리뷰 목록 (만료 후 공개) | 필요 | ✅ |
+| `GET` | `/api/users/{userId}/reviews` | 타 유저 리뷰 목록 | 불필요 | ✅ |
 
 ---
 
@@ -314,11 +346,17 @@ PK: (item_id, stat_date)
 
 | 메서드 | 경로 | 설명 | 인증 | 구현 여부 |
 |---|---|---|---|---|
-| `GET` | `/price-stats/{itemId}` | 아이템 시세 조회 | 불필요 | ❓ 점검 필요 |
+| `GET` | `/api/items/{itemId}/price-history` | 아이템 시세 조회 | 불필요 | ⚠️ 구현됨 — `days` 파라미터 미구현 |
 
 ```
-쿼리 파라미터:
-  days: 5 | 10 | 15 (기본값 10)
+현재 구현 파라미터:
+  from : 시작일 yyyy-MM-dd (선택)
+  to   : 종료일 yyyy-MM-dd (선택)
+
+설계 목표 파라미터:
+  days : 5 | 10 | 15 (기본값 10)
+
+→ days 파라미터 추가 또는 from/to로 통일 여부 결정 필요
 ```
 
 ---
@@ -340,8 +378,8 @@ PK: (item_id, stat_date)
 
 | 메서드 | 경로 | 설명 | 인증 | 구현 여부 |
 |---|---|---|---|---|
-| `GET` | `/grades` | 등급 정책 목록 (툴팁용) | 불필요 | ✅ |
-| `GET` | `/users/me/grade` | 내 등급·경험치 조회 | 필요 | ✅ |
+| `GET` | `/api/grades` | 등급 정책 목록 (툴팁용) | 불필요 | ❓ 점검 필요 |
+| `GET` | `/api/users/me/grade` | 내 등급·경험치 조회 | 필요 | ❓ 점검 필요 |
 
 ---
 
@@ -360,8 +398,8 @@ PK: (item_id, stat_date)
 
 | 메서드 | 경로 | 설명 | 인증 | 구현 여부 |
 |---|---|---|---|---|
-| `POST` | `/reports` | 신고 등록 | 필요 | ✅ |
-| `GET` | `/reports/me` | 내 신고 내역 | 필요 | ✅ |
+| `POST` | `/api/reports` | 신고 등록 | 필요 | ✅ |
+| `GET` | `/api/reports/me` | 내 신고 내역 | 필요 | ✅ |
 
 ---
 
@@ -390,9 +428,9 @@ PK: (item_id, stat_date)
 
 | 메서드 | 경로 | 설명 | 인증 | 구현 여부 |
 |---|---|---|---|---|
-| `POST` | `/calculator/dps` | DPS 계산 (덱 기반) | 불필요 | ❓ 점검 필요 |
-| `GET` | `/monsters` | 몬스터 목록 조회 | 불필요 | ❓ 점검 필요 |
-| `GET` | `/monsters/{monsterId}` | 몬스터 스펙 (저항·속성·속성값) | 불필요 | ❓ 점검 필요 |
+| `POST` | `/api/calculator/dps` | DPS 계산 (덱 기반) | 불필요 | ❌ 미구현 (재설계 중) |
+| `GET` | `/api/monsters` | 몬스터 목록 조회 | 불필요 | ❌ 미구현 |
+| `GET` | `/api/monsters/{monsterId}` | 몬스터 스펙 (저항·속성·속성값) | 불필요 | ❌ 미구현 |
 
 ---
 
@@ -401,7 +439,7 @@ PK: (item_id, stat_date)
 ### 11.1 설계 확정 사항
 
 DPS 계산기가 완성된 이후에 의미 있는 기능이다.  
-현재 진척률 15%, DPS 계산기 완성 후 이어서 구현.
+현재 진척률 10%, DPS 계산기 완성 후 이어서 구현.
 
 ```
 흐름:
@@ -417,7 +455,7 @@ DPS 계산기가 완성된 이후에 의미 있는 기능이다.
 
 | 메서드 | 경로 | 설명 | 인증 | 구현 여부 |
 |---|---|---|---|---|
-| `POST` | `/calculator/value-comparison` | 가성비 비교 계산 | 필요 | ❌ 미구현 |
+| `POST` | `/api/calculator/value-comparison` | 가성비 비교 계산 | 필요 | ❌ 미구현 |
 
 ```
 요청 바디:
@@ -450,8 +488,8 @@ DPS 계산기가 완성된 이후에 의미 있는 기능이다.
 
 | 메서드 | 경로 | 설명 | 인증 | 구현 여부 |
 |---|---|---|---|---|
-| `GET` | `/home/price-watch` | 관심 아이템 시세 변동 | 필요 | ❓ 점검 필요 |
-| `GET` | `/home/spec-up` | 스펙업 추천 (초기 단계) | 필요 | ❌ 미구현 |
+| `GET` | `/api/home/price-watch` | 관심 아이템 시세 변동 | 필요 | ❓ 점검 필요 |
+| `GET` | `/api/home/spec-up` | 스펙업 추천 (초기 단계) | 필요 | ❌ 미구현 |
 
 ---
 
@@ -472,9 +510,10 @@ DPS 계산기가 완성된 이후에 의미 있는 기능이다.
 
 | 메서드 | 경로 | 설명 | 인증 | 구현 여부 |
 |---|---|---|---|---|
-| `GET` | `/notifications/subscribe` | SSE 구독 | 필요 | ✅ |
-| `GET` | `/notifications` | 알림 목록 조회 | 필요 | ✅ |
-| `PATCH` | `/notifications/{id}/read` | 알림 읽음 처리 | 필요 | ✅ |
+| `GET` | `/api/notifications/subscribe` | SSE 구독 | 필요 | ✅ |
+| `GET` | `/api/notifications` | 알림 목록 조회 | 필요 | ✅ |
+| `PATCH` | `/api/notifications/read-all` | 미읽음 알림 전체 읽음 처리 | 필요 | ✅ |
+| `PATCH` | `/api/notifications/{id}/read` | 알림 개별 읽음 처리 | 필요 | ✅ |
 
 ---
 
@@ -485,13 +524,45 @@ DPS 계산기가 완성된 이후에 의미 있는 기능이다.
 | 메서드 | 경로 | 설명 | 구현 여부 |
 |---|---|---|---|
 | `GET` | `/admin/reports` | 신고 목록 조회 | ✅ |
-| `PATCH` | `/admin/reports/{id}` | 신고 처리 (승인/반려) | ✅ |
-| `POST` | `/admin/users/{id}/ban` | 유저 차단 | ✅ |
-| `DELETE` | `/admin/users/{id}/ban` | 차단 해제 | ✅ |
-| `PATCH` | `/admin/listings/{id}/hide` | 리스팅 숨김 | ✅ |
+| `PATCH` | `/admin/reports/{reportId}/review` | 신고 검토 시작 | ✅ |
+| `PATCH` | `/admin/reports/{reportId}/process` | 신고 처리 완료 | ✅ |
+| `PATCH` | `/admin/reports/{reportId}/dismiss` | 신고 기각 | ✅ |
+| `POST` | `/admin/users/{userId}/block` | 유저 차단 | ✅ |
+| `POST` | `/admin/users/{userId}/unblock` | 차단 해제 | ✅ |
+| `PATCH` | `/admin/listings/{listingId}/hide` | 리스팅 숨김 | ✅ |
+| `PATCH` | `/admin/listings/{listingId}/unhide` | 리스팅 숨김 해제 | ✅ |
+| `PATCH` | `/admin/messages/{messageId}/hide` | 채팅 메시지 숨김 | ✅ |
+| `PATCH` | `/admin/messages/{messageId}/unhide` | 채팅 메시지 숨김 해제 | ✅ |
+| `GET` | `/admin/sets` | 세트 목록 조회 | ✅ |
+| `GET` | `/admin/sets/{id}` | 세트 단건 조회 | ✅ |
+| `PATCH` | `/admin/sets/{id}` | 세트 수정 (isTradeable 포함) | ✅ |
+| `GET` | `/admin/items` | 아이템 목록 조회 | ✅ |
+| `GET` | `/admin/items/{itemId}` | 아이템 상세 조회 | ✅ |
+| `PUT` | `/admin/items/{itemId}` | 아이템 기본정보 수정 | ✅ |
+| `PUT` | `/admin/items/{itemId}/equipment-detail` | 장비 상세 수정 | ✅ |
+| `PUT` | `/admin/items/{itemId}/stats` | 아이템 스탯 전체 교체 | ✅ |
+| `PUT` | `/admin/items/{itemId}/skills` | 아이템 스킬 전체 교체 | ✅ |
+| `GET` | `/admin/mercenaries` | 용병 목록 조회 | ✅ |
+| `GET` | `/admin/mercenaries/{mercenaryId}` | 용병 상세 조회 | ✅ |
+| `PUT` | `/admin/mercenaries/{mercenaryId}` | 용병 기본정보 수정 | ✅ |
+| `PUT` | `/admin/mercenaries/{mercenaryId}/stats` | 용병 스탯 전체 교체 | ✅ |
+| `PUT` | `/admin/mercenaries/{mercenaryId}/skills` | 용병 스킬 전체 교체 | ✅ |
+| `PATCH` | `/admin/mercenaries/bulk` | 용병 대량 속성/국가 수정 | ✅ |
+| `GET` | `/admin/mercenaries/{mercenaryId}/characteristics` | 용병 특성 목록 | ✅ |
+| `POST` | `/admin/mercenaries/{mercenaryId}/characteristics` | 특성 추가 | ✅ |
+| `PUT` | `/admin/mercenaries/{mercenaryId}/characteristics/{charId}` | 특성 수정 | ✅ |
+| `DELETE` | `/admin/mercenaries/{mercenaryId}/characteristics/{charId}` | 특성 삭제 | ✅ |
+| `PUT` | `/admin/mercenaries/{mercenaryId}/characteristics/{charId}/levels` | 레벨 수치 일괄 저장 | ✅ |
+| `GET` | `/admin/skill-coefficients` | 스킬 계수 목록 | ✅ |
+| `PUT` | `/admin/skill-coefficients` | JSON 파일 bulk upsert | ✅ |
+| `PATCH` | `/admin/skill-coefficients/{id}/measurement` | 측정값 입력 | ✅ |
+| `POST` | `/admin/crawler/master` | 전체 마스터 데이터 수집 | ✅ |
+| `POST` | `/admin/crawler/items` | 장비·보석 수집 | ✅ |
+| `POST` | `/admin/crawler/materials` | 재료 수집 | ✅ |
+| `POST` | `/admin/crawler/mercenaries` | 용병 수집 | ✅ |
+| `POST` | `/admin/crawler/sets` | 세트 수집 | ✅ |
+| `POST` | `/admin/crawler/rituals` | 주술 수집 | ✅ |
 | `GET` | `/admin/abuse-monitor` | 어뷰징 모니터링 대시보드 | ❌ 미구현 |
-| `GET` | `/admin/sets` | 세트 관리 (isTradeable 토글) | ✅ |
-| `PATCH` | `/admin/sets/{id}` | 세트 거래가능 여부 수정 | ✅ |
 
 ---
 
@@ -499,19 +570,20 @@ DPS 계산기가 완성된 이후에 의미 있는 기능이다.
 
 | 항목 | 진척률 | 잔여 작업 |
 |---|---|---|
-| 인증 (OAuth2) | 90% | 네이버 OAuth2 |
-| 아이템 카탈로그 | 100% | — |
-| 거래 리스팅 | 100% | — |
+| 인증 (OAuth2) | 95% | 코드 완성, 네이버 앱 등록·환경변수 설정 대기 |
+| 아이템 카탈로그 | 95% | itemId 필터 미구현. 슬롯별 장비 조회 API 추가 |
+| 거래 리스팅 (판매) | 90% | itemId 필터, PATCH 수정 API |
+| 거래 리스팅 (구매) | 100% | — |
 | 채팅·거래 확정 | 100% | — |
-| 신고 시스템 | 90% | 어뷰징 모니터링 |
-| 시세 조회 | ❓ | 일별 통계 구조 점검 필요 |
-| 유저 프로필·등급 | 95% | 서버 설정 API 점검 |
+| 신고 시스템 | 95% | 어뷰징 모니터링 |
+| 시세 조회 | 90% | `days` 파라미터 추가 여부 결정 |
+| 유저 프로필·등급 | 60% | PATCH /me, GET /{userId}, 클리어타임 API |
+| 덱 관리 | 100% | CRUD API·슬롯 API·주술 API·용병 합산 스탯 조회 API 구현 완료 |
 | 거래 평가 | 100% | — |
 | 알림 (SSE) | 100% | — |
-| DPS 계산기 | 55% | 캐스팅 속도 계수 확정 후 마무리 |
-| 가성비 비교 | 15% | DPS 완성 후 이어서 |
+| DPS 계산기 | 10% | 재설계 중 (UserDeck 기반) |
+| 가성비 비교 | 10% | DPS 완성 후 이어서 |
 | 관리자 기능 | 95% | 어뷰징 모니터링 |
-| 홈 화면 | — | 스펙업 추천 미구현 |
+| 홈 화면 | — | 관심아이템 시세 점검, 스펙업 미구현 |
 | 크롤링 (마스터) | 80% | 거상짱 전환 완료, 잔여 점검 |
 | 크롤링 (가격) | 50% | — |
-| 개인화·캐싱 | 45% | — |

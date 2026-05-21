@@ -60,13 +60,14 @@ public class TradeStatService {
      * statKey는 "ITEM:{itemId}" 형식을 사용한다.
      *
      * @param itemId 아이템 ID
-     * @param from   조회 시작 날짜 (null이면 30일 전)
+     * @param from   조회 시작 날짜 (null이면 days 기준으로 계산)
      * @param to     조회 종료 날짜 (null이면 오늘)
+     * @param days   조회 일수 (from이 null일 때만 적용, 기본 10)
      * @return 일별 시세 목록 (최신순)
      */
-    public List<DailyPriceHistoryResponse> getDailyHistory(Long itemId, LocalDate from, LocalDate to) {
+    public List<DailyPriceHistoryResponse> getDailyHistory(Long itemId, LocalDate from, LocalDate to, int days) {
         LocalDate endDate = (to != null) ? to : LocalDate.now();
-        LocalDate startDate = (from != null) ? from : endDate.minusDays(30);
+        LocalDate startDate = (from != null) ? from : endDate.minusDays(days);
 
         String statKey = "ITEM:" + itemId;
         List<TradeStatDaily> stats =
