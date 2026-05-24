@@ -60,7 +60,9 @@
       "Bash(mysql -u root -e \"SELECT 1\")",
       "Bash(powershell.exe *)",
       "Bash(python3 *)",
-      "Bash(grep -v \"//\")"
+      "Bash(grep -v \"//\")",
+      "Read(//d/Java/gersangTrade/front/**)",
+      "Read(//d/Java/gersangTrade/**)"
     ]
   }
 }

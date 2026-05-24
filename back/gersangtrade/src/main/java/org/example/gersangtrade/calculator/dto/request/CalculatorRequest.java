@@ -2,6 +2,7 @@ package org.example.gersangtrade.calculator.dto.request;
 
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
+import org.example.gersangtrade.domain.catalog.enums.Element;
 
 import java.util.Map;
 
@@ -36,6 +37,12 @@ public record CalculatorRequest(
         @NotNull(message = "몬스터 속성값은 필수입니다.")
         @Min(value = 0, message = "몬스터 속성값은 0 이상이어야 합니다.")
         Integer monsterElementValue,
+
+        /**
+         * 목표 몬스터 속성 종류.
+         * null 또는 NONE이면 무속성 — 속성 보정 0.
+         */
+        Element monsterElement,
 
         /** 가격 기본값 조회에 사용할 서버 ID (1~13) */
         @NotNull(message = "서버 ID는 필수입니다.")

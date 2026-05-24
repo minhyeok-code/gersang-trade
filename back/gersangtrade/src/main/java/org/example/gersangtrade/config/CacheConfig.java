@@ -15,6 +15,7 @@ public class CacheConfig {
 
     public static final String SERVERS          = "servers";
     public static final String MERCENARIES      = "mercenaries";
+    public static final String EQUIPMENT_ALL    = "equipment-all";
     public static final String EQUIPMENT_SLOT   = "equipment-by-slot";
     public static final String RITUALS_BY_ITEM  = "rituals-by-item";
 }

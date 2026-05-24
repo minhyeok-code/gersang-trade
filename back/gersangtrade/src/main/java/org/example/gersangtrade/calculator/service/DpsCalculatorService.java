@@ -107,8 +107,6 @@ public class DpsCalculatorService {
     private static final int LEVEL_STAT_260 = 2466;
     private static final int RESIST_CAP = 260;
     private static final double RESIST_CAP_PASS_RATE = 1.4;
-    private static final double ELEMENT_BONUS_MIN = -50.0;
-    private static final double ELEMENT_BONUS_MAX = 50.0;
     private static final Set<StatType> SPIRIT_DOUBLE_EXCLUDED_STATS = Set.of(
             StatType.ATTACK_SPEED,
             StatType.MOVE_SPEED
@@ -203,6 +201,16 @@ public class DpsCalculatorService {
                 characteristicLevelRepository.findByCharacteristicIdIn(characteristicIds).stream()
                         .collect(Collectors.groupingBy(l -> l.getCharacteristic().getId()));
 
+        // SELF_AUTO 각성 특성 배치 로드 (포인트 배분 없이 자동 적용)
+        List<MercenaryCharacteristic> selfAutoChars = mercenaryIds.isEmpty() ? List.of() :
+                mercenaryCharacteristicRepository.findSelfAutoByMercenaryIdIn(mercenaryIds);
+        Map<Long, List<MercenaryCharacteristic>> selfAutoCharsByMercId = selfAutoChars.stream()
+                .collect(Collectors.groupingBy(c -> c.getMercenary().getId()));
+        List<Long> selfAutoCharIds = selfAutoChars.stream().map(MercenaryCharacteristic::getId).distinct().toList();
+        Map<Long, List<MercenaryCharacteristicLevel>> selfAutoLevelsByCharId = selfAutoCharIds.isEmpty() ? Map.of() :
+                characteristicLevelRepository.findByCharacteristicIdIn(selfAutoCharIds).stream()
+                        .collect(Collectors.groupingBy(l -> l.getCharacteristic().getId()));
+
         // ── 주술 세트효과 배치 로드 ────────────────────────────────────────────
         List<Long> equippedRitualIds = allSlots.stream()
                 .map(UserDeckMemberSlot::getRitual)
@@ -264,6 +272,15 @@ public class DpsCalculatorService {
                     enemyHittingResistDebuff,
                     enemyElementDebuff
             );
+
+            // SELF_AUTO 각성 특성 자동 적용 (포인트 배분 불필요, 항상 활성)
+            Map<StatType, Integer> membSelfFlat = memberSelfFlatPref.get(member.getId());
+            for (MercenaryCharacteristic selfAutoChar : selfAutoCharsByMercId.getOrDefault(member.getMercenary().getId(), List.of())) {
+                for (MercenaryCharacteristicLevel lvl : selfAutoLevelsByCharId.getOrDefault(selfAutoChar.getId(), List.of())) {
+                    if (lvl.getStatType() == null || lvl.getAmountValue() == null) continue;
+                    accumulate(membSelfFlat, lvl.getStatType(), Math.round(lvl.getAmountValue()));
+                }
+            }
         }
 
         int enemyResistPierceBonus = enemyResistPierceHolder[0];
@@ -403,8 +420,11 @@ public class DpsCalculatorService {
         int resistAfterDebuff = monsterResist - memberResistPierce - enemyResistPierceBonus;
         double resistPassRate = calcResistPassRate(resistAfterDebuff);
 
-        int monsterElementValue = monster.getElementValue() != null ? monster.getElementValue() : 0;
-        int effectiveMonsterElement = Math.max(0, monsterElementValue - memberElementPierce - Math.abs(enemyElementDebuff[0]));
+        Element monsterElement = monster.getElement();
+        int effectiveMonsterElement = ElementBonusCalculator.hasElementAttribute(monsterElement)
+                ? ElementBonusCalculator.effectiveMonsterElementValue(
+                        monster.getElementValue(), memberElementPierce, Math.abs(enemyElementDebuff[0]))
+                : 0;
 
         // ── 1패스: 멤버별 DPS 계산 (damageShare 제외) ─────────────────────────
 
@@ -497,7 +517,8 @@ public class DpsCalculatorService {
             }
 
             int memberElementValue = stats.getOrDefault(StatType.ELEMENT_VALUE, 0);
-            double elementBonus = calcElementBonus(memberElementValue, effectiveMonsterElement);
+            double elementBonus = ElementBonusCalculator.calcElementBonus(
+                    memberElementValue, effectiveMonsterElement, monsterElement);
             long memberRawDpsRounded         = Math.round(memberRawDps);
             long memberElementAdjustedDps    = Math.round(memberRawDps * (100.0 + elementBonus) / 100.0);
             long memberAdjustedDps           = Math.round(memberElementAdjustedDps * (resistPassRate / 100.0));
@@ -1019,18 +1040,19 @@ public class DpsCalculatorService {
                 });
     }
 
-    /** 각성 명왕이 덱에 있으면 아군 전체 속성값 +5 (EARTH +2 추가) */
+    /** 각성 명왕 N명 × (전원 +5, EARTH +2 추가) — N명이면 N배 중첩 */
     private void applyAwakenedMyeongwangAllyBuff(List<UserDeckMember> members,
                                                   UserDeckMember target,
                                                   Map<StatType, Integer> effectiveStats) {
-        boolean hasAwakenedMyeongwang = members.stream()
-                .anyMatch(m -> m.getMercenary().getCategory() == MercenaryCategory.MYEONG_KING_AWAKENING);
-        if (!hasAwakenedMyeongwang) return;
+        long awakenedCount = members.stream()
+                .filter(m -> m.getMercenary().getCategory() == MercenaryCategory.MYEONG_KING_AWAKENING)
+                .count();
+        if (awakenedCount == 0) return;
 
         var allyBuff = awakenedMyungwangBuffCalculator.getCommonAllyBuff();
-        int bonus = Math.round(allyBuff.defaultValue());
+        int bonus = (int) (Math.round(allyBuff.defaultValue()) * awakenedCount);
         if (target.getMercenary().getNature() == Nature.EARTH) {
-            bonus += Math.round(allyBuff.earthValue());
+            bonus += (int) (Math.round(allyBuff.earthValue()) * awakenedCount);
         }
         effectiveStats.merge(StatType.ELEMENT_VALUE, bonus, Integer::sum);
     }
@@ -1040,8 +1062,4 @@ public class DpsCalculatorService {
         return Math.max(0.0, 100.0 - (resistAfterDebuff * 0.16 + 57.0));
     }
 
-    private double calcElementBonus(int myElementValue, int monsterElementValue) {
-        double raw = (3.0 * myElementValue - monsterElementValue) / 2.0;
-        return Math.max(ELEMENT_BONUS_MIN, Math.min(ELEMENT_BONUS_MAX, raw));
-    }
 }

@@ -36,6 +36,10 @@ public class LegendGeneralCharacteristic {
     @Column(name = "characteristic_index", nullable = false)
     private int characteristicIndex;
 
+    /** 특성명 — 예: "속사", "지주" */
+    @Column(name = "name", length = 50)
+    private String name;
+
     /** 특성 레벨 (1~10) */
     @Column(nullable = false)
     private int level;
@@ -45,9 +49,10 @@ public class LegendGeneralCharacteristic {
 
     @Builder
     public LegendGeneralCharacteristic(LegendGeneral legendGeneral,
-                                        int characteristicIndex, int level) {
+                                        int characteristicIndex, String name, int level) {
         this.legendGeneral = legendGeneral;
         this.characteristicIndex = characteristicIndex;
+        this.name = name;
         this.level = level;
     }
 }

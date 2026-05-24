@@ -52,11 +52,18 @@ public class MercenaryService {
             filtered = filtered.subList(0, limit);
         }
 
-        // 저항깎 스탯 배치 조회 (N+1 방지)
+        // 저항깎·속성값 스탯 배치 조회 (N+1 방지)
         List<Long> ids = filtered.stream().map(Mercenary::getId).toList();
-        Map<Long, Integer> resistPierceMap = mercenaryStatRepository.findByMercenaryIdIn(ids)
-                .stream()
+        List<MercenaryStat> allStats = mercenaryStatRepository.findByMercenaryIdIn(ids);
+        Map<Long, Integer> resistPierceMap = allStats.stream()
                 .filter(s -> s.getStatKey() == StatType.RESIST_PIERCE)
+                .collect(Collectors.toMap(
+                        s -> s.getMercenary().getId(),
+                        MercenaryStat::getStatValue,
+                        (a, b) -> a
+                ));
+        Map<Long, Integer> elementValueMap = allStats.stream()
+                .filter(s -> s.getStatKey() == StatType.ELEMENT_VALUE)
                 .collect(Collectors.toMap(
                         s -> s.getMercenary().getId(),
                         MercenaryStat::getStatValue,
@@ -64,7 +71,8 @@ public class MercenaryService {
                 ));
 
         return filtered.stream()
-                .map(m -> MercenaryResponse.of(m, resistPierceMap.get(m.getId())))
+                .map(m -> MercenaryResponse.of(m, resistPierceMap.get(m.getId()),
+                        elementValueMap.get(m.getId())))
                 .toList();
     }
 }

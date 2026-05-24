@@ -92,6 +92,14 @@ public interface EquipmentItemRepository extends JpaRepository<EquipmentItem, Lo
             """)
     List<EquipmentItem> findBySlotWithItem(@Param("slot") EquipmentSlot slot);
 
+    /** 전체 장비 목록 조회 (덱 설정 페이지 초기 로딩용) */
+    @Query("""
+            SELECT ei FROM EquipmentItem ei
+            JOIN FETCH ei.item
+            LEFT JOIN FETCH ei.equipmentSet
+            """)
+    List<EquipmentItem> findAllWithItem();
+
     /** 세트 ID로 소속 장비 목록 조회 — equipment_set_pieces가 없을 때 일괄 장착 fallback */
     @Query("""
             SELECT ei FROM EquipmentItem ei

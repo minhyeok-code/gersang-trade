@@ -18,6 +18,7 @@ import org.example.gersangtrade.deck.repository.UserDeckMemberSlotRepository;
 import org.example.gersangtrade.deck.repository.UserDeckRepository;
 import org.example.gersangtrade.domain.catalog.EquipmentSet;
 import org.example.gersangtrade.domain.catalog.EquipmentSetSkillEffect;
+import org.example.gersangtrade.domain.catalog.ItemStat;
 import org.example.gersangtrade.domain.catalog.Mercenary;
 import org.example.gersangtrade.domain.catalog.MercenaryCharacteristic;
 import org.example.gersangtrade.domain.catalog.MercenaryCharacteristicLevel;
@@ -29,6 +30,7 @@ import org.example.gersangtrade.domain.catalog.RitualSetEffect;
 import org.example.gersangtrade.domain.catalog.SetGrantedSkill;
 import org.example.gersangtrade.domain.catalog.SkillCoefficient;
 import org.example.gersangtrade.domain.catalog.enums.Element;
+import org.example.gersangtrade.domain.catalog.enums.BuffTarget;
 import org.example.gersangtrade.domain.catalog.enums.Enhancement;
 import org.example.gersangtrade.domain.catalog.enums.Nature;
 import org.example.gersangtrade.domain.catalog.enums.SkillType;
@@ -202,6 +204,57 @@ class DpsCalculatorServiceTest {
         assertThat(res.memberResults()).hasSize(1);
         assertThat(res.memberResults().get(0).rawDps()).isEqualTo(6512L);
         assertThat(res.totalDps()).isEqualTo(2800L);
+    }
+
+    @Test
+    @DisplayName("무속성_몬스터_용병_속성값_있어도_속성보정_0")
+    void 무속성_몬스터_용병_속성값_있어도_속성보정_0() {
+        org.example.gersangtrade.domain.catalog.Item statItem = mock(org.example.gersangtrade.domain.catalog.Item.class);
+        when(statItem.getId()).thenReturn(ITEM_ID);
+
+        ItemStat elementStat = mock(ItemStat.class);
+        when(elementStat.getItem()).thenReturn(statItem);
+        when(elementStat.getStatType()).thenReturn(StatType.ELEMENT_VALUE);
+        when(elementStat.getValue()).thenReturn(20);
+        when(elementStat.getElement()).thenReturn(Element.NONE);
+        when(elementStat.getScope()).thenReturn(BuffTarget.SELF);
+        when(elementStat.getStatUnit()).thenReturn(StatUnit.FLAT);
+        when(itemStatRepository.findByItemIdIn(anyList())).thenReturn(List.of(elementStat));
+
+        Monster monster = monsterRepository.findById(MONSTER_ID).orElseThrow();
+        when(monster.getElement()).thenReturn(null);
+        when(monster.getElementValue()).thenReturn(null);
+
+        DpsResponse res = service.calculate(req());
+
+        assertThat(res.memberResults().get(0).elementBonus()).isZero();
+        assertThat(res.memberResults().get(0).elementValue()).isEqualTo(20);
+        assertThat(res.rawTotalDps()).isEqualTo(res.adjustTotalDps());
+    }
+
+    @Test
+    @DisplayName("속성_몬스터_속성보정_적용")
+    void 속성_몬스터_속성보정_적용() {
+        org.example.gersangtrade.domain.catalog.Item statItem = mock(org.example.gersangtrade.domain.catalog.Item.class);
+        when(statItem.getId()).thenReturn(ITEM_ID);
+
+        ItemStat elementStat = mock(ItemStat.class);
+        when(elementStat.getItem()).thenReturn(statItem);
+        when(elementStat.getStatType()).thenReturn(StatType.ELEMENT_VALUE);
+        when(elementStat.getValue()).thenReturn(20);
+        when(elementStat.getElement()).thenReturn(Element.NONE);
+        when(elementStat.getScope()).thenReturn(BuffTarget.SELF);
+        when(elementStat.getStatUnit()).thenReturn(StatUnit.FLAT);
+        when(itemStatRepository.findByItemIdIn(anyList())).thenReturn(List.of(elementStat));
+
+        Monster monster = monsterRepository.findById(MONSTER_ID).orElseThrow();
+        when(monster.getElement()).thenReturn(Element.FIRE);
+        when(monster.getElementValue()).thenReturn(10);
+
+        DpsResponse res = service.calculate(req());
+
+        assertThat(res.memberResults().get(0).elementBonus()).isCloseTo(25.0, offset(0.01));
+        assertThat(res.adjustTotalDps()).isEqualTo(Math.round(res.rawTotalDps() * 1.25));
     }
 
     // ── 특성 레벨 보너스 ──────────────────────────────────────────────────────

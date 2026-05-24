@@ -75,6 +75,26 @@ public class ItemSearchService {
     }
 
     /**
+     * 전체 장비 목록 조회.
+     * 덱 설정 페이지 초기 로딩 시 한 번에 받아가는 용도.
+     */
+    @Cacheable(value = CacheConfig.EQUIPMENT_ALL)
+    public List<EquipmentSlotItemResponse> getAllEquipment() {
+        List<EquipmentItem> items = equipmentItemRepository.findAllWithItem();
+        if (items.isEmpty()) return List.of();
+
+        List<Long> itemIds = items.stream().map(EquipmentItem::getItemId).toList();
+        Map<Long, List<ItemStat>> statsByItemId = itemStatRepository.findByItemIdIn(itemIds).stream()
+                .collect(Collectors.groupingBy(ist -> ist.getItem().getId()));
+
+        return items.stream()
+                .sorted((a, b) -> b.getItemId().compareTo(a.getItemId()))
+                .map(item -> EquipmentSlotItemResponse.of(item,
+                        statsByItemId.getOrDefault(item.getItemId(), List.of())))
+                .toList();
+    }
+
+    /**
      * 덱 슬롯에 착용 가능한 장비 목록 조회.
      * 슬롯 타입에 따라 RING_1/RING_2는 EquipmentSlot.RING으로, 나머지는 EquipSlot으로 조회한다.
      *

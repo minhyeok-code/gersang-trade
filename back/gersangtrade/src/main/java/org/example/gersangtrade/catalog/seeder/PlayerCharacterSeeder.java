@@ -42,11 +42,6 @@ public class PlayerCharacterSeeder implements ApplicationRunner {
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
-        if (mercenaryRepository.findByName("신궁").isPresent()) {
-            log.debug("주인공 시딩 skip: 이미 존재");
-            return;
-        }
-
         log.info("주인공 시딩 시작");
         seedJoseonMale();
         seedJoseonFemale();
@@ -66,7 +61,7 @@ public class PlayerCharacterSeeder implements ApplicationRunner {
     private void seedJoseonMale() {
         Mercenary m = upsertMercenary("신궁", Nation.JOSEON, Nature.FIRE);
         upsertDetail(m, Nation.JOSEON, Gender.MALE);
-        upsertStats(m, 150, 400, 200, 150, 70, 80, 25, 11);
+        upsertStats(m, 150, 400, 200, 150, 70, 80, 20, 11);
 
         // 확산 (하위 point=1)
         MercenaryCharacteristic hwaksan = upsertChar(m, "pc-joseon-m-hwaksan", "확산", 1, null);
@@ -92,7 +87,7 @@ public class PlayerCharacterSeeder implements ApplicationRunner {
     private void seedJoseonFemale() {
         Mercenary m = upsertMercenary("포수", Nation.JOSEON, Nature.FIRE);
         upsertDetail(m, Nation.JOSEON, Gender.FEMALE);
-        upsertStats(m, 450, 50, 250, 150, 60, 90, 25, 6);
+        upsertStats(m, 450, 50, 250, 150, 60, 90, 20, 6);
 
         // 집중 (하위 point=1)
         MercenaryCharacteristic jipjung = upsertChar(m, "pc-joseon-f-jipjung", "집중", 1, null);
@@ -121,7 +116,7 @@ public class PlayerCharacterSeeder implements ApplicationRunner {
     private void seedJapanMale() {
         Mercenary m = upsertMercenary("검호", Nation.JAPAN, Nature.WATER);
         upsertDetail(m, Nation.JAPAN, Gender.MALE);
-        upsertStats(m, 380, 60, 260, 200, 80, 70, 25, 6);
+        upsertStats(m, 380, 60, 260, 200, 80, 70, 20, 6);
 
         // 집중 (하위 point=1)
         MercenaryCharacteristic jipjung = upsertChar(m, "pc-japan-m-jipjung", "집중", 1, null);
@@ -147,7 +142,7 @@ public class PlayerCharacterSeeder implements ApplicationRunner {
     private void seedJapanFemale() {
         Mercenary m = upsertMercenary("이타코", Nation.JAPAN, Nature.WATER);
         upsertDetail(m, Nation.JAPAN, Gender.FEMALE);
-        upsertStats(m, 180, 70, 300, 350, 70, 80, 25, 6);
+        upsertStats(m, 180, 70, 300, 350, 70, 80, 20, 6);
 
         // 분노 (하위 point=1)
         MercenaryCharacteristic bunno = upsertChar(m, "pc-japan-f-bunno", "분노", 1, null);
@@ -172,7 +167,7 @@ public class PlayerCharacterSeeder implements ApplicationRunner {
     private void seedChinaMale() {
         Mercenary m = upsertMercenary("일대종사", Nation.CHINA, Nature.WIND);
         upsertDetail(m, Nation.CHINA, Gender.MALE);
-        upsertStats(m, 320, 30, 450, 100, 100, 50, 25, 6);
+        upsertStats(m, 320, 30, 450, 100, 100, 50, 20, 6);
 
         // 충격 (하위 point=1)
         MercenaryCharacteristic chungyeok = upsertChar(m, "pc-china-m-chungyeok", "충격", 1, null);
@@ -197,7 +192,7 @@ public class PlayerCharacterSeeder implements ApplicationRunner {
     private void seedChinaFemale() {
         Mercenary m = upsertMercenary("강신", Nation.CHINA, Nature.WIND);
         upsertDetail(m, Nation.CHINA, Gender.FEMALE);
-        upsertStats(m, 200, 60, 300, 340, 50, 100, 25, 6);
+        upsertStats(m, 200, 60, 300, 340, 50, 100, 20, 6);
 
         // 축복 (하위 point=1)
         MercenaryCharacteristic chukbok = upsertChar(m, "pc-china-f-chukbok", "축복", 1, null);
@@ -223,7 +218,7 @@ public class PlayerCharacterSeeder implements ApplicationRunner {
     private void seedTaiwanFemale() {
         Mercenary m = upsertMercenary("백수왕", Nation.TAIWAN, Nature.THUNDER);
         upsertDetail(m, Nation.TAIWAN, Gender.FEMALE);
-        upsertStats(m, 370, 60, 320, 150, 70, 80, 25, 6);
+        upsertStats(m, 370, 60, 320, 150, 70, 80, 20, 6);
 
         // 강인함 (하위 point=1)
         MercenaryCharacteristic ganginham = upsertChar(m, "pc-taiwan-f-ganginham", "강인함", 1, null);
@@ -250,7 +245,7 @@ public class PlayerCharacterSeeder implements ApplicationRunner {
     private void seedTaiwanMale() {
         Mercenary m = upsertMercenary("도사", Nation.TAIWAN, Nature.THUNDER);
         upsertDetail(m, Nation.TAIWAN, Gender.MALE);
-        upsertStats(m, 280, 90, 280, 250, 65, 85, 25, 6);
+        upsertStats(m, 280, 90, 280, 250, 65, 85, 20, 6);
 
         // 영험 (하위 point=1)
         MercenaryCharacteristic yeonghyeom = upsertChar(m, "pc-taiwan-m-yeonghyeom", "영험", 1, null);
@@ -277,7 +272,7 @@ public class PlayerCharacterSeeder implements ApplicationRunner {
     private void seedIndiaMale() {
         Mercenary m = upsertMercenary("투신", Nation.INDIA, Nature.EARTH);
         upsertDetail(m, Nation.INDIA, Gender.MALE);
-        upsertStats(m, 250, 50, 450, 150, 95, 85, 25, 6);
+        upsertStats(m, 250, 50, 450, 150, 95, 85, 5, 6);
 
         // 무쇠주먹 (하위 point=1)
         MercenaryCharacteristic musoe = upsertChar(m, "pc-india-m-musoe", "무쇠주먹", 1, null);
@@ -302,7 +297,7 @@ public class PlayerCharacterSeeder implements ApplicationRunner {
     private void seedIndiaFemale() {
         Mercenary m = upsertMercenary("무희", Nation.INDIA, Nature.EARTH);
         upsertDetail(m, Nation.INDIA, Gender.FEMALE);
-        upsertStats(m, 100, 50, 300, 450, 55, 95, 25, 6);
+        upsertStats(m, 100, 50, 300, 450, 55, 95, 5, 6);
 
         // 화음 (하위 point=1)
         MercenaryCharacteristic hwaeum = upsertChar(m, "pc-india-f-hwaeum", "화음", 1, null);

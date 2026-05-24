@@ -13,6 +13,7 @@ import org.example.gersangtrade.catalog.repository.MercenaryStatRepository;
 import org.example.gersangtrade.domain.catalog.ItemStat;
 import org.example.gersangtrade.domain.catalog.Mercenary;
 import org.example.gersangtrade.domain.catalog.MercenaryStat;
+import org.example.gersangtrade.domain.catalog.enums.Element;
 import org.example.gersangtrade.domain.catalog.enums.StatType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,7 +26,7 @@ import java.util.*;
  * <p>데미지 공식:
  * <ul>
  *   <li>저항 통과율(%) = 깎은 뒤 저항 >= 260 → 1.4% 고정; 미만 → 100 - (저항 × 0.16 + 57), 최솟값 0</li>
- *   <li>속성 보정(%) = clamp((3 × 용병 속성값 - 몬스터 속성값) / 2, -50, +50)</li>
+ *   <li>속성 보정(%) = 무속성 몬스터(element null/NONE)면 0; 아니면 clamp((3 × 용병 속성값 - 몬스터 속성값) / 2, -50, +50)</li>
  *   <li>종합 데미지 배율 = (100 + 속성 보정) × (통과율 / 100)</li>
  *   <li>가성비 점수 = 데미지 상승률(%) / 가격(억 전)</li>
  * </ul>
@@ -44,12 +45,6 @@ public class CalculatorService {
 
     /** 저항 상한선 통과율(%) */
     private static final double RESIST_CAP_PASS_RATE = 1.4;
-
-    /** 속성 보정 최솟값(%) */
-    private static final double ELEMENT_BONUS_MIN = -50.0;
-
-    /** 속성 보정 최댓값(%) */
-    private static final double ELEMENT_BONUS_MAX = 50.0;
 
     /** 전(錢) → 억 환산 단위. 가성비 점수 = 데미지 상승률(%) ÷ 가격(억 전) */
     private static final double EOK_UNIT = 100_000_000.0;
@@ -104,12 +99,11 @@ public class CalculatorService {
     }
 
     /**
-     * 속성 보정 계산.
-     * = clamp((3 × 용병 속성값 - 몬스터 속성값) / 2, -50, +50)
+     * 속성 보정 계산 — 무속성 몬스터는 0.
+     * @see ElementBonusCalculator
      */
-    private double calcElementBonus(int myElementValue, int monsterElementValue) {
-        double raw = (3.0 * myElementValue - monsterElementValue) / 2.0;
-        return Math.max(ELEMENT_BONUS_MIN, Math.min(ELEMENT_BONUS_MAX, raw));
+    private double calcElementBonus(int myElementValue, int monsterElementValue, Element monsterElement) {
+        return ElementBonusCalculator.calcElementBonus(myElementValue, monsterElementValue, monsterElement);
     }
 
     /**
@@ -145,7 +139,7 @@ public class CalculatorService {
     private CurrentStatsDto calcCurrentStats(CalculatorRequest req) {
         int resistAfterDebuff = req.monsterResistance() - req.currentResistPierce();
         double resistPassRate = calcResistPassRate(resistAfterDebuff);
-        double elementBonus = calcElementBonus(req.currentElementValue(), req.monsterElementValue());
+        double elementBonus = calcElementBonus(req.currentElementValue(), req.monsterElementValue(), req.monsterElement());
         double damageMultiplier = calcDamageMultiplier(resistPassRate, elementBonus);
 
         // 저깎 0% 기준 배율 (저항깎이 전혀 없을 때 대비 현재 배율)
@@ -225,7 +219,7 @@ public class CalculatorService {
 
         int newResistAfterDebuff = req.monsterResistance() - (req.currentResistPierce() + resistValue);
         double newPassRate = calcResistPassRate(newResistAfterDebuff);
-        double elementBonus = calcElementBonus(req.currentElementValue(), req.monsterElementValue());
+        double elementBonus = calcElementBonus(req.currentElementValue(), req.monsterElementValue(), req.monsterElement());
         double newMultiplier = calcDamageMultiplier(newPassRate, elementBonus);
         double increaseRate = calcIncreaseRate(current.damageMultiplier(), newMultiplier);
         Double effScore = calcEfficiencyScore(price, increaseRate);
@@ -304,7 +298,7 @@ public class CalculatorService {
             Long price, CalculatorRequest req, CurrentStatsDto current) {
 
         int newElementValue = req.currentElementValue() + elementIncrease;
-        double newElementBonus = calcElementBonus(newElementValue, req.monsterElementValue());
+        double newElementBonus = calcElementBonus(newElementValue, req.monsterElementValue(), req.monsterElement());
 
         // 저항깎은 현재 스펙 그대로 유지, 속성값만 변경
         int resistAfterDebuff = req.monsterResistance() - req.currentResistPierce();

@@ -7,19 +7,25 @@ import org.example.gersangtrade.admin.dto.request.ItemUpdateRequest;
 import org.example.gersangtrade.admin.dto.request.SkillReplaceRequest;
 import org.example.gersangtrade.admin.dto.response.ItemAdminResponse;
 import org.example.gersangtrade.admin.dto.response.ItemDetailAdminResponse;
+import org.example.gersangtrade.admin.dto.request.ItemRestrictionAddRequest;
+import org.example.gersangtrade.admin.dto.response.ItemRestrictionResponse;
 import org.example.gersangtrade.catalog.repository.EquipmentItemRepository;
 import org.example.gersangtrade.catalog.repository.EquipmentSetRepository;
 import org.example.gersangtrade.catalog.repository.EquipmentSetPieceRepository;
+import org.example.gersangtrade.catalog.repository.ItemMercenaryRestrictionRepository;
 import org.example.gersangtrade.catalog.repository.ItemRepository;
 import org.example.gersangtrade.catalog.repository.ItemSkillRepository;
 import org.example.gersangtrade.catalog.repository.ItemStatRepository;
 import org.example.gersangtrade.catalog.repository.MaterialItemRepository;
+import org.example.gersangtrade.catalog.repository.MercenaryRepository;
 import org.example.gersangtrade.catalog.repository.RitualApplicabilityRepository;
 import org.example.gersangtrade.domain.catalog.EquipmentItem;
 import org.example.gersangtrade.domain.catalog.EquipmentSet;
 import org.example.gersangtrade.domain.catalog.Item;
+import org.example.gersangtrade.domain.catalog.ItemMercenaryRestriction;
 import org.example.gersangtrade.domain.catalog.ItemSkill;
 import org.example.gersangtrade.domain.catalog.ItemStat;
+import org.example.gersangtrade.domain.catalog.Mercenary;
 import org.example.gersangtrade.domain.catalog.enums.Element;
 import org.example.gersangtrade.domain.catalog.enums.ItemType;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -49,6 +55,8 @@ public class ItemAdminService {
     private final MaterialItemRepository materialItemRepository;
     private final RitualApplicabilityRepository ritualApplicabilityRepository;
     private final EquipmentSetPieceRepository equipmentSetPieceRepository;
+    private final ItemMercenaryRestrictionRepository itemMercenaryRestrictionRepository;
+    private final MercenaryRepository mercenaryRepository;
 
     // ── 아이템 목록 조회 ─────────────────────────────────────────────────────────
 
@@ -218,6 +226,59 @@ public class ItemAdminService {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "다른 데이터에서 참조 중인 아이템은 삭제할 수 없습니다.", e);
         }
+    }
+
+    // ── 아이템 착용 제한 관리 ──────────────────────────────────────────────────────
+
+    /** 아이템의 착용 제한 목록 조회. */
+    @Transactional(readOnly = true)
+    public List<ItemRestrictionResponse> getRestrictions(Long itemId) {
+        getItemOrThrow(itemId);
+        return itemMercenaryRestrictionRepository.findByItemId(itemId).stream()
+                .map(ItemRestrictionResponse::of)
+                .toList();
+    }
+
+    /**
+     * 착용 제한 추가.
+     * mercenaryId와 category 중 하나만 설정해야 한다.
+     */
+    @Transactional
+    public ItemRestrictionResponse addRestriction(Long itemId, ItemRestrictionAddRequest req) {
+        if ((req.mercenaryId() == null) == (req.category() == null)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "mercenaryId와 category 중 하나만 설정해야 합니다.");
+        }
+
+        Item item = getItemOrThrow(itemId);
+        Mercenary mercenary = null;
+
+        if (req.mercenaryId() != null) {
+            mercenary = mercenaryRepository.findById(req.mercenaryId())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                            "용병을 찾을 수 없습니다: " + req.mercenaryId()));
+        }
+
+        ItemMercenaryRestriction restriction = ItemMercenaryRestriction.builder()
+                .item(item)
+                .mercenary(mercenary)
+                .category(req.category())
+                .build();
+
+        return ItemRestrictionResponse.of(itemMercenaryRestrictionRepository.save(restriction));
+    }
+
+    /** 착용 제한 삭제. */
+    @Transactional
+    public void deleteRestriction(Long itemId, Long restrictionId) {
+        ItemMercenaryRestriction restriction = itemMercenaryRestrictionRepository.findById(restrictionId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "착용 제한을 찾을 수 없습니다: " + restrictionId));
+        if (!restriction.getItem().getId().equals(itemId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "해당 아이템의 착용 제한이 아닙니다.");
+        }
+        itemMercenaryRestrictionRepository.delete(restriction);
     }
 
     // ── 내부 헬퍼 ────────────────────────────────────────────────────────────────

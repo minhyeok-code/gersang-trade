@@ -3,6 +3,7 @@ package org.example.gersangtrade.deck.repository;
 import org.example.gersangtrade.domain.deck.UserDeckMemberSlot;
 import org.example.gersangtrade.domain.deck.enums.EquipSlot;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -36,4 +37,9 @@ public interface UserDeckMemberSlotRepository extends JpaRepository<UserDeckMemb
             WHERE s.deckMember.id IN :memberIds
             """)
     List<UserDeckMemberSlot> findByDeckMemberIdIn(@Param("memberIds") List<Long> memberIds);
+
+    /** 용병 제거 시 장비 슬롯 선삭제 — FK 제약 회피 */
+    @Modifying
+    @Query("DELETE FROM UserDeckMemberSlot s WHERE s.deckMember.id = :deckMemberId")
+    void deleteByDeckMemberId(@Param("deckMemberId") Long deckMemberId);
 }

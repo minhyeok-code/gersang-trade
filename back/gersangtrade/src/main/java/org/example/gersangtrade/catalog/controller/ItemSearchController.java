@@ -69,14 +69,18 @@ public class ItemSearchController {
     }
 
     /**
-     * 덱 슬롯에 착용 가능한 장비 목록 조회.
-     * 덱 편집 UI에서 슬롯 클릭 시 해당 슬롯에 착용 가능한 아이템 목록을 표시할 때 사용된다.
+     * 장비 목록 조회.
+     * slot 생략 시 전체 장비 반환 (덱 설정 페이지 초기 로딩용).
+     * slot 지정 시 해당 슬롯 착용 가능 장비만 반환.
      *
-     * @param slot 덱 장비 슬롯 (예: HELMET, WEAPON, APP_SPIRIT, RING_1 등)
+     * @param slot 덱 장비 슬롯 (예: HELMET, WEAPON, APP_SPIRIT, RING_1 등) — 선택
      */
     @GetMapping("/equipment")
-    public ResponseEntity<List<EquipmentSlotItemResponse>> getEquipmentBySlot(
-            @RequestParam EquipSlot slot) {
+    public ResponseEntity<List<EquipmentSlotItemResponse>> getEquipment(
+            @RequestParam(required = false) EquipSlot slot) {
+        if (slot == null) {
+            return ResponseEntity.ok(itemSearchService.getAllEquipment());
+        }
         return ResponseEntity.ok(itemSearchService.getEquipmentBySlot(slot));
     }
 }

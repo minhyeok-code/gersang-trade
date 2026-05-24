@@ -5,6 +5,7 @@ import org.example.gersangtrade.catalog.repository.DeckBuffSourceRepository;
 import org.example.gersangtrade.catalog.repository.EquipmentItemRepository;
 import org.example.gersangtrade.catalog.repository.EquipmentSetEffectRepository;
 import org.example.gersangtrade.catalog.repository.EquipmentSetPieceRepository;
+import org.example.gersangtrade.catalog.repository.ItemMercenaryRestrictionRepository;
 import org.example.gersangtrade.catalog.repository.ItemStatRepository;
 import org.example.gersangtrade.catalog.repository.MercenaryCharacteristicLevelRepository;
 import org.example.gersangtrade.catalog.repository.MercenaryCharacteristicRepository;
@@ -35,9 +36,11 @@ import org.example.gersangtrade.domain.catalog.Ritual;
 import org.example.gersangtrade.calculator.service.CharacteristicScopeResolver;
 import org.example.gersangtrade.calculator.service.CharacteristicScopeResolver.ApplicationMode;
 import org.example.gersangtrade.calculator.service.CharacteristicScopeResolver.ScopedEffect;
+import org.example.gersangtrade.calculator.service.AwakenedMyungwangBuffCalculator;
 import org.example.gersangtrade.calculator.service.LegendGeneralBuffCalculator;
 import org.example.gersangtrade.calculator.service.MemberBuildStatCalculator;
 import org.example.gersangtrade.calculator.service.MyungwangStatTransferCalculator;
+import org.example.gersangtrade.calculator.service.PlayerCharacterBuffCalculator;
 import org.example.gersangtrade.catalog.service.LegendGeneralLoadService;
 import org.example.gersangtrade.domain.catalog.LegendGeneral;
 import org.example.gersangtrade.domain.catalog.enums.BuffTarget;
@@ -81,7 +84,9 @@ public class DeckService {
     private final UserDeckRepository deckRepository;
     private final UserDeckMemberRepository memberRepository;
     private final UserDeckMemberSlotRepository slotRepository;
+    private final UserDeckMemberSlotRitualRepository slotRitualRepository;
     private final UserDeckMemberCharacteristicRepository memberCharacteristicRepository;
+    private final UserDeckMemberEquipRepository memberEquipRepository;
     private final UserRepository userRepository;
     private final MercenaryRepository mercenaryRepository;
     private final EquipmentItemRepository equipmentItemRepository;
@@ -91,6 +96,7 @@ public class DeckService {
     private final RitualApplicabilityRepository ritualApplicabilityRepository;
     private final MercenaryStatRepository mercenaryStatRepository;
     private final ItemStatRepository itemStatRepository;
+    private final ItemMercenaryRestrictionRepository itemMercenaryRestrictionRepository;
     private final MercenaryCharacteristicRepository characteristicRepository;
     private final MercenaryCharacteristicLevelRepository characteristicLevelRepository;
     private final RitualStatRepository ritualStatRepository;
@@ -101,6 +107,8 @@ public class DeckService {
     private final LegendGeneralBuffCalculator legendGeneralBuffCalculator;
     private final MyungwangStatTransferCalculator myungwangStatTransferCalculator;
     private final MemberBuildStatCalculator memberBuildStatCalculator;
+    private final PlayerCharacterBuffCalculator playerCharacterBuffCalculator;
+    private final AwakenedMyungwangBuffCalculator awakenedMyungwangBuffCalculator;
 
     /** 땅 전설 정령의 2배 효과에서 제외되는 속도 계열 스탯 */
     private static final Set<StatType> SPIRIT_DOUBLE_EXCLUDED_STATS = Set.of(
@@ -163,6 +171,10 @@ public class DeckService {
     public void deleteDeck(Long userId, Long deckId) {
         UserDeck deck = getDeckOrThrow(deckId);
         validateOwner(deck, userId);
+        for (UserDeckMember member : memberRepository.findByDeckIdWithMercenary(deckId)) {
+            purgeMemberRelatedData(member.getId());
+            memberRepository.delete(member);
+        }
         deckRepository.delete(deck);
     }
 
@@ -228,6 +240,8 @@ public class DeckService {
         Mercenary mercenary = mercenaryRepository.findById(req.mercenaryId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "용병을 찾을 수 없습니다."));
 
+        validateMyeongwangComposition(deckId, mercenary);
+
         UserDeckMember member = UserDeckMember.builder().deck(deck).mercenary(mercenary).build();
         memberRepository.save(member);
         return DeckMemberResponse.of(member, List.of());
@@ -237,7 +251,9 @@ public class DeckService {
     public void removeMember(Long userId, Long deckId, Long memberId) {
         UserDeck deck = getDeckOrThrow(deckId);
         validateOwner(deck, userId);
-        memberRepository.delete(getMemberOrThrow(memberId, deckId));
+        UserDeckMember member = getMemberOrThrow(memberId, deckId);
+        purgeMemberRelatedData(memberId);
+        memberRepository.delete(member);
     }
 
     // ── 용병 스탯 ───────────────────────────────────────────────────────────
@@ -263,6 +279,36 @@ public class DeckService {
                         .toList();
         Map<StatType, Integer> totalMap = new HashMap<>(components.preTransferTotal());
         transferStatMap.forEach((k, v) -> totalMap.merge(k, v, Integer::sum));
+
+        // 전체 멤버 로드 (주인공·각성명왕 버프 계산에 필요)
+        List<UserDeckMember> allMembers = memberRepository.findByDeckIdWithMercenary(deckId);
+
+        // 주인공 국가 속성 버프 — 해당 속성 아군 ELEMENT_VALUE 가산
+        allMembers.stream()
+                .filter(m -> m.getMercenary().getCategory() == MercenaryCategory.PROTAGONIST)
+                .findFirst()
+                .ifPresent(protagonist -> {
+                    var nationBuff = playerCharacterBuffCalculator.getNationBuff(
+                            protagonist.getMercenary().getNation());
+                    if (nationBuff.value() > 0 && nationBuff.element() != Element.NONE
+                            && nationBuff.element().name().equals(
+                                    member.getMercenary().getNature().name())) {
+                        totalMap.merge(StatType.ELEMENT_VALUE, Math.round(nationBuff.value()), Integer::sum);
+                    }
+                });
+
+        // 각성 명왕 N명 × 아군 속성값 버프 (+5, EARTH +2 중첩)
+        long awakenedMyeongwangCount = allMembers.stream()
+                .filter(m -> m.getMercenary().getCategory() == MercenaryCategory.MYEONG_KING_AWAKENING)
+                .count();
+        if (awakenedMyeongwangCount > 0) {
+            var allyBuff = awakenedMyungwangBuffCalculator.getCommonAllyBuff();
+            int bonus = (int) (Math.round(allyBuff.defaultValue()) * awakenedMyeongwangCount);
+            if (member.getMercenary().getNature() == Nature.EARTH) {
+                bonus += (int) (Math.round(allyBuff.earthValue()) * awakenedMyeongwangCount);
+            }
+            totalMap.merge(StatType.ELEMENT_VALUE, bonus, Integer::sum);
+        }
 
         return MemberStatResponse.of(member, components.baseStatMap(), components.equipStatMap(),
                 components.setEffectStatMap(), components.characteristicStatMap(),
@@ -621,6 +667,7 @@ public class DeckService {
         EquipmentItem item = equipmentItemRepository.findWithItemByItemId(req.itemId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "아이템을 찾을 수 없습니다."));
         validateSlotCompatibility(slot, item);
+        validateMercenaryRestriction(member.getMercenary(), item);
 
         slotRepository.findByDeckMemberIdAndSlot(memberId, slot)
                 .ifPresentOrElse(
@@ -714,6 +761,8 @@ public class DeckService {
 
     /** 세트 피스 1종을 대응 슬롯(반지는 양손)에 장착한다. */
     private void equipSetPiece(UserDeckMember member, EquipmentItem item, EquipmentSlot pieceSlot, int pieceCount) {
+        validateMercenaryRestriction(member.getMercenary(), item);
+
         if (pieceSlot == EquipmentSlot.RING || pieceCount >= 2) {
             validateSlotCompatibility(EquipSlot.RING_1, item);
             validateSlotCompatibility(EquipSlot.RING_2, item);
@@ -957,6 +1006,14 @@ public class DeckService {
                 });
     }
 
+    /** 용병 삭제 전 하위 데이터 정리 — 장비·주술·특성 등 FK 참조 해제 */
+    private void purgeMemberRelatedData(Long memberId) {
+        slotRitualRepository.deleteByDeckMemberId(memberId);
+        slotRepository.deleteByDeckMemberId(memberId);
+        memberCharacteristicRepository.deleteByDeckMemberId(memberId);
+        memberEquipRepository.deleteByDeckMemberId(memberId);
+    }
+
     private UserDeckMember getMemberOrThrow(Long memberId, Long deckId) {
         return memberRepository.findByIdAndDeckId(memberId, deckId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "덱 멤버를 찾을 수 없습니다."));
@@ -1018,5 +1075,60 @@ public class DeckService {
             case APP_WAR_GOD -> EquipmentSlot.DIVINE;
             default -> null;
         };
+    }
+
+    /**
+     * 아이템 착용 용병 제한 검증.
+     * item_mercenary_restrictions 행이 없으면 공용. 있으면 하나 이상 조건 일치 시 통과.
+     */
+    private void validateMercenaryRestriction(Mercenary mercenary, EquipmentItem item) {
+        var restrictions = itemMercenaryRestrictionRepository.findByItemId(item.getItemId());
+        if (restrictions.isEmpty()) return;
+        boolean allowed = restrictions.stream().anyMatch(r -> r.allows(mercenary));
+        if (!allowed) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "해당 용병은 이 아이템을 착용할 수 없습니다.");
+        }
+    }
+
+    /**
+     * 명왕 편성 제한 검증.
+     * 1. 부동명왕(EARTH) 제외 명왕·각성명왕 합산 최대 2명.
+     * 2. 동일 속성(Nature) 계열 명왕·각성명왕은 한 명만 (일반/각성 중 택1).
+     */
+    private void validateMyeongwangComposition(Long deckId, Mercenary incoming) {
+        boolean isMyeongwang = incoming.getCategory() == MercenaryCategory.MYEONG_KING
+                || incoming.getCategory() == MercenaryCategory.MYEONG_KING_AWAKENING;
+        if (!isMyeongwang) return;
+
+        List<UserDeckMember> currentMembers = memberRepository.findByDeckIdWithMercenary(deckId);
+
+        if (incoming.getNature() != null && incoming.getNature() != Nature.NONE) {
+            boolean hasSameNatureMyeongwang = currentMembers.stream()
+                    .anyMatch(m -> isMyeongwangMember(m)
+                            && m.getMercenary().getNature() == incoming.getNature());
+            if (hasSameNatureMyeongwang) {
+                String natureLabel = incoming.getNature().getDisplayName();
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        natureLabel + " 계열 명왕(일반/각성)은 한 명만 편성할 수 있습니다.");
+            }
+        }
+
+        if (incoming.getNature() != Nature.EARTH) {
+            long nonEarthCount = currentMembers.stream()
+                    .filter(m -> isMyeongwangMember(m)
+                            && m.getMercenary().getNature() != Nature.EARTH)
+                    .count();
+            if (nonEarthCount >= 2) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "부동명왕을 제외한 명왕·각성명왕은 최대 2명까지 편성할 수 있습니다.");
+            }
+        }
+    }
+
+    private static boolean isMyeongwangMember(UserDeckMember member) {
+        MercenaryCategory category = member.getMercenary().getCategory();
+        return category == MercenaryCategory.MYEONG_KING
+                || category == MercenaryCategory.MYEONG_KING_AWAKENING;
     }
 }

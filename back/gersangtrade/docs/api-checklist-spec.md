@@ -544,6 +544,9 @@ DPS 계산기가 완성된 이후에 의미 있는 기능이다.
 | `PUT` | `/admin/items/{itemId}/equipment-detail` | 장비 상세 수정 (slot·kind·ritual·hasSlot·set·equipSlot·**mercenary·enhancement** 포함) | ✅ |
 | `PUT` | `/admin/items/{itemId}/stats` | 아이템 스탯 전체 교체 | ✅ |
 | `PUT` | `/admin/items/{itemId}/skills` | 아이템 스킬 전체 교체 (**skillBehaviorType·replacesBaseSkill·triggerEveryN·triggerBaseSkillKey·note** 포함) | ✅ |
+| `GET` | `/admin/items/{itemId}/restrictions` | 아이템 착용 제한 목록 조회 | ✅ |
+| `POST` | `/admin/items/{itemId}/restrictions` | 착용 제한 추가 (mercenaryId 또는 category) | ✅ |
+| `DELETE` | `/admin/items/{itemId}/restrictions/{restrictionId}` | 착용 제한 삭제 | ✅ |
 | `GET` | `/admin/mercenaries` | 용병 목록 조회 | ✅ |
 | `GET` | `/admin/mercenaries/{mercenaryId}` | 용병 상세 조회 | ✅ |
 | `PUT` | `/admin/mercenaries/{mercenaryId}` | 용병 기본정보 수정 | ✅ |

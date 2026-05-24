@@ -20,6 +20,8 @@ public record EquipmentSlotItemResponse(
         boolean hasSlotOption,
         Long setId,
         String setName,
+        String slot,
+        String equipSlot,
         List<StatEntry> stats
 ) {
     public record StatEntry(StatType statType, Element element, int value, String scope) {}
@@ -34,6 +36,8 @@ public record EquipmentSlotItemResponse(
                 item.isHasSlotOption(),
                 item.getEquipmentSet() != null ? item.getEquipmentSet().getId() : null,
                 item.getEquipmentSet() != null ? item.getEquipmentSet().getName() : null,
+                item.getSlot().name(),
+                item.getEquipSlot() != null ? item.getEquipSlot().name() : null,
                 stats.stream()
                         .map(s -> new StatEntry(s.getStatType(), s.getElement(), s.getValue(), s.getScope().name()))
                         .toList()

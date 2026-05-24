@@ -3,20 +3,25 @@ package org.example.gersangtrade.admin.controller;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.example.gersangtrade.admin.dto.request.EquipmentDetailUpdateRequest;
+import org.example.gersangtrade.admin.dto.request.ItemRestrictionAddRequest;
 import org.example.gersangtrade.admin.dto.request.ItemStatReplaceRequest;
 import org.example.gersangtrade.admin.dto.request.ItemUpdateRequest;
 import org.example.gersangtrade.admin.dto.request.SkillReplaceRequest;
 import org.example.gersangtrade.admin.dto.response.ItemAdminResponse;
 import org.example.gersangtrade.admin.dto.response.ItemDetailAdminResponse;
+import org.example.gersangtrade.admin.dto.response.ItemRestrictionResponse;
 import org.example.gersangtrade.admin.service.ItemAdminService;
 import org.example.gersangtrade.domain.catalog.enums.ItemType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 /**
  * 아이템 수동 관리 API.
@@ -100,6 +105,36 @@ public class ItemAdminController {
     @DeleteMapping("/{itemId}")
     public ResponseEntity<Void> deleteItem(@PathVariable Long itemId) {
         itemAdminService.deleteItem(itemId);
+        return ResponseEntity.noContent().build();
+    }
+
+    // ── 착용 제한 관리 ────────────────────────────────────────────────────────────
+
+    /** 아이템 착용 제한 목록 조회. */
+    @GetMapping("/{itemId}/restrictions")
+    public ResponseEntity<List<ItemRestrictionResponse>> getRestrictions(
+            @PathVariable Long itemId) {
+        return ResponseEntity.ok(itemAdminService.getRestrictions(itemId));
+    }
+
+    /**
+     * 착용 제한 추가.
+     * Body: { "mercenaryId": 1 } 또는 { "category": "PROTAGONIST" }
+     */
+    @PostMapping("/{itemId}/restrictions")
+    public ResponseEntity<ItemRestrictionResponse> addRestriction(
+            @PathVariable Long itemId,
+            @RequestBody ItemRestrictionAddRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(itemAdminService.addRestriction(itemId, request));
+    }
+
+    /** 착용 제한 삭제. */
+    @DeleteMapping("/{itemId}/restrictions/{restrictionId}")
+    public ResponseEntity<Void> deleteRestriction(
+            @PathVariable Long itemId,
+            @PathVariable Long restrictionId) {
+        itemAdminService.deleteRestriction(itemId, restrictionId);
         return ResponseEntity.noContent().build();
     }
 }

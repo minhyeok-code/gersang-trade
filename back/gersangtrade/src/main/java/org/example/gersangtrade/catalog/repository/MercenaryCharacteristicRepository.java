@@ -23,4 +23,8 @@ public interface MercenaryCharacteristicRepository extends JpaRepository<Mercena
 
     /** 크롤링 재적재 시 용병 특성 전체 삭제 */
     void deleteByMercenaryId(Long mercenaryId);
+
+    /** SELF_AUTO 각성 특성 배치 조회 — DPS 계산기 각성 버프 로딩용 */
+    @Query("SELECT c FROM MercenaryCharacteristic c WHERE c.mercenary.id IN :ids AND c.applyType = org.example.gersangtrade.domain.catalog.enums.CharacteristicApplyType.SELF_AUTO")
+    List<MercenaryCharacteristic> findSelfAutoByMercenaryIdIn(@Param("ids") Collection<Long> ids);
 }

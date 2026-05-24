@@ -182,10 +182,10 @@ public class AwakenedMyeongwangSeeder implements ApplicationRunner {
                         .build()));
     }
 
-    /** 각성 특성: point=null, SELF_AUTO */
+    /** 각성 특성: SELF_AUTO, 속성값 +15 고정 효과를 level=1 행으로 저장 */
     private void upsertAwakening(Mercenary mercenary, String key, String name) {
-        characteristicRepository.findByKey(key).orElseGet(() ->
-                characteristicRepository.save(MercenaryCharacteristic.builder()
+        MercenaryCharacteristic characteristic = characteristicRepository.findByKey(key)
+                .orElseGet(() -> characteristicRepository.save(MercenaryCharacteristic.builder()
                         .mercenary(mercenary)
                         .key(key)
                         .name(name)
@@ -193,6 +193,16 @@ public class AwakenedMyeongwangSeeder implements ApplicationRunner {
                         .requiredCharacteristicKey(null)
                         .applyType(CharacteristicApplyType.SELF_AUTO)
                         .build()));
+        if (levelRepository.findByCharacteristicIdAndLabelAndLevel(characteristic.getId(), "속성값", 1).isEmpty()) {
+            levelRepository.save(MercenaryCharacteristicLevel.builder()
+                    .characteristic(characteristic)
+                    .label("속성값")
+                    .level(1)
+                    .amount("15")
+                    .amountValue(15.0f)
+                    .statType(StatType.ELEMENT_VALUE)
+                    .build());
+        }
     }
 
     private MercenaryCharacteristic upsertChar(Mercenary mercenary, String key, String name,

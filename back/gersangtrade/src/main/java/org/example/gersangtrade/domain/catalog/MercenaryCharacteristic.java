@@ -69,8 +69,8 @@ public class MercenaryCharacteristic {
 
     /**
      * 특성 적용 방식.
-     * NORMAL: 포인트 배분형, SELF_AUTO: 각성 사천왕 각성 특성, ALLY_AUTO: 주인공 국적 버프.
-     * SELF_AUTO는 point/level이 null이며 MercenaryCharacteristicLevel 행이 생성되지 않는다.
+     * NORMAL: 포인트 배분형, SELF_AUTO: 각성 사천왕·명왕 각성 특성, ALLY_AUTO: 주인공 국적 버프.
+     * SELF_AUTO는 point=null이며 MercenaryCharacteristicLevel 행 1개(level=1)로 효과값을 저장한다.
      */
     @Enumerated(EnumType.STRING)
     @Column(name = "apply_type", nullable = false, length = 20)

@@ -12,7 +12,7 @@ import org.example.gersangtrade.domain.catalog.enums.StatType;
  * 한 특성(MercenaryCharacteristic)에 label × level 조합으로 행이 생성된다.
  *
  * <p>예: "광풍" 특성의 "풍극진멸 데미지" label, 레벨 1~5.
- * <p>각성 특성(level: null)은 이 테이블에 행이 생성되지 않는다.
+ * <p>SELF_AUTO 각성 특성은 level=1 행 1개를 저장한다 (효과값 고정).
  *
  * <p>amountValue: 계산기에서 사용하는 파싱된 Float 수치.
  *   "20%" → 20.0, "500" → 500.0. 파싱 불가 시 null.
@@ -50,7 +50,7 @@ public class MercenaryCharacteristicLevel {
     /**
      * 레벨 (1부터 시작).
      * gerniverse amount 배열의 인덱스 + 1.
-     * 각성 사천왕·명왕·주인공: 최대 5, 전설장수: 최대 10.
+     * 각성 사천왕·명왕·주인공: 최대 5, 전설장수: 최대 10, SELF_AUTO 각성 특성: 1개(level=1).
      */
     @Column(name = "level", nullable = false)
     private Integer level;
