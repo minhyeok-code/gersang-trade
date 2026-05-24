@@ -37,18 +37,43 @@
 
 #### 2.4 `EquipmentSet`
 - **id**
-- **name**: “00세트” (정식 명칭)
-- **setType**: `ARMOR_5PIECE` 등 (현재 요구는 방어구 5피스 중심)
-- **pieceSlots**: (논리적으로) `{HELMET, ARMOR, GLOVES, BELT, SHOES}`
-  - 구현은 관계 테이블(`EquipmentSetPiece`)로 두는 것을 권장
+- **name**: “지국천왕” 등 (정식 세트명)
+- **totalPieces**: 세트 최대 피스 수 (예: 지국천왕=6, 브리트라=2)
+- **isTradeable**: 현재 메타 세트 여부. false이면 거래 목록 노출 제외. 관리자 개별 토글. 크롤링 시 true로 저장
+
+> `setType`은 제거. “3셋”/”5셋” 구분은 세트 자체 속성이 아니라 판매자가 몇 피스를 올리냐에 따라 결정되는 값이므로 Listing 단에서 계산.
 
 #### 2.5 `EquipmentSetPiece` (세트 구성 정의)
 - **id**
 - **setId(FK → EquipmentSet)**
 - **slot** (위 slot enum)
 - **equipmentItemId(FK → EquipmentItem)**: 해당 슬롯의 아이템 정의
+- **pieceCount**: 착용 개수. 기본 1. 반지(RING)는 2
+- `UNIQUE(set_id, slot)`
 
 > 이렇게 두면 “세트 5피스”를 표준화할 수 있고, Listing에서는 “세트를 판다”가 아니라 “세트 정의를 참고해 특정 피스들을 묶어 판다”를 표현할 수 있음.
+
+#### 2.6 `EquipmentSetEffect` (세트 착용 수별 추가 능력치) — 신규
+- **id**
+- **equipmentSetId(FK → EquipmentSet)**
+- **requiredPieces**: 몇 종 착용 시 발동하는지 (2, 3, 4, 5, 6)
+- **statType**: `StatType` enum
+- **statValue**: 수치
+- **statUnit**: `StatUnit` enum — `FLAT` | `PERCENT`
+- **element**: `Element` enum — `NONE`(모든 속성 공통) | `FIRE`/`EARTH` 등(특정 속성)
+- `UNIQUE(equipment_set_id, required_pieces, stat_type, element)`
+
+#### 2.7 `RitualSetEffect` (주술 세트 효과) — 신규
+- **id**
+- **ritualId(FK → Ritual)**
+- **outcome**: `RitualOutcome` — `SUCCESS` | `GREAT_SUCCESS`. 천추 성공/북두칠성(대성공)을 같은 ritual_id로 구분
+- **equipmentSetId(FK → EquipmentSet)**: 주술 가능 세트가 고정이므로 NOT NULL
+- **requiredRitualPieces**: 몇 피스에 적용해야 발동하는지 (3 또는 5)
+- **statType**: `StatType` enum
+- **statValue**: 수치
+- **statUnit**: `StatUnit` enum
+- **element**: `Element` enum — `NONE` 또는 특정 속성
+- `UNIQUE(ritual_id, outcome, equipment_set_id, required_ritual_pieces, stat_type)`
 
 ---
 
@@ -89,13 +114,15 @@
 - **id**
 - **listingId(FK → TradeListing)**
 - **bundleType**: `MATERIAL_BUNDLE` | `EQUIPMENT_SINGLE` | `EQUIPMENT_SET`
+- **equipmentSetId(FK → EquipmentSet, nullable)**: `bundleType=EQUIPMENT_SET`일 때만 non-null. 세트 효과 계산 및 자동 명칭 생성에 사용
 - **titleOverride(optional)**: 사용자가 임의로 제목을 덮어쓰는 경우(선택)
 
 #### 4.3 `BundleLine` (번들 구성 라인: 여러 아이템+수량)
 - **id**
 - **bundleId(FK → ListingBundle)**
 - **itemId(FK → Item)**: 재료/장비 모두 가능
-- **quantity**: 재료면 필수(>=1), 장비면 보통 1
+- **equipmentSetPieceId(FK → EquipmentSetPiece, nullable)**: `EQUIPMENT_SET` 매물에서 이 라인이 어느 피스(투구/갑옷 등)인지 연결. 주술 세트 효과 계산에 필요. 단품·재료는 null
+- **quantity**: 재료면 필수(>=1), 장비면 보통 1. 반지 쌍은 2
 - **sortOrder**
 
 > 재료 “a재료 n개 + b재료 m개 …” 세트 판매는 `BundleLine` 여러 개로 끝.
@@ -193,11 +220,12 @@ API/조회 로직 관점(개념):
 ### 9) 최소 Enum 제안
 - `ItemType`: MATERIAL, EQUIPMENT
 - `EquipmentKind`: APPEARANCE, NORMAL
-- `EquipmentSlot`: WEAPON, HELMET, ARMOR, GLOVES, BELT, SHOES, ...
+- `EquipmentSlot`: WEAPON, HELMET, ARMOR, GLOVES, BELT, SHOES, RING
 - `RitualType`: WEAPON, ARMOR
 - `RitualOutcome`: SUCCESS, GREAT_SUCCESS
 - `ListingStatus`: ACTIVE, IN_TRADE, SOLD, CANCELLED
 - `BundleType`: MATERIAL_BUNDLE, EQUIPMENT_SINGLE, EQUIPMENT_SET
+- `StatUnit`: FLAT, PERCENT, LEVEL(예약)
 
 ---
 
@@ -274,12 +302,13 @@ API/조회 로직 관점(개념):
 #### 12.2 엔티티(개념)
 - `ItemStat`
   - `itemId(FK → Item)`
-  - `statType`: `ELEMENT_VALUE` | `ELEMENT_PIERCE`(속성깎) | `RESIST_PIERCE`(저항깎)
+  - `statType`: `StatType` enum. MVP: `ELEMENT_VALUE` | `ELEMENT_PIERCE` | `RESIST_PIERCE`
     - `ELEMENT_VALUE`: 아이템이 부여하는 **속성값(δ)**. 데미지 계산 공식 `n% = (3x-y)/2`의 x 구성요소로 사용됨
     - `ELEMENT_PIERCE`: 속성깎 (상대 속성값 감소)
     - `RESIST_PIERCE`: 저항깎 (상대 저항값 감소)
-  - `element(optional)`: 속성(화/수/풍/지/번개 등)까지 나누고 싶으면 사용
+  - `element`: `Element` enum. 속성별 구분 시 사용. null 대신 `NONE`을 사용하여 UNIQUE 제약 정상 동작
   - `value`
+  - `statUnit`: `StatUnit` enum — `FLAT` | `PERCENT`. UI 표시 및 계산 모호함 제거용 (예: 타저 25가 25% 인지 수치인지 구분)
 
 > `ELEMENT_VALUE`는 **가성비 비교 기능**(속성값 ÷ 전월 평균가)과 **속성값 데미지 계산기**(구매 시 데미지 증가분 m%p)에서 공유 사용됨.
 > 별도 테이블 없이 `ItemStat` 행 하나로 두 기능을 모두 커버.
@@ -307,6 +336,9 @@ API/조회 로직 관점(개념):
 ### 13.1 신규 엔티티
 
 #### `User` (사용자)
+
+> `gersang-grade-policy.md` 반영 — 등급·EXP·매너점수 필드 추가
+
 - **id**
 - **oauthProvider**: `”google”` (MVP; Kakao는 추가기능)
 - **oauthId**: 소셜 로그인 고유 ID
@@ -316,46 +348,56 @@ API/조회 로직 관점(개념):
   - `BLOCKED`: 거래 불가 상태. 하드딜리트 없음, 영구 소프트 상태로 유지
   - `blockedUntil`(nullable): null=영구 차단, 미래 날짜=기간 차단 만료일
   - `blockReason`(nullable): 차단 사유
+- **grade**: `GradeLevel` Enum — `HAENGSANG(행상)` | `BOSANG(보상)` | `GAEKSANG(객상)` | `DAESANG(대상)` | `GEOSANG(거상)`. 기본값: `HAENGSANG`
+- **gradeStep**: Integer — 현재 등급 내 호봉(1부터 시작). 거상은 null. 기본값: 1
+- **totalExp**: Long — 누적 EXP. 기본값: 0. 등급·호봉 계산의 원천
+- **mannerScore**: Integer — 매너점수. 기본값: **60**, 범위: 0~100
+- **tradeCount**: Integer — 거래 확정 횟수. 기본값: 0. 프로필 공개 항목
 - **deletedAt**(nullable): null=활성, non-null=소프트 삭제. 1년 후 배치 하드딜리트 예정
 - **createdAt**, **updatedAt**
 - `UNIQUE(oauthProvider, oauthId)`
 
-#### `TradeApplication` (거래 신청)
-- **id**
-- **listingId(FK → TradeListing)**
-- **buyerId(FK → User)**
-- **status**: `PENDING` | `ACCEPTED` | `REJECTED` | `CANCELLED`
-- **message**(nullable): 구매자 메모
-- **respondedAt**(nullable): 판매자 응답 시각
-- **createdAt**, **updatedAt**
+> 프로필 공개 정보 (상대방 거래 전 신뢰도 확인용):
+> ```
+> 거래량    매너점수    등급
+>  128건     73점    객상 4좌
+> ```
 
-> 상태 전이 규칙:
-> - `PENDING → ACCEPTED`: 판매자 수락 → `TradeListing.status = IN_TRADE`
-> - `PENDING → REJECTED`: 판매자 거절
-> - `PENDING|ACCEPTED → CANCELLED`: 구매자 취소 → 수락 상태였으면 `TradeListing.status = ACTIVE`로 복귀
-> - `ACCEPTED` 상태의 신청이 확정되면 `TradeConfirmed` 생성 → `TradeListing.status = SOLD`
+#### `TradeApplication` (거래 신청) — **Deprecated**
+
+> ⚠️ `trade-flow-design.ko.md` 반영 — `ChatRoom` 엔티티로 대체됨. 구현하지 않음.
 
 #### `Report` (신고)
+
+> `report-system.ko.md` 기준. 사용자 신고 + 자동 감지(SYSTEM) 통합.
+
 - **id**
-- **reporterId(FK → User)**
-- **targetType**: `USER` | `TRADE_LISTING` | `TRADE_APPLICATION`
+- **reporterType**: `USER` | `SYSTEM`
+- **reporterId(FK → User, nullable)**: SYSTEM 감지 시 null
+- **targetType**: `USER` | `TRADE_LISTING` | `WANTED_LISTING` | `CHAT_MESSAGE`
 - **targetId**: 신고 대상 ID
+- **chatRoomId(FK → ChatRoom, nullable)**: 채팅 관련 신고 시 참조
 - **reasonCategory**: `FRAUD` | `ABUSE` | `FAKE_LISTING` | `CASH_TRADE` | `OTHER`
-- **description**: 상세 내용
+- **description**(nullable): 상세 내용. SYSTEM 감지는 자동 생성
 - **evidenceUrl**(nullable): 증빙 스크린샷 URL
-- **status**: `PENDING` | `PROCESSED` | `DISMISSED`
+- **status**: `PENDING` | `REVIEWING` | `PROCESSED` | `DISMISSED`
 - **adminNote**(nullable): 처리자 메모
+- **processedBy(FK → User, nullable)**: 처리한 관리자
 - **processedAt**(nullable)
 - **createdAt**, **updatedAt**
 
 ### 13.2 `TradeConfirmed` 필드 확정
+
+> `trade-flow-design.ko.md` 반영 — `applicationId` → `chatRoomId`로 교체
+
 - **id**
+- **listingType**: `SELL` | `BUY` 스냅샷
 - **listingId(FK, nullable)**: 리스팅 삭제/숨김 후에도 확정 기록 유지를 위해 nullable
-- **applicationId(FK, nullable)**: 확정된 신청 참조
-- **sellerId(FK → User, nullable)**: 스냅샷용 (User 삭제 후에도 기록 보존)
-- **buyerId(FK → User, nullable)**
+- **chatRoomId(FK → ChatRoom, nullable, UNIQUE)**: 확정된 채팅방 참조. UNIQUE로 이중 확정 방지
+- **sellerId(FK → User, nullable)**: 게시자 스냅샷 (User 삭제 후에도 기록 보존)
+- **buyerId(FK → User, nullable)**: 상대방 스냅샷
 - **serverSnapshot**: 확정 당시 서버명 스냅샷
-- **confirmedPrice**: 확정 당시 가격 스냅샷
+- **confirmedPrice**: 확정 당시 가격 스냅샷 (ChatRoom.finalPrice)
 - **statKeySnapshot**: 집계 키 스냅샷 (예: `ITEM:1`, `SET:2`)
 - **confirmedAt**
 - **cancelled**(boolean, 기본값 false): 취소 여부. 집계 재산출 시 제외 대상
@@ -389,6 +431,8 @@ API/조회 로직 관점(개념):
 | `users` | `UNIQUE(oauthProvider, oauthId)` |
 | `ritual_applicabilities` | `UNIQUE(ritualId, equipmentItemId)` |
 | `equipment_set_pieces` | `UNIQUE(setId, slot)` |
+| `equipment_set_effects` | `UNIQUE(equipment_set_id, required_pieces, stat_type, element)` — element는 NONE 상수값 사용 |
+| `ritual_set_effects` | `UNIQUE(ritual_id, outcome, equipment_set_id, required_ritual_pieces, stat_type)` |
 | `bundle_equipment_rituals` | `UNIQUE(bundleLineId, ritualId)` |
 | `item_stats` | `UNIQUE(itemId, statType, element)` — element는 NONE 상수값 사용(null 대신) |
 | `trade_stat_daily` | `UNIQUE(statDate, statKey)` |
@@ -403,9 +447,9 @@ API/조회 로직 관점(개념):
 | 확장 (3단계) | `SET:{setId}:RITUAL_COUNT:{n}:MARK:{mark}` | `SET:3:RITUAL_COUNT:5:MARK:XX` |
 
 ### 13.6 `ItemStat.element` Enum (NONE 포함)
-- `FIRE` | `WATER` | `WIND` | `EARTH` | `LIGHTNING` | `NONE`
-- `NONE`: 속성 구분 없는 능력치. null 대신 사용하여 유니크 제약 적용 가능하게 함
-- 실제 속성 종류는 게임 정의에 따라 확정 필요
+- `FIRE` | `WATER` | `WIND` | `EARTH` | `THUNDER` | `ADAPTIVE` | `NONE`
+- `ADAPTIVE`: 착용 용병의 속성을 따라감. 용병 속성이 FIRE면 화속성값 +n으로 적용
+- `NONE`: 속성 구분 없는 능력치 (힘, 방어 등). null 대신 사용하여 UNIQUE 제약 정상 동작
 
 ---
 
@@ -461,3 +505,340 @@ geota.co.kr 크롤링 결과를 IQR 이상치 제거 후 집계하는 테이블.
 | `hasSlotOption` | `<홈이있는>` 버전 존재 여부 |
 
 > 두 필드 모두 gerniverse 상세 파싱 후 갱신. 기존 `RitualApplicability`로도 주술 가능 여부 판단 가능하나, 빠른 필터링을 위해 플래그 형태로도 보유.
+
+---
+
+### 14.6 `Mercenary` / `MercenaryStat` / `MercenaryMaterial` — `docs/mercenary.md` 반영
+
+> 크롤링 전략 및 엔티티 상세는 `back/gersangtrade/docs/mercenary.md` 참고.
+> 모든 PK는 Long Auto Increment 사용.
+
+#### `Mercenary` (용병 마스터)
+
+| 필드 | 타입 | Null | 설명 |
+|------|------|------|------|
+| `id` | Long (PK, AI) | NO | |
+| `name` | String (unique) | NO | 용병 풀네임. 예: "각성 군다리명왕" |
+| `key` | String (unique) | YES | gerniverse 내부 키. 상세 파싱 후 채워진다 |
+| `category` | `MercenaryCategory` Enum | YES | 주인공/사천왕/각성사천왕/명왕/각성명왕/전설장수/신수/흉수/각성흉수/고용몬스터/전직몬스터/정령몬스터/각성장수/개조장수/2차장수/1차장수/용병 |
+| `nation` | `Nation` Enum | YES | 조선/중국/일본/대만/인도/NONE |
+| `nature` | `Nature` Enum | YES | 화/수/뇌/풍/토/NONE. 무속성은 NONE |
+| `nature_value` | Integer | YES | 속성값. 공식 `n% = (3x - y) / 2`의 x 구성 요소. 무속성은 null |
+| `is_coming_soon` | boolean | NO | 출시 예정 여부. true이면 크롤링 대상 제외 |
+| `image_url` | String | YES | S3 업로드 URL |
+| `crawled_at` | LocalDateTime | YES | null이면 상세 크롤링 미완료. `MercenaryDetailReader`의 처리 대상 판별 기준 |
+| `created_at`, `updated_at` | LocalDateTime | NO | BaseEntity |
+
+> `nature_value`는 `MercenaryStat(ELEMENT_VALUE)`에도 저장된다. Mercenary 직접 필드는 계산기 빠른 접근용 역정규화.
+
+#### `MercenaryStat` (용병 스탯)
+
+`StatType`은 `ItemStat`과 공유한다.
+MVP 필수: `ELEMENT_VALUE` / `ELEMENT_PIERCE` / `RESIST_PIERCE`
+Phase 2 확장: `STRENGTH` / `VITALITY` / `DEXTERITY` / `INTELLECT` / `DEFENSE` / `SIGHT` / `HIT_RATE` / `CRITICAL_CHANCE` / `MIN_POWER` / `MAX_POWER` / `MAGIC_RESISTANCE` / `HITTING_RESISTANCE`
+
+| 필드 | 타입 | Null | 설명 |
+|------|------|------|------|
+| `id` | Long (PK, AI) | NO | |
+| `mercenary_id` | FK → Mercenary | NO | |
+| `stat_key` | `StatType` Enum | NO | |
+| `stat_value` | Integer | NO | |
+
+- `UNIQUE(mercenary_id, stat_key)`
+- 크롤링 재실행 시 delete-reinsert 패턴으로 재적재
+
+#### `MercenaryMaterial` (전직 재료)
+
+재료는 **아이템** 또는 **용병** 중 하나다. 두 필드가 동시에 설정되는 경우는 없다.
+
+| 필드 | 타입 | Null | 설명 |
+|------|------|------|------|
+| `id` | Long (PK, AI) | NO | |
+| `result_mercenary_id` | FK → Mercenary | NO | 완성되는 용병 |
+| `material_mercenary_id` | FK → Mercenary | YES | 재료 용병. 아이템 재료이면 null |
+| `material_item_key` | String | YES | 재료 아이템명(gerniverse URL 디코딩). 용병 재료이면 null |
+| `quantity` | Integer | NO | |
+| `required_level` | Integer | YES | 전직 요구 레벨 |
+| `required_credit` | Integer | YES | 전직 요구 공헌도 |
+
+- 중복 방지: delete-reinsert 패턴(`deleteByResultMercenaryId` 후 재삽입)
+- `material_item_key`를 통해 `MaterialPriceHistory`(아이템명 기준)와 비용 계산 연결
+
+#### 관련 Enum 신규 추가
+
+| Enum | 값 |
+|------|-----|
+| `MercenaryCategory` | PROTAGONIST / FOUR_HEAVENLY_KINGS / FOUR_HEAVENLY_KINGS_AWAKENING / MYEONG_KING / MYEONG_KING_AWAKENING / LEGENDARY_GENERAL / DIVINE_BEAST / EVIL_BEAST / EVIL_BEAST_AWAKENING / HIRED_MONSTER / EVOLVE_MONSTER / SPIRIT_MONSTER / GENERAL_AWAKENING / MODIFIED_GENERAL / SECOND_GRADE_GENERAL / FIRST_GRADE_GENERAL / MERCENARY |
+| `Nation` | JOSEON / CHINA / JAPAN / TAIWAN / INDIA / NONE |
+| `Nature` | FIRE / WATER / THUNDER / AIR / EARTH / NONE |
+
+#### `StatType` Enum 확장
+
+`ItemStat`, `MercenaryStat`, `EquipmentSetEffect`, `RitualSetEffect`에서 공유한다.
+
+| 그룹 | 값 | 비고 |
+|------|-----|------|
+| 아이템·용병 공통 | `ELEMENT_VALUE` / `ELEMENT_PIERCE` / `RESIST_PIERCE` | MVP 기준 |
+| 공격력 공통 | `MIN_POWER` / `MAX_POWER` | |
+| 기본 스탯 (용병·세트효과·주술세트효과 공통) | `STRENGTH` / `VITALITY` / `DEXTERITY` / `INTELLECT` / `DEFENSE` | |
+| 용병 전용 | `SIGHT` / `HIT_RATE` / `CRITICAL_CHANCE` | |
+| 저항 (용병·세트효과 공통) | `MAGIC_RESISTANCE` / `HITTING_RESISTANCE` | |
+| 세트효과·주술세트효과 전용 | `DAMAGE_PERCENT` / `SKILL_DAMAGE_PERCENT` / `FIELD_MOVE_SPEED` | 신규 |
+
+---
+
+## 15) 등급·EXP·매너점수 시스템 엔티티 — `gersang-grade-policy.md` 반영
+
+> 상세 정책은 `docs/gersang-grade-policy.md` 참고.
+
+### 15.1 Grade 관련 Enum
+
+#### `GradeLevel` (등급)
+
+| Enum 값 | 표시명 | 등급 | 단위 | 최대 호봉 |
+|---------|--------|------|------|---------|
+| `HAENGSANG` | 행상 (行商) | 5등급 | 패 | 3 |
+| `BOSANG` | 보상 (褓商) | 4등급 | 패 | 5 |
+| `GAEKSANG` | 객상 (客商) | 3등급 | 좌 | 7 |
+| `DAESANG` | 대상 (大商) | 2등급 | 방 | 10 |
+| `GEOSANG` | 거상 (巨商) | 1등급 | — | — (호봉 없음) |
+
+#### EXP 임계값 (누적 기준)
+
+| 등급·단계 | 누적 EXP 시작점 |
+|---------|--------------|
+| 행상 1패 | 0 |
+| 보상 1패 | 150 |
+| 객상 1좌 | 900 |
+| 대상 1방 | 3,700 |
+| 거상 진입 | 20,000 |
+
+> `User.totalExp`에서 `GradeLevel`과 `gradeStep`을 역산하는 로직은 `ExpGradeCalculator` 유틸에서 담당한다.
+> EXP 지급 시 totalExp를 갱신하고 grade·gradeStep을 즉시 재계산하여 User에 반영한다.
+
+---
+
+### 15.2 `TradeReview` (거래 평가)
+
+거래 확정 후 양측이 서로를 평가하는 테이블. **블라인드 방식** — 3일 만료 시점에 일괄 공개.
+
+| 필드 | 타입 | Null | 설명 |
+|------|------|------|------|
+| `id` | Long (PK) | NO | |
+| `tradeConfirmedId` | Long (FK → TradeConfirmed) | NO | |
+| `reviewerId` | Long (FK → User) | NO | 평가자 |
+| `targetId` | Long (FK → User) | NO | 평가 대상 |
+| `rating` | Enum | YES | `GOOD` \| `NEUTRAL` \| `BAD`. null = 미제출 |
+| `revealAt` | LocalDateTime | NO | `confirmedAt + 3일`. 이 시각 이후 공개 |
+| `isPublished` | boolean | NO | 기본 false. 배치 Job이 `revealAt` 경과 후 true로 전환 |
+| `submittedAt` | LocalDateTime | YES | 평가 제출 시각. null = 미제출 |
+| `createdAt` | LocalDateTime | NO | |
+
+**유니크 제약:**
+```sql
+UNIQUE(tradeConfirmedId, reviewerId)
+-- 거래 확정 1건당 평가자 1명이 1개의 평가만 제출 가능
+```
+
+**생성 시점:** 거래 확정 트랜잭션 내에서 **양측에 대해 각 1건씩 총 2건** 자동 생성.
+```
+TradeReview(reviewer=poster,      target=counterparty, revealAt=now+3일)
+TradeReview(reviewer=counterparty, target=poster,       revealAt=now+3일)
+```
+
+**`rating` 효과:**
+
+| 평가 | EXP 효과 | 매너점수 효과 |
+|------|---------|------------|
+| `GOOD` (👍 좋음) | +15 EXP | +2점 |
+| `NEUTRAL` (😐 보통) | 0 EXP | 0점 |
+| `BAD` (👎 나쁨) | −20 EXP | −3점 |
+
+> 미제출(null)은 효과 없음. 평가 효과는 `isPublished` 전환 시 일괄 반영 (배치 Job).
+
+---
+
+### 15.3 신규 엔티티 추가에 따른 유니크 제약
+
+| 테이블 | 제약 |
+|-------|------|
+| `trade_reviews` | `UNIQUE(trade_confirmed_id, reviewer_id)` |
+| `trade_confirmed` | `UNIQUE(chat_room_id)` — 이중 확정 방지 |
+
+---
+
+### 15.4 채팅 관련 신규 엔티티 (trade-flow-design.ko.md 반영)
+
+#### `ChatRoom`
+
+| 필드 | 타입 | Null | 설명 |
+|------|------|------|------|
+| `id` | Long (PK) | NO | |
+| `listingType` | Enum | NO | `SELL` \| `BUY` |
+| `listingId` | Long | NO | TradeListing.id 또는 WantedListing.id |
+| `initiationType` | Enum | NO | `NEGOTIATE` (흥정하기) \| `APPLY` (거래신청) |
+| `posterId` | Long (FK → User) | NO | 게시물 작성자 |
+| `counterpartyId` | Long (FK → User) | NO | 채팅 개설자 |
+| `status` | Enum | NO | `OPEN` \| `POSTER_CONFIRMED` \| `COMPLETED` \| `CLOSED` |
+| `finalPrice` | Long | YES | 실제 거래가. 미설정 시 listing.price 사용 |
+| `posterConfirmedAt` | LocalDateTime | YES | |
+| `counterpartyConfirmedAt` | LocalDateTime | YES | |
+| `completedAt` | LocalDateTime | YES | |
+| `createdAt` | LocalDateTime | NO | |
+| `updatedAt` | LocalDateTime | NO | |
+
+**유니크 제약:** `UNIQUE(listing_type, listing_id, counterparty_id, status)` — OPEN 상태 중복 방지
+
+#### `ChatMessage`
+
+| 필드 | 타입 | Null | 설명 |
+|------|------|------|------|
+| `id` | Long (PK) | NO | |
+| `chatRoomId` | Long (FK → ChatRoom) | NO | |
+| `senderId` | Long (FK → User) | YES | SYSTEM 메시지는 null |
+| `content` | String (최대 1000자) | NO | |
+| `messageType` | Enum | NO | `TEXT` \| `SYSTEM` |
+| `flagged` | boolean | NO | 기본 false. 자동 감지 시 true |
+| `flagReason` | String | YES | 감지된 패턴 목록 |
+| `hidden` | boolean | NO | 기본 false. 관리자 숨김 처리 시 true |
+| `archivedAt` | LocalDateTime | YES | null=사용자 열람 가능 / non-null=6개월 경과 숨김 |
+| `sentAt` | LocalDateTime | NO | |
+
+#### `Notification`
+
+| 필드 | 타입 | Null | 설명 |
+|------|------|------|------|
+| `id` | Long (PK) | NO | |
+| `userId` | Long (FK → User) | NO | 수신자 |
+| `type` | Enum | NO | `CHAT_OPENED` \| `CHAT_MESSAGE` \| `POSTER_CONFIRMED` \| `TRADE_COMPLETED` \| `REVIEW_REQUESTED` \| `REVIEW_PUBLISHED` \| `CASH_TRADE_DETECTED` \| `REPORT_RECEIVED` \| `REPORT_PROCESSED` \| `USER_WARNED` \| `USER_BLOCKED` |
+| `chatRoomId` | Long (FK → ChatRoom) | YES | |
+| `message` | String | NO | 알림 문구 |
+| `isRead` | boolean | NO | 기본 false |
+| `createdAt` | LocalDateTime | NO | |
+
+---
+
+## 16) 용병 특성·유저 덱 엔티티 — `Mercenary-characteristic-crawling.md` 및 설계 논의 반영
+
+> 작성일: 2026-04-22
+
+### 16.1 카탈로그 레이어 — 신규 엔티티
+
+#### `MercenaryCharacteristic` (용병 특성)
+
+각성 사천왕·명왕·주인공·전설장수의 특성 트리 노드. 전설장수 패시브도 이 엔티티로 통합 관리 (gerniverse RSC payload가 동일 구조로 제공).
+
+| 필드 | 타입 | Null | 설명 |
+|------|------|------|------|
+| `id` | Long (PK, AI) | NO | |
+| `mercenary_id` | FK → Mercenary | NO | |
+| `characteristic_key` | String (UNIQUE) | NO | gerniverse 내부 키. 크롤링 UPSERT 기준 |
+| `name` | String | NO | 특성명. 예: "광풍", "기습" |
+| `point` | Integer | YES | 포인트 비용. 각성 특성은 null |
+| `description` | String | YES | |
+| `required_characteristic_key` | String | YES | 선행 특성 키(FK 대신 String). null이면 루트 노드 |
+
+- 크롤링 재실행 시 delete-reinsert 패턴
+- `UNIQUE(characteristic_key)`
+
+#### `MercenaryCharacteristicLevel` (특성 레벨별 수치)
+
+한 특성에 label × level 조합으로 행이 생성된다. 각성 특성(`point: null`)은 행 미생성.
+
+| 필드 | 타입 | Null | 설명 |
+|------|------|------|------|
+| `id` | Long (PK, AI) | NO | |
+| `characteristic_id` | FK → MercenaryCharacteristic | NO | |
+| `label` | String | NO | 수치 항목명. 예: "풍극진멸 데미지", "타격저항력" (원본 텍스트) |
+| `level` | Integer | NO | 1부터 시작. 각성 사천왕·명왕·주인공 max 5, 전설장수 max 10 |
+| `amount` | String | NO | 원본 수치 문자열. 예: "20%", "500" |
+| `amount_value` | Float | YES | 파싱된 Float 수치. "20%" → 20.0. 파싱 불가 시 null |
+| `stat_type` | StatType (Enum) | YES | label → StatType 자동 매핑. 미매핑은 null(관리자 수동 보정 대상) |
+
+- `UNIQUE(characteristic_id, label, level)`
+- `stat_type` 매핑 규칙: `"저항깎"/"저항감소"` 포함 → `RESIST_PIERCE`, `"속성값"` 포함 → `ELEMENT_VALUE`, 그 외 → `null`
+
+#### 비즈니스 규칙 (검증용)
+
+| 용병 종류 | 특성 수 | 최대 레벨 |
+|---------|--------|---------|
+| 각성 사천왕 / 각성 명왕 / 주인공 | 4개 + 각성 특성 1개 | 5 |
+| 전설장수 | 2개 | 10 |
+
+---
+
+### 16.2 유저 덱 레이어 — 신규 엔티티
+
+#### `UserDeck` (유저 용병 덱)
+
+| 필드 | 타입 | Null | 설명 |
+|------|------|------|------|
+| `id` | Long (PK, AI) | NO | |
+| `user_id` | FK → User | NO | |
+| `is_active` | boolean | NO | 유저당 최대 1개 true |
+| `attr_x_value` | Integer | YES | 저장 시점 속성값 합산 캐시 |
+| `total_res_down` | Integer | YES | 저장 시점 저항깎 합산 캐시 |
+| `created_at` | LocalDateTime | NO | 불변 스냅샷. updatedAt 없음 |
+
+- 덱은 불변 스냅샷. 수정 시 새 행 생성 후 `is_active` 전환
+
+#### `UserDeckMember` (덱 내 용병 슬롯)
+
+| 필드 | 타입 | Null | 설명 |
+|------|------|------|------|
+| `id` | Long (PK, AI) | NO | |
+| `deck_id` | FK → UserDeck | NO | |
+| `mercenary_id` | FK → Mercenary | NO | 주인공(PROTAGONIST)도 Mercenary로 통일 |
+| `slot_index` | Integer | NO | 0~11. 덱 안에서 고유 |
+
+- `UNIQUE(deck_id, slot_index)`
+
+#### `UserDeckMemberEquip` (슬롯 용병 장비 상세)
+
+카테고리별로 사용 필드가 다르다.
+
+| 필드 | 타입 | Null | 설명 |
+|------|------|------|------|
+| `id` | Long (PK, AI) | NO | |
+| `deck_member_id` | FK → UserDeckMember (UNIQUE) | NO | 1:1 |
+| `equipment_set_id` | FK → EquipmentSet | YES | LEGENDARY_GENERAL 전용 |
+| `enhance_level` | Integer | YES | LEGENDARY_GENERAL 세트 강화 수치 |
+| `set_piece_count` | Integer | YES | LEGENDARY_GENERAL 세트 피스 수 |
+| `has_affinity` | boolean | NO | LEGENDARY_GENERAL 인연 여부 |
+| `equipment_item_id` | FK → EquipmentItem | YES | MYEONG_KING / MYEONG_KING_AWAKENING 전용 |
+
+| 카테고리 | Equip 행 생성 | 사용 필드 |
+|---------|------------|---------|
+| PROTAGONIST / FOUR_HEAVENLY_KINGS(_AWAKENING) | ❌ | — |
+| MYEONG_KING / MYEONG_KING_AWAKENING | ✅ | `equipment_item_id` |
+| LEGENDARY_GENERAL | ✅ | `equipment_set_id`, `enhance_level`, `set_piece_count`, `has_affinity` |
+| 그 외 | ❌ | — |
+
+#### `UserDeckMemberCharacteristic` (선택된 특성)
+
+전설장수 패시브도 `MercenaryCharacteristic`으로 통합되어 이 엔티티로 관리된다.
+
+| 필드 | 타입 | Null | 설명 |
+|------|------|------|------|
+| `id` | Long (PK, AI) | NO | |
+| `deck_member_id` | FK → UserDeckMember | NO | |
+| `characteristic_id` | FK → MercenaryCharacteristic | NO | |
+| `selected_level` | Integer | NO | 선택한 레벨. 각성 사천왕·명왕·주인공 1~5, 전설장수 1~10 |
+
+- `UNIQUE(deck_member_id, characteristic_id)`
+
+---
+
+### 16.3 합산 계산 흐름 (UserDeckService.calculateTotalStats)
+
+```
+for each UserDeckMember:
+  1. MercenaryStat → RESIST_PIERCE, ELEMENT_VALUE 기본값 합산
+  2. UserDeckMemberCharacteristic × selectedLevel
+       → MercenaryCharacteristicLevel 조회
+       → statType == RESIST_PIERCE 이면 totalResDown += amountValue
+       → statType == ELEMENT_VALUE 이면 attrXValue += amountValue
+       → statType == null 이면 skip (미매핑, 관리자 보정 전)
+
+→ 최종 attrXValue, totalResDown → UserDeck.applyStats() 캐싱
+```

@@ -1,0 +1,49 @@
+/* 거상인 커스텀 스타일 */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@300;400;500;600;700&family=Noto+Sans+KR:wght@300;400;500&display=swap');
+
+:root {
+  --bg: #F5F1E8;
+  --card: #FAF8F2;
+  --border: #DDD6CA;
+  --text: #3E3A36;
+  --text-muted: #7A7368;
+  --beige: #E8DCCB;
+  --brown: #8B6B4A;
+  --brown-dark: #6A4F35;
+  --green: #B7C1A6;
+  --green-dark: #8A9B7A;
+  --divider: #D8D0C5;
+  --header-bg: #2A2724;
+  --sell-bg: #EBF2E8;
+  --sell-text: #4A6B3A;
+  --sell-border: #A8C49A;
+  --buy-bg: #E8EEF5;
+  --buy-text: #3A4F6B;
+  --buy-border: #9AAAC4;
+  --fire-color: #D94F3D;
+  --water-color: #4A7FB8;
+  --earth-color: #8B7355;
+  --wind-color: #7AB894;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: 'Noto Sans KR', sans-serif;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { 
+  width: 5px; 
+}
+::-webkit-scrollbar-track { 
+  background: var(--bg); 
+}
+::-webkit-scrollbar-thumb { 
+  background: var(--divider); 
+  border-radius: 3px; 
+}
+::-webkit-scrollbar-thumb:hover { 
+  background: var(--brown); 
+}
