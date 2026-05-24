@@ -16,6 +16,7 @@ public record ChatRoomDetailResponse(
         Long id,
         ListingType listingType,
         Long listingId,
+        String listingDisplayName,
         InitiationType initiationType,
         String posterNickname,
         String counterpartyNickname,
@@ -27,11 +28,12 @@ public record ChatRoomDetailResponse(
         LocalDateTime createdAt,
         List<ChatMessageResponse> messages
 ) {
-    public static ChatRoomDetailResponse of(ChatRoom room, List<ChatMessageResponse> messages) {
+    public static ChatRoomDetailResponse of(ChatRoom room, String listingDisplayName, List<ChatMessageResponse> messages) {
         return new ChatRoomDetailResponse(
                 room.getId(),
                 room.getListingType(),
                 room.getListingId(),
+                listingDisplayName,
                 room.getInitiationType(),
                 room.getPoster().getNickname(),
                 room.getCounterparty().getNickname(),

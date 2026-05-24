@@ -11,11 +11,14 @@ import java.util.Optional;
 
 public interface UserDeckMemberSlotRepository extends JpaRepository<UserDeckMemberSlot, Long> {
 
-    /** 용병의 전체 장착 슬롯 조회 (아이템 + 주술 fetch join) */
+    /** 용병의 전체 장착 슬롯 조회 (아이템·세트·주술·주술 카탈로그 fetch join) */
     @Query("""
             SELECT s FROM UserDeckMemberSlot s
-            JOIN FETCH s.equipmentItem
-            LEFT JOIN FETCH s.ritual
+            JOIN FETCH s.equipmentItem ei
+            JOIN FETCH ei.item
+            LEFT JOIN FETCH ei.equipmentSet
+            LEFT JOIN FETCH s.ritual sr
+            LEFT JOIN FETCH sr.ritual
             WHERE s.deckMember.id = :deckMemberId
             """)
     List<UserDeckMemberSlot> findByDeckMemberIdWithDetails(@Param("deckMemberId") Long deckMemberId);
@@ -23,11 +26,13 @@ public interface UserDeckMemberSlotRepository extends JpaRepository<UserDeckMemb
     /** 특정 슬롯 조회 */
     Optional<UserDeckMemberSlot> findByDeckMemberIdAndSlot(Long deckMemberId, EquipSlot slot);
 
-    /** 용병 ID 목록으로 전체 슬롯 일괄 조회 — DPS 계산기 배치 로딩용 (세트 소속 포함) */
+    /** 용병 ID 목록으로 전체 슬롯 일괄 조회 — DPS 계산기 배치 로딩용 (세트 소속·주술 포함) */
     @Query("""
             SELECT s FROM UserDeckMemberSlot s
             JOIN FETCH s.equipmentItem ei
             LEFT JOIN FETCH ei.equipmentSet
+            LEFT JOIN FETCH s.ritual sr
+            LEFT JOIN FETCH sr.ritual
             WHERE s.deckMember.id IN :memberIds
             """)
     List<UserDeckMemberSlot> findByDeckMemberIdIn(@Param("memberIds") List<Long> memberIds);

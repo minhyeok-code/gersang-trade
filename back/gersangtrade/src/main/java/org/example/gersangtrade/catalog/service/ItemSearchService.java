@@ -10,10 +10,12 @@ import org.example.gersangtrade.catalog.repository.ItemStatRepository;
 import org.example.gersangtrade.catalog.repository.RitualApplicabilityRepository;
 import org.example.gersangtrade.domain.catalog.EquipmentItem;
 import org.example.gersangtrade.domain.catalog.ItemStat;
+import org.example.gersangtrade.config.CacheConfig;
 import org.example.gersangtrade.domain.catalog.enums.EquipmentKind;
 import org.example.gersangtrade.domain.catalog.enums.EquipmentSlot;
 import org.example.gersangtrade.domain.catalog.enums.ItemType;
 import org.example.gersangtrade.domain.deck.enums.EquipSlot;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -63,6 +65,7 @@ public class ItemSearchService {
      *
      * @param equipmentItemId EquipmentItem의 ID (= Item.id)
      */
+    @Cacheable(value = CacheConfig.RITUALS_BY_ITEM, key = "#equipmentItemId")
     public List<RitualResponse> findAvailableRituals(Long equipmentItemId) {
         return ritualApplicabilityRepository
                 .findByEquipmentItemIdWithRitual(equipmentItemId)
@@ -77,12 +80,17 @@ public class ItemSearchService {
      *
      * @param slot 덱 장비 슬롯 (EquipSlot enum)
      */
+    @Cacheable(value = CacheConfig.EQUIPMENT_SLOT, key = "#slot")
     public List<EquipmentSlotItemResponse> getEquipmentBySlot(EquipSlot slot) {
         List<EquipmentItem> items;
         if (slot == EquipSlot.RING_1 || slot == EquipSlot.RING_2) {
             items = equipmentItemRepository.findBySlotWithItem(EquipmentSlot.RING);
         } else {
             items = equipmentItemRepository.findByEquipSlot(slot);
+            EquipmentSlot fallbackSlot = fallbackEquipmentSlot(slot);
+            if (fallbackSlot != null) {
+                items = mergeByItemId(items, equipmentItemRepository.findBySlotWithItem(fallbackSlot));
+            }
         }
 
         if (items.isEmpty()) {
@@ -94,8 +102,33 @@ public class ItemSearchService {
                 .collect(Collectors.groupingBy(ist -> ist.getItem().getId()));
 
         return items.stream()
+                .sorted((a, b) -> b.getItemId().compareTo(a.getItemId()))
                 .map(item -> EquipmentSlotItemResponse.of(item,
                         statsByItemId.getOrDefault(item.getItemId(), List.of())))
                 .toList();
+    }
+
+    private List<EquipmentItem> mergeByItemId(List<EquipmentItem> first, List<EquipmentItem> second) {
+        Map<Long, EquipmentItem> merged = first.stream()
+                .collect(Collectors.toMap(EquipmentItem::getItemId, item -> item));
+        second.forEach(item -> merged.putIfAbsent(item.getItemId(), item));
+        return List.copyOf(merged.values());
+    }
+
+    private EquipmentSlot fallbackEquipmentSlot(EquipSlot slot) {
+        return switch (slot) {
+            case HELMET -> EquipmentSlot.HELMET;
+            case ARMOR -> EquipmentSlot.ARMOR;
+            case WEAPON -> EquipmentSlot.WEAPON;
+            case SHOES -> EquipmentSlot.SHOES;
+            case GLOVES -> EquipmentSlot.GLOVES;
+            case BELT -> EquipmentSlot.BELT;
+            case CHARM -> EquipmentSlot.TALISMAN;
+            case APP_SPIRIT, APP_EARRING, APP_NECKLACE -> EquipmentSlot.ACCESSORY;
+            case APP_BRACELET -> EquipmentSlot.BRACELET;
+            case APP_GREAVES -> EquipmentSlot.LEGGING;
+            case APP_WAR_GOD -> EquipmentSlot.DIVINE;
+            default -> null;
+        };
     }
 }

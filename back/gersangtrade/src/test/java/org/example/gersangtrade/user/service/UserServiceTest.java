@@ -135,7 +135,7 @@ class UserServiceTest {
         void 닉네임만변경() {
             given(userRepository.findById(1L)).willReturn(Optional.of(activeUser));
             UserProfileUpdateRequest request =
-                    new UserProfileUpdateRequest("새닉네임", null, null);
+                    new UserProfileUpdateRequest("새닉네임", null, null, null);
 
             UserProfileResponse response = userService.updateProfile(1L, request);
 
@@ -148,7 +148,7 @@ class UserServiceTest {
         void 모든필드변경() {
             given(userRepository.findById(1L)).willReturn(Optional.of(activeUser));
             UserProfileUpdateRequest request =
-                    new UserProfileUpdateRequest("새닉네임", "게임닉", "저녁7시이후");
+                    new UserProfileUpdateRequest("새닉네임", "게임닉", "저녁7시이후", null);
 
             userService.updateProfile(1L, request);
 
@@ -163,7 +163,7 @@ class UserServiceTest {
             given(userRepository.findById(1L)).willReturn(Optional.of(activeUser));
             String originalNickname = activeUser.getNickname();
             UserProfileUpdateRequest request =
-                    new UserProfileUpdateRequest(null, null, null);
+                    new UserProfileUpdateRequest(null, null, null, null);
 
             userService.updateProfile(1L, request);
 
@@ -178,7 +178,7 @@ class UserServiceTest {
             given(userRepository.findById(2L)).willReturn(Optional.of(deletedUser));
 
             assertThatThrownBy(() -> userService.updateProfile(2L,
-                    new UserProfileUpdateRequest("닉", null, null)))
+                    new UserProfileUpdateRequest("닉", null, null, null)))
                     .isInstanceOf(IllegalStateException.class);
         }
     }

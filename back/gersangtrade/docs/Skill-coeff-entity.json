@@ -1318,5 +1318,29 @@
     "tick_interval_ms": null,
     "confidence": "HIGH",
     "note": null
+  },
+  {
+    "row_id": "SET_GRANTED_EXAMPLE_UUID",
+    "type": "set_granted",
+    "skill_key": "cheonjachongtong_gaeryang",
+    "skill_name": "천자총통:개량",
+    "skill_behavior_type": "TRIGGER",
+    "stat_source": "SELF",
+    "trigger_source": "SELF",
+    "trigger_every_n": 5,
+    "trigger_base_skill_key": "cheonjachongtong",
+    "coef_str": 67.0,
+    "coef_dex": 0.0,
+    "coef_vit": 0.0,
+    "coef_int": 0.0,
+    "coef_atk": 60.0,
+    "coef_lvl": 54.0,
+    "hit_count": 1,
+    "damage_range_factor": 0.1,
+    "skill_type": "TRIGGER",
+    "casts_per_second": null,
+    "tick_interval_ms": null,
+    "confidence": "HIGH",
+    "note": "최무선 10강 7종 달성 시 발동. 천자총통 5회 시전마다 1회 트리거. (예시 데이터)"
   }
 ]

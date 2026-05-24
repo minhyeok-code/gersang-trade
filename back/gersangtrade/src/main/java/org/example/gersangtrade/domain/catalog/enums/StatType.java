@@ -52,6 +52,7 @@ public enum StatType {
     // ── 전설장수 전용 ─────────────────────────────────────────
     DAMAGE_PERCENT_GROUND("지상데미지증가"),
     DAMAGE_PERCENT_AIR("공중데미지증가"),
+    STUN_DURATION("기절시간"),
 
     // ── DPS 계산용 (스킬 계수 곱셈 대상) ────────────────────
     ATTACK_POWER("공격력"),

@@ -34,9 +34,11 @@ public interface MercenaryStatRepository extends JpaRepository<MercenaryStat, Lo
 
     /**
      * 용병 ID에 해당하는 스탯 전체 삭제.
-     * 크롤러 재파싱 시 스탯 목록 초기화 후 재적재에 사용된다.
+     * @Modifying으로 즉시 실행 — flush 없이 동일 트랜잭션 내 insert와 충돌하지 않는다.
      */
-    void deleteByMercenaryId(Long mercenaryId);
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.data.jpa.repository.Query("DELETE FROM MercenaryStat s WHERE s.mercenary.id = :mercenaryId")
+    void deleteByMercenaryId(@org.springframework.data.repository.query.Param("mercenaryId") Long mercenaryId);
 
     /** 용병 ID 목록으로 스탯 일괄 조회 — DPS 계산기 배치 로딩용 */
     @Query("SELECT ms FROM MercenaryStat ms WHERE ms.mercenary.id IN :mercenaryIds")

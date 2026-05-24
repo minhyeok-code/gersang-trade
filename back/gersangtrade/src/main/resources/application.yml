@@ -15,6 +15,13 @@ spring:
       connection-test-query: SELECT 1 # 커넥션 반환 전 유효성 검사
       connection-timeout: 30000      # 커넥션 획득 대기 최대 30초
 
+  # ── 캐시 (Caffeine) ───────────────────────────────────────────────────────
+  cache:
+    type: caffeine
+    caffeine:
+      spec: expireAfterWrite=86400s,maximumSize=1000
+    cache-names: servers,mercenaries,equipment-by-slot,rituals-by-item
+
   # ── JPA / Hibernate ───────────────────────────────────────────────────────
   jpa:
     hibernate:

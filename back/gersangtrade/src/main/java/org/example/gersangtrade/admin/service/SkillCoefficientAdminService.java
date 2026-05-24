@@ -13,11 +13,13 @@ import org.example.gersangtrade.catalog.repository.ItemRepository;
 import org.example.gersangtrade.catalog.repository.ItemSkillRepository;
 import org.example.gersangtrade.catalog.repository.MercenaryRepository;
 import org.example.gersangtrade.catalog.repository.MercenarySkillRepository;
+import org.example.gersangtrade.catalog.repository.SetGrantedSkillRepository;
 import org.example.gersangtrade.catalog.repository.SkillCoefficientRepository;
 import org.example.gersangtrade.domain.catalog.Item;
 import org.example.gersangtrade.domain.catalog.ItemSkill;
 import org.example.gersangtrade.domain.catalog.Mercenary;
 import org.example.gersangtrade.domain.catalog.MercenarySkill;
+import org.example.gersangtrade.domain.catalog.SetGrantedSkill;
 import org.example.gersangtrade.domain.catalog.SkillCoefficient;
 import org.example.gersangtrade.domain.catalog.enums.SkillType;
 import org.springframework.http.HttpStatus;
@@ -25,19 +27,64 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class SkillCoefficientAdminService {
 
+    private static final Map<String, String> MERCENARY_NAME_BY_GERNIVERSE_KEY = Map.ofEntries(
+            Map.entry("jigook", "지국천왕"),
+            Map.entry("gwangmok", "광목천왕"),
+            Map.entry("jeungjang", "증장천왕"),
+            Map.entry("damoon", "다문천왕"),
+            Map.entry("gakJigook", "각성 지국천왕"),
+            Map.entry("gakGwangmok", "각성 광목천왕"),
+            Map.entry("gakJeungjang", "각성 증장천왕"),
+            Map.entry("gakDamoon", "각성 다문천왕"),
+            Map.entry("hangsamse", "항삼세명왕"),
+            Map.entry("goondari", "군다리명왕"),
+            Map.entry("daewideok", "대위덕명왕"),
+            Map.entry("boodong", "부동명왕"),
+            Map.entry("geumgangyacha", "금강야차명왕"),
+            Map.entry("gakHangsamse", "각성 항삼세명왕"),
+            Map.entry("gakGoondari", "각성 군다리명왕"),
+            Map.entry("gakDaewideok", "각성 대위덕명왕"),
+            Map.entry("gakGeumgangyacha", "각성 금강야차명왕"),
+            Map.entry("joomong", "주몽"),
+            Map.entry("maenghwaek", "맹획"),
+            Map.entry("nobootsuna", "노부츠나"),
+            Map.entry("bajirao", "바지라오"),
+            Map.entry("chosun", "초선"),
+            Map.entry("bokuten", "보쿠텐"),
+            Map.entry("akbar", "악바르"),
+            Map.entry("honggildong", "홍길동"),
+            Map.entry("yeopo", "여포"),
+            Map.entry("fpwlsktnfxksk", "레지나"),
+            Map.entry("hwamokran", "화목란"),
+            Map.entry("tjsdlsakstjsdi", "만선야"),
+            Map.entry("majo", "마조"),
+            Map.entry("choimoosun", "최무선"),
+            Map.entry("sinsoo-cheongyong", "청룡"),
+            Map.entry("sinsoo-girin", "기린"),
+            Map.entry("sinsoo-airavata", "아이라바타"),
+            Map.entry("sinsoo-joojak", "주작"),
+            Map.entry("hyoongsoo-gakDoholl", "각성 도올"),
+            Map.entry("hyoongsoo-gakGoonggi", "각성 궁기"),
+            Map.entry("hyoongsoo-gakHondon", "각성 혼돈"),
+            Map.entry("hyoongsoo-gakDocheol", "각성 도철")
+    );
+
     private final SkillCoefficientRepository skillCoefficientRepository;
     private final MercenaryRepository mercenaryRepository;
     private final MercenarySkillRepository mercenarySkillRepository;
     private final ItemRepository itemRepository;
     private final ItemSkillRepository itemSkillRepository;
+    private final SetGrantedSkillRepository setGrantedSkillRepository;
 
     // ── 목록 조회 ────────────────────────────────────────────────────────────
 
@@ -61,9 +108,10 @@ public class SkillCoefficientAdminService {
      * @return { "upserted": N, "skipped": M }
      */
     @Transactional
-    public Map<String, Integer> bulkUpsert(List<SkillCoefficientJsonRow> rows) {
+    public Map<String, Object> bulkUpsert(List<SkillCoefficientJsonRow> rows) {
         int upserted = 0;
         int skipped = 0;
+        List<String> skipReasons = new ArrayList<>();
 
         for (SkillCoefficientJsonRow row : rows) {
             try {
@@ -71,32 +119,103 @@ public class SkillCoefficientAdminService {
                 upserted++;
             } catch (Exception e) {
                 log.warn("스킬 계수 upsert 스킵: rowId={}, reason={}", row.rowId(), e.getMessage());
+                if (skipReasons.size() < 10) {
+                    skipReasons.add(row.rowId() + ": " + e.getMessage());
+                }
                 skipped++;
             }
         }
 
         log.info("스킬 계수 bulk upsert 완료: upserted={}, skipped={}", upserted, skipped);
-        return Map.of("upserted", upserted, "skipped", skipped);
+        return Map.of("upserted", upserted, "skipped", skipped, "skipReasons", skipReasons);
     }
 
     private void upsertOne(SkillCoefficientJsonRow row) {
-        if (row.isItem()) {
+        if (row.isSetGranted()) {
+            upsertSetGrantedSkillCoefficient(row);
+        } else if (row.isItem()) {
             upsertItemSkillCoefficient(row);
         } else {
             upsertMercenarySkillCoefficient(row);
         }
     }
 
-    private void upsertMercenarySkillCoefficient(SkillCoefficientJsonRow row) {
-        if (row.mercenaryKey() == null || row.mercenaryKey().isBlank()) {
-            throw new IllegalArgumentException("mercenaryKey 누락 (type=mercenary)");
+    private void upsertSetGrantedSkillCoefficient(SkillCoefficientJsonRow row) {
+        if (row.skillBehaviorType() == null) {
+            throw new IllegalArgumentException("skillBehaviorType 누락 (type=set_granted)");
+        }
+        if (row.statSource() == null) {
+            throw new IllegalArgumentException("statSource 누락 (type=set_granted)");
+        }
+        if (row.triggerSource() == null) {
+            throw new IllegalArgumentException("triggerSource 누락 (type=set_granted)");
         }
 
-        Mercenary mercenary = mercenaryRepository.findByKey(row.mercenaryKey())
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "용병 미존재: mercenaryKey=" + row.mercenaryKey()));
+        // SetGrantedSkill을 skillKey 기준으로 upsert — 없으면 생성, 있으면 분류 정보 갱신
+        SetGrantedSkill setGrantedSkill = setGrantedSkillRepository
+                .findBySkillKey(row.skillKey())
+                .orElseGet(() -> setGrantedSkillRepository.save(
+                        SetGrantedSkill.builder()
+                                .skillKey(row.skillKey())
+                                .skillName(row.skillName())
+                                .skillBehaviorType(row.skillBehaviorType())
+                                .statSource(row.statSource())
+                                .triggerSource(row.triggerSource())
+                                .triggerEveryN(row.triggerEveryN())
+                                .triggerBaseSkillKey(row.triggerBaseSkillKey())
+                                .note(row.note())
+                                .build()));
 
-        MercenarySkill mercenarySkill = mercenarySkillRepository
+        setGrantedSkill.updateInfo(
+                row.skillName(), row.skillBehaviorType(), row.statSource(), row.triggerSource(),
+                row.triggerEveryN(), row.triggerBaseSkillKey(), row.note());
+
+        upsertCoefficient(row, null, null, setGrantedSkill);
+    }
+
+    private void upsertMercenarySkillCoefficient(SkillCoefficientJsonRow row) {
+        MercenarySkill mercenarySkill = resolveMercenarySkill(row);
+        mercenarySkill.updateSkillKey(row.skillKey());
+
+        upsertCoefficient(row, mercenarySkill, null, null);
+    }
+
+    private void upsertItemSkillCoefficient(SkillCoefficientJsonRow row) {
+        ItemSkill itemSkill = resolveItemSkill(row);
+        itemSkill.updateSkillKey(row.skillKey());
+
+        upsertCoefficient(row, null, itemSkill, null);
+    }
+
+    private MercenarySkill resolveMercenarySkill(SkillCoefficientJsonRow row) {
+        if (row.mercenaryKey() != null && !row.mercenaryKey().isBlank()) {
+            Optional<Mercenary> mercenary = findMercenaryByGerniverseKeyOrName(row.mercenaryKey());
+            if (mercenary.isPresent()) {
+                return findOrCreateMercenarySkill(mercenary.get(), row);
+            }
+        }
+
+        return findUniqueMercenarySkillBySkillKey(row)
+                .or(() -> findUniqueMercenarySkillBySkillName(row))
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "용병 스킬 매핑 실패: mercenaryKey=" + row.mercenaryKey()
+                                + ", skillKey=" + row.skillKey()
+                                + ", skillName=" + row.skillName()));
+    }
+
+    private Optional<Mercenary> findMercenaryByGerniverseKeyOrName(String mercenaryKey) {
+        Optional<Mercenary> byKey = mercenaryRepository.findByKey(mercenaryKey);
+        if (byKey.isPresent()) {
+            return byKey;
+        }
+
+        // 로컬/거상짱 기반 데이터는 mercenary_key가 비어 있을 수 있어 한글 이름으로 보정한다.
+        String mercenaryName = MERCENARY_NAME_BY_GERNIVERSE_KEY.get(mercenaryKey);
+        return mercenaryName == null ? Optional.empty() : mercenaryRepository.findByName(mercenaryName);
+    }
+
+    private MercenarySkill findOrCreateMercenarySkill(Mercenary mercenary, SkillCoefficientJsonRow row) {
+        return mercenarySkillRepository
                 .findByMercenaryIdAndSkillName(mercenary.getId(), row.skillName())
                 .orElseGet(() -> mercenarySkillRepository.save(
                         MercenarySkill.builder()
@@ -104,21 +223,50 @@ public class SkillCoefficientAdminService {
                                 .skillName(row.skillName())
                                 .skillKey(row.skillKey())
                                 .build()));
-        mercenarySkill.updateSkillKey(row.skillKey());
-
-        upsertCoefficient(row, mercenarySkill, null);
     }
 
-    private void upsertItemSkillCoefficient(SkillCoefficientJsonRow row) {
-        if (row.itemKey() == null || row.itemKey().isBlank()) {
-            throw new IllegalArgumentException("itemKey 누락 (type=item)");
+    private Optional<MercenarySkill> findUniqueMercenarySkillBySkillKey(SkillCoefficientJsonRow row) {
+        if (row.skillKey() == null || row.skillKey().isBlank()) {
+            return Optional.empty();
         }
 
-        Item item = itemRepository.findByItemKey(row.itemKey())
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "아이템 미존재: itemKey=" + row.itemKey()));
+        List<MercenarySkill> matches = mercenarySkillRepository.findBySkillKey(row.skillKey());
+        if (matches.size() > 1) {
+            throw new IllegalArgumentException("용병 스킬 skillKey 중복: skillKey=" + row.skillKey());
+        }
+        return matches.stream().findFirst();
+    }
 
-        ItemSkill itemSkill = itemSkillRepository
+    private Optional<MercenarySkill> findUniqueMercenarySkillBySkillName(SkillCoefficientJsonRow row) {
+        if (row.skillName() == null || row.skillName().isBlank()) {
+            return Optional.empty();
+        }
+
+        List<MercenarySkill> matches = mercenarySkillRepository.findBySkillName(row.skillName());
+        if (matches.size() > 1) {
+            throw new IllegalArgumentException("용병 스킬명 중복: skillName=" + row.skillName());
+        }
+        return matches.stream().findFirst();
+    }
+
+    private ItemSkill resolveItemSkill(SkillCoefficientJsonRow row) {
+        if (row.itemKey() != null && !row.itemKey().isBlank()) {
+            Optional<Item> item = itemRepository.findByItemKey(row.itemKey());
+            if (item.isPresent()) {
+                return findOrCreateItemSkill(item.get(), row);
+            }
+        }
+
+        return findUniqueItemSkillBySkillKey(row)
+                .or(() -> findUniqueItemSkillBySkillName(row))
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "아이템 스킬 매핑 실패: itemKey=" + row.itemKey()
+                                + ", skillKey=" + row.skillKey()
+                                + ", skillName=" + row.skillName()));
+    }
+
+    private ItemSkill findOrCreateItemSkill(Item item, SkillCoefficientJsonRow row) {
+        return itemSkillRepository
                 .findByItemIdAndSkillName(item.getId(), row.skillName())
                 .orElseGet(() -> itemSkillRepository.save(
                         ItemSkill.builder()
@@ -126,14 +274,36 @@ public class SkillCoefficientAdminService {
                                 .skillName(row.skillName())
                                 .skillKey(row.skillKey())
                                 .build()));
-        itemSkill.updateSkillKey(row.skillKey());
+    }
 
-        upsertCoefficient(row, null, itemSkill);
+    private Optional<ItemSkill> findUniqueItemSkillBySkillKey(SkillCoefficientJsonRow row) {
+        if (row.skillKey() == null || row.skillKey().isBlank()) {
+            return Optional.empty();
+        }
+
+        List<ItemSkill> matches = itemSkillRepository.findBySkillKey(row.skillKey());
+        if (matches.size() > 1) {
+            throw new IllegalArgumentException("아이템 스킬 skillKey 중복: skillKey=" + row.skillKey());
+        }
+        return matches.stream().findFirst();
+    }
+
+    private Optional<ItemSkill> findUniqueItemSkillBySkillName(SkillCoefficientJsonRow row) {
+        if (row.skillName() == null || row.skillName().isBlank()) {
+            return Optional.empty();
+        }
+
+        List<ItemSkill> matches = itemSkillRepository.findBySkillName(row.skillName());
+        if (matches.size() > 1) {
+            throw new IllegalArgumentException("아이템 스킬명 중복: skillName=" + row.skillName());
+        }
+        return matches.stream().findFirst();
     }
 
     private void upsertCoefficient(SkillCoefficientJsonRow row,
                                    MercenarySkill mercenarySkill,
-                                   ItemSkill itemSkill) {
+                                   ItemSkill itemSkill,
+                                   SetGrantedSkill setGrantedSkill) {
         skillCoefficientRepository.findByRowId(row.rowId())
                 .ifPresentOrElse(
                         sc -> sc.updateCoefficients(
@@ -143,9 +313,9 @@ public class SkillCoefficientAdminService {
                                 row.skillType(), row.castsPerSecond(), row.tickIntervalMs(),
                                 row.confidence(), row.note()),
                         () -> skillCoefficientRepository.save(
-                                mercenarySkill != null
-                                        ? buildForMercenary(row, mercenarySkill)
-                                        : buildForItem(row, itemSkill))
+                                mercenarySkill != null ? buildForMercenary(row, mercenarySkill)
+                                : itemSkill != null    ? buildForItem(row, itemSkill)
+                                :                        buildForSetGrantedSkill(row, setGrantedSkill))
                 );
     }
 
@@ -166,6 +336,20 @@ public class SkillCoefficientAdminService {
     private SkillCoefficient buildForItem(SkillCoefficientJsonRow row, ItemSkill itemSkill) {
         return SkillCoefficient.ofItem()
                 .itemSkill(itemSkill)
+                .rowId(row.rowId())
+                .coefStr(row.coefStr()).coefDex(row.coefDex()).coefVit(row.coefVit())
+                .coefInt(row.coefInt()).coefAtk(row.coefAtk()).coefLvl(row.coefLvl())
+                .hitCount(row.hitCount()).damageRangeFactor(row.damageRangeFactor())
+                .skillType(row.skillType())
+                .castsPerSecond(row.castsPerSecond()).tickIntervalMs(row.tickIntervalMs())
+                .confidence(row.confidence()).measurementNote(row.note())
+                .build();
+    }
+
+    private SkillCoefficient buildForSetGrantedSkill(SkillCoefficientJsonRow row,
+                                                     SetGrantedSkill setGrantedSkill) {
+        return SkillCoefficient.ofSetGrantedSkill()
+                .setGrantedSkill(setGrantedSkill)
                 .rowId(row.rowId())
                 .coefStr(row.coefStr()).coefDex(row.coefDex()).coefVit(row.coefVit())
                 .coefInt(row.coefInt()).coefAtk(row.coefAtk()).coefLvl(row.coefLvl())
@@ -205,13 +389,16 @@ public class SkillCoefficientAdminService {
      */
     @Transactional
     public SkillCoefficientAdminResponse create(SkillCoefficientCreateRequest req) {
-        if (req.mercenarySkillId() == null && req.itemSkillId() == null) {
+        long specifiedCount = (req.mercenarySkillId() != null ? 1 : 0)
+                + (req.itemSkillId() != null ? 1 : 0)
+                + (req.setGrantedSkillId() != null ? 1 : 0);
+        if (specifiedCount == 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "mercenarySkillId 또는 itemSkillId 중 하나는 필수입니다.");
+                    "mercenarySkillId / itemSkillId / setGrantedSkillId 중 하나는 필수입니다.");
         }
-        if (req.mercenarySkillId() != null && req.itemSkillId() != null) {
+        if (specifiedCount > 1) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "mercenarySkillId와 itemSkillId는 동시에 지정할 수 없습니다.");
+                    "mercenarySkillId / itemSkillId / setGrantedSkillId는 동시에 지정할 수 없습니다.");
         }
 
         SkillCoefficient sc;
@@ -229,12 +416,26 @@ public class SkillCoefficientAdminService {
                     .castsPerSecond(req.castsPerSecond()).tickIntervalMs(req.tickIntervalMs())
                     .confidence(req.confidence()).measurementNote(req.note())
                     .build();
-        } else {
+        } else if (req.itemSkillId() != null) {
             ItemSkill skill = itemSkillRepository.findById(req.itemSkillId())
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                             "아이템 스킬 미존재: id=" + req.itemSkillId()));
             sc = SkillCoefficient.ofItem()
                     .itemSkill(skill)
+                    .rowId(req.rowId())
+                    .coefStr(req.coefStr()).coefDex(req.coefDex()).coefVit(req.coefVit())
+                    .coefInt(req.coefInt()).coefAtk(req.coefAtk()).coefLvl(req.coefLvl())
+                    .hitCount(req.hitCount()).damageRangeFactor(req.damageRangeFactor())
+                    .skillType(req.skillType())
+                    .castsPerSecond(req.castsPerSecond()).tickIntervalMs(req.tickIntervalMs())
+                    .confidence(req.confidence()).measurementNote(req.note())
+                    .build();
+        } else {
+            SetGrantedSkill skill = setGrantedSkillRepository.findById(req.setGrantedSkillId())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                            "세트 부여 스킬 미존재: id=" + req.setGrantedSkillId()));
+            sc = SkillCoefficient.ofSetGrantedSkill()
+                    .setGrantedSkill(skill)
                     .rowId(req.rowId())
                     .coefStr(req.coefStr()).coefDex(req.coefDex()).coefVit(req.coefVit())
                     .coefInt(req.coefInt()).coefAtk(req.coefAtk()).coefLvl(req.coefLvl())
@@ -299,6 +500,8 @@ public class SkillCoefficientAdminService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "PERSISTENT 스킬은 tickIntervalMs 필수");
         }
+        // TRIGGER 타입은 trigger_every_n이 연결된 ItemSkill/SetGrantedSkill에 저장되므로
+        // castsPerSecond·tickIntervalMs 검증 불필요
 
         sc.updateMeasurement(req.castsPerSecond(), req.tickIntervalMs(), req.measurementNote());
         return SkillCoefficientAdminResponse.of(sc);

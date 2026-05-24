@@ -1,8 +1,11 @@
 package org.example.gersangtrade.catalog.service;
 
 import lombok.RequiredArgsConstructor;
+import org.example.gersangtrade.catalog.dto.response.SetDetailResponse;
 import org.example.gersangtrade.catalog.dto.response.SetResponse;
+import org.example.gersangtrade.catalog.repository.EquipmentSetPieceRepository;
 import org.example.gersangtrade.catalog.repository.EquipmentSetRepository;
+import org.example.gersangtrade.domain.catalog.EquipmentSet;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -17,6 +20,7 @@ import org.springframework.web.server.ResponseStatusException;
 public class SetService {
 
     private final EquipmentSetRepository equipmentSetRepository;
+    private final EquipmentSetPieceRepository equipmentSetPieceRepository;
 
     /** 세트 목록 — 이름 검색 + 페이징 */
     public Page<SetResponse> getSets(String name, Pageable pageable) {
@@ -27,12 +31,12 @@ public class SetService {
         return equipmentSetRepository.findByIsTradeableTrue(pageable).map(SetResponse::from);
     }
 
-    /** 세트 단건 조회 — isTradeable=false이면 404 */
-    public SetResponse getSet(Long id) {
-        return equipmentSetRepository.findById(id)
-                .filter(s -> s.isTradeable())
-                .map(SetResponse::from)
+    /** 세트 단건 조회 (피스 목록 포함) — isTradeable=false이면 404 */
+    public SetDetailResponse getSet(Long id) {
+        EquipmentSet set = equipmentSetRepository.findById(id)
+                .filter(EquipmentSet::isTradeable)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                         "세트를 찾을 수 없습니다. id=" + id));
+        return SetDetailResponse.of(set, equipmentSetPieceRepository.findWithItemByEquipmentSetId(id));
     }
 }

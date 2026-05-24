@@ -16,6 +16,7 @@ public record ChatRoomSummaryResponse(
         Long id,
         ListingType listingType,
         Long listingId,
+        String listingDisplayName,
         InitiationType initiationType,
 
         /** 내 기준 상대방 닉네임 */
@@ -29,7 +30,7 @@ public record ChatRoomSummaryResponse(
      * 채팅방 엔티티에서 DTO 생성.
      * viewerId를 기준으로 상대방 닉네임을 결정한다.
      */
-    public static ChatRoomSummaryResponse of(ChatRoom room, Long viewerId) {
+    public static ChatRoomSummaryResponse of(ChatRoom room, Long viewerId, String listingDisplayName) {
         boolean isViewer = room.getPoster().getId().equals(viewerId);
         String partnerNickname = isViewer
                 ? room.getCounterparty().getNickname()
@@ -39,6 +40,7 @@ public record ChatRoomSummaryResponse(
                 room.getId(),
                 room.getListingType(),
                 room.getListingId(),
+                listingDisplayName,
                 room.getInitiationType(),
                 partnerNickname,
                 room.getStatus(),

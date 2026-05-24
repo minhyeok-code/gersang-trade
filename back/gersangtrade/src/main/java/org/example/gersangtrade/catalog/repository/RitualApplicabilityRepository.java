@@ -27,4 +27,7 @@ public interface RitualApplicabilityRepository extends JpaRepository<RitualAppli
     List<RitualApplicability> findByEquipmentItemIdWithRitual(@Param("equipmentItemId") Long equipmentItemId);
 
     boolean existsByRitual_IdAndEquipmentItem_ItemId(Long ritualId, Long equipmentItemId);
+
+    /** 장비 아이템 삭제 전 주술 적용 가능 매핑을 정리한다. */
+    void deleteByEquipmentItem_ItemId(Long equipmentItemId);
 }

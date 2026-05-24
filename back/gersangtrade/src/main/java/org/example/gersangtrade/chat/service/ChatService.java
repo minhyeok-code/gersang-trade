@@ -103,7 +103,7 @@ public class ChatService {
                     .filter(r -> r.getCounterparty().getId().equals(userId) && r.getStatus() == ChatRoomStatus.OPEN)
                     .findFirst()
                     .orElseThrow(() -> new IllegalStateException("채팅방 조회 중 오류가 발생했습니다."));
-            return ChatRoomSummaryResponse.of(existing, userId);
+            return ChatRoomSummaryResponse.of(existing, userId, resolveListingDisplayName(existing));
         }
 
         // 새 채팅방 생성
@@ -123,7 +123,7 @@ public class ChatService {
         saveNotification(poster, NotificationType.CHAT_OPENED, room.getId(),
                 counterparty.getNickname() + "님이 채팅을 요청했습니다.");
 
-        return ChatRoomSummaryResponse.of(room, userId);
+        return ChatRoomSummaryResponse.of(room, userId, resolveListingDisplayName(room));
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -139,7 +139,7 @@ public class ChatService {
 
         return java.util.stream.Stream.concat(asPoster.stream(), asCounterparty.stream())
                 .sorted((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()))
-                .map(room -> ChatRoomSummaryResponse.of(room, userId))
+                .map(room -> ChatRoomSummaryResponse.of(room, userId, resolveListingDisplayName(room)))
                 .collect(Collectors.toList());
     }
 
@@ -162,7 +162,7 @@ public class ChatService {
                 .map(ChatMessageResponse::of)
                 .collect(Collectors.toList());
 
-        return ChatRoomDetailResponse.of(room, msgResponses);
+        return ChatRoomDetailResponse.of(room, resolveListingDisplayName(room), msgResponses);
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -238,7 +238,7 @@ public class ChatService {
         saveNotification(room.getCounterparty(), NotificationType.POSTER_CONFIRMED, chatRoomId,
                 room.getPoster().getNickname() + "님이 거래완료를 요청했습니다. 확인 후 거래완료 버튼을 눌러주세요.");
 
-        return ChatRoomSummaryResponse.of(room, userId);
+        return ChatRoomSummaryResponse.of(room, userId, resolveListingDisplayName(room));
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -347,7 +347,7 @@ public class ChatService {
         // 어뷰징 탐지: 7일 이내 동일 두 유저 간 3건 이상 거래 → TODO 관리자 알림
         // checkAbuse(poster, counterparty);
 
-        return ChatRoomSummaryResponse.of(room, userId);
+        return ChatRoomSummaryResponse.of(room, userId, resolveListingDisplayName(room));
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -419,6 +419,42 @@ public class ChatService {
                     .map(WantedListing::getServer)
                     .orElse("알 수 없음");
         }
+    }
+
+    /**
+     * 채팅 목록에서 보여줄 게시물 표시명을 만든다.
+     * 별도 상세 조회 없이 "거래자 / 아이템" 목록을 구성하기 위한 요약값이다.
+     */
+    private String resolveListingDisplayName(ChatRoom room) {
+        try {
+            if (room.getListingType() == ListingType.SELL) {
+                List<org.example.gersangtrade.domain.listing.ListingBundle> bundles =
+                        listingBundleRepository.findByListingIdOrderByIdAsc(room.getListingId());
+                if (!bundles.isEmpty()) {
+                    org.example.gersangtrade.domain.listing.ListingBundle bundle = bundles.get(0);
+                    if (bundle.getTitleOverride() != null && !bundle.getTitleOverride().isBlank()) {
+                        return bundle.getTitleOverride();
+                    }
+                    List<org.example.gersangtrade.domain.listing.BundleLine> lines =
+                            bundleLineRepository.findByBundleIdOrderBySortOrderAsc(bundle.getId());
+                    if (!lines.isEmpty()) {
+                        String itemName = lines.get(0).getItem().getName();
+                        return lines.size() > 1 ? itemName + " 외 " + (lines.size() - 1) + "개" : itemName;
+                    }
+                    return bundle.getBundleType().name();
+                }
+            } else {
+                List<org.example.gersangtrade.domain.wanted.WantedItem> items =
+                        wantedItemRepository.findByWantedListingIdOrderBySortOrderAsc(room.getListingId());
+                if (!items.isEmpty()) {
+                    String itemName = items.get(0).getItem().getName();
+                    return items.size() > 1 ? itemName + " 외 " + (items.size() - 1) + "개 구매희망" : itemName + " 구매희망";
+                }
+            }
+        } catch (Exception ignored) {
+            // 표시명 조회 실패 시 채팅방 자체는 계속 표시한다.
+        }
+        return room.getListingType().name() + " #" + room.getListingId();
     }
 
     /**

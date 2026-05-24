@@ -6,6 +6,7 @@ import org.example.gersangtrade.auth.handler.OAuth2LoginFailureHandler;
 import org.example.gersangtrade.auth.handler.OAuth2LoginSuccessHandler;
 import org.example.gersangtrade.auth.jwt.JwtTokenizer;
 import org.example.gersangtrade.auth.service.CustomOAuth2UserService;
+import org.example.gersangtrade.auth.service.CustomOidcUserService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
@@ -38,6 +39,7 @@ import java.io.IOException;
 public class SecurityConfig {
 
     private final CustomOAuth2UserService customOAuth2UserService;
+    private final CustomOidcUserService customOidcUserService;
     private final OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler;
     private final OAuth2LoginFailureHandler oAuth2LoginFailureHandler;
     private final JwtTokenizer jwtTokenizer;
@@ -57,8 +59,9 @@ public class SecurityConfig {
 
                 // OAuth2 소셜 로그인 설정 (MVP 범위: Google + Naver)
                 .oauth2Login(oauth2 -> oauth2
-                        .userInfoEndpoint(userInfo ->
-                                userInfo.userService(customOAuth2UserService))
+                        .userInfoEndpoint(userInfo -> userInfo
+                                .userService(customOAuth2UserService)       // Naver (non-OIDC)
+                                .oidcUserService(customOidcUserService))    // Google (OIDC)
                         .successHandler(oAuth2LoginSuccessHandler)
                         .failureHandler(oAuth2LoginFailureHandler)
                 )

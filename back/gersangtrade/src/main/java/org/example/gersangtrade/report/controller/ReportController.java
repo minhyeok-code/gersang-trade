@@ -2,7 +2,6 @@ package org.example.gersangtrade.report.controller;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.example.gersangtrade.auth.security.CustomOAuth2UserDetails;
 import org.example.gersangtrade.report.dto.request.ReportCreateRequest;
 import org.example.gersangtrade.report.dto.response.ReportResponse;
 import org.example.gersangtrade.report.service.ReportService;
@@ -42,9 +41,8 @@ public class ReportController {
     @PostMapping
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ReportResponse> fileReport(
-            @AuthenticationPrincipal CustomOAuth2UserDetails principal,
+            @AuthenticationPrincipal Long reporterId,
             @Valid @RequestBody ReportCreateRequest request) {
-        Long reporterId = principal.getUser().getId();
         ReportResponse response = reportService.fileReport(reporterId, request);
         return ResponseEntity.created(URI.create("/api/reports/" + response.id()))
                 .body(response);
@@ -59,9 +57,8 @@ public class ReportController {
     @GetMapping("/me")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Page<ReportResponse>> getMyReports(
-            @AuthenticationPrincipal CustomOAuth2UserDetails principal,
+            @AuthenticationPrincipal Long reporterId,
             @PageableDefault(size = 20, sort = "createdAt") Pageable pageable) {
-        Long reporterId = principal.getUser().getId();
         return ResponseEntity.ok(reportService.getMyReports(reporterId, pageable));
     }
 }

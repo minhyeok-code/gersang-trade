@@ -14,4 +14,15 @@ public interface RitualSetEffectRepository extends JpaRepository<RitualSetEffect
     boolean existsByRitual_IdAndOutcomeAndEquipmentSet_IdAndRequiredRitualPiecesAndStatType(
             Long ritualId, RitualOutcome outcome, Long equipmentSetId,
             Integer requiredRitualPieces, StatType statType);
+
+    /** ritualId + setId 기준 배치 조회 — DPS 계산기에서 주술 세트효과 일괄 로딩용 */
+    @org.springframework.data.jpa.repository.Query("""
+            SELECT r FROM RitualSetEffect r
+            JOIN FETCH r.ritual
+            JOIN FETCH r.equipmentSet
+            WHERE r.ritual.id IN :ritualIds AND r.equipmentSet.id IN :setIds
+            """)
+    java.util.List<RitualSetEffect> findByRitualIdInAndEquipmentSetIdIn(
+            @org.springframework.data.repository.query.Param("ritualIds") java.util.List<Long> ritualIds,
+            @org.springframework.data.repository.query.Param("setIds") java.util.List<Long> setIds);
 }

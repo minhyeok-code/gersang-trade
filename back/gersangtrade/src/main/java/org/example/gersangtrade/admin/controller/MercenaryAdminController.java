@@ -44,6 +44,7 @@ import java.util.Map;
  *   <li>PUT  /admin/mercenaries/{id}/characteristics/{charId} — 특성 수정</li>
  *   <li>DELETE /admin/mercenaries/{id}/characteristics/{charId} — 특성 삭제</li>
  *   <li>PUT  /admin/mercenaries/{id}/characteristics/{charId}/levels — 레벨 수치 일괄 저장</li>
+ *   <li>DELETE /admin/mercenaries/{id}                       — 용병 하드 삭제</li>
  * </ul>
  */
 @RestController
@@ -183,5 +184,12 @@ public class MercenaryAdminController {
             @Valid @RequestBody CharacteristicLevelSaveRequest request) {
         return ResponseEntity.ok(
                 mercenaryAdminService.saveLevels(mercenaryId, charId, request));
+    }
+
+    /** 용병 하드 삭제 — 참조 중이면 409를 반환한다. */
+    @DeleteMapping("/{mercenaryId}")
+    public ResponseEntity<Void> deleteMercenary(@PathVariable Long mercenaryId) {
+        mercenaryAdminService.deleteMercenary(mercenaryId);
+        return ResponseEntity.noContent().build();
     }
 }

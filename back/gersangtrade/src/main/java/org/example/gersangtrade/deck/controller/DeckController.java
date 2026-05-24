@@ -23,6 +23,8 @@ import java.util.List;
  * GET    /api/decks/{deckId}                                                — 덱 상세
  * PATCH  /api/decks/{deckId}                                                — 덱 이름·활성화 수정
  * DELETE /api/decks/{deckId}                                                — 덱 삭제
+ * GET    /api/decks/effect-options                                          — 정령/진법/층진 선택지 조회
+ * PUT    /api/decks/{deckId}/effects                                        — 정령/진법/층진 적용
  * POST   /api/decks/{deckId}/members                                        — 용병 추가
  * DELETE /api/decks/{deckId}/members/{memberId}                             — 용병 제거
  * GET    /api/decks/{deckId}/members/{memberId}/stats                       — 용병 합산 스탯 조회
@@ -56,6 +58,12 @@ public class DeckController {
         return ResponseEntity.created(URI.create("/api/decks/" + created.id())).body(created);
     }
 
+    /** 정적 경로는 /{deckId}보다 먼저 선언 — effect-options가 deckId로 오인되지 않도록 */
+    @GetMapping("/effect-options")
+    public ResponseEntity<DeckEffectCatalogResponse> getDeckEffectCatalog() {
+        return ResponseEntity.ok(deckService.getDeckEffectCatalog());
+    }
+
     @GetMapping("/{deckId}")
     public ResponseEntity<DeckDetailResponse> getDeckDetail(
             @AuthenticationPrincipal Long userId,
@@ -80,6 +88,14 @@ public class DeckController {
         return ResponseEntity.noContent().build();
     }
 
+    @PutMapping("/{deckId}/effects")
+    public ResponseEntity<DeckEffectResponse> updateDeckEffects(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long deckId,
+            @RequestBody @Valid DeckEffectUpdateRequest req) {
+        return ResponseEntity.ok(deckService.updateDeckEffects(userId, deckId, req));
+    }
+
     // ── 용병 ─────────────────────────────────────────────────────────────────
 
     @PostMapping("/{deckId}/members")
@@ -100,12 +116,62 @@ public class DeckController {
         return ResponseEntity.noContent().build();
     }
 
+    @GetMapping("/{deckId}/members/{memberId}/characteristics")
+    public ResponseEntity<MemberCharacteristicResponse> getMemberCharacteristics(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long deckId,
+            @PathVariable Long memberId) {
+        return ResponseEntity.ok(deckService.getMemberCharacteristics(userId, deckId, memberId));
+    }
+
     @GetMapping("/{deckId}/members/{memberId}/stats")
     public ResponseEntity<MemberStatResponse> getMemberStats(
             @AuthenticationPrincipal Long userId,
             @PathVariable Long deckId,
             @PathVariable Long memberId) {
         return ResponseEntity.ok(deckService.getMemberStats(userId, deckId, memberId));
+    }
+
+    @PatchMapping("/{deckId}/members/{memberId}/build")
+    public ResponseEntity<Void> updateMemberBuild(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long deckId,
+            @PathVariable Long memberId,
+            @RequestBody @Valid MemberBuildUpdateRequest req) {
+        deckService.updateMemberBuild(userId, deckId, memberId, req);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PatchMapping("/{deckId}/members/{memberId}/level")
+    public ResponseEntity<Void> updateMemberLevel(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long deckId,
+            @PathVariable Long memberId,
+            @RequestBody @Valid MemberLevelUpdateRequest req) {
+        deckService.updateMemberLevel(userId, deckId, memberId, req);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PutMapping("/{deckId}/members/{memberId}/characteristics")
+    public ResponseEntity<Void> setMemberCharacteristics(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long deckId,
+            @PathVariable Long memberId,
+            @RequestBody @Valid MemberCharacteristicSetRequest req) {
+        deckService.setMemberCharacteristics(userId, deckId, memberId, req);
+        return ResponseEntity.noContent().build();
+    }
+
+    // ── 세트 일괄 장착 ───────────────────────────────────────────────────────
+
+    @PutMapping("/{deckId}/members/{memberId}/sets/{setId}")
+    public ResponseEntity<Void> equipSet(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long deckId,
+            @PathVariable Long memberId,
+            @PathVariable Long setId) {
+        deckService.equipSet(userId, deckId, memberId, setId);
+        return ResponseEntity.noContent().build();
     }
 
     // ── 장비 슬롯 ────────────────────────────────────────────────────────────

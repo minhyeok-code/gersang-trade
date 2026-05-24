@@ -1,12 +1,14 @@
 package org.example.gersangtrade.user.controller;
 
 import lombok.RequiredArgsConstructor;
-import org.example.gersangtrade.auth.security.CustomOAuth2UserDetails;
+import jakarta.validation.Valid;
 import org.example.gersangtrade.listing.dto.response.ListingSummaryResponse;
 import org.example.gersangtrade.trade.dto.response.TradeReviewResponse;
 import org.example.gersangtrade.trade.service.TradeReviewService;
+import org.example.gersangtrade.user.dto.request.ClearTimeRequest;
 import org.example.gersangtrade.user.dto.request.UserProfileUpdateRequest;
 import org.example.gersangtrade.user.dto.request.UserServerUpdateRequest;
+import org.example.gersangtrade.user.dto.response.ClearTimeResponse;
 import org.example.gersangtrade.user.dto.response.PublicUserProfileResponse;
 import org.example.gersangtrade.user.dto.response.UserProfileResponse;
 import org.example.gersangtrade.user.service.UserService;
@@ -47,8 +49,7 @@ public class UserController {
     @GetMapping("/me")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<UserProfileResponse> getMyProfile(
-            @AuthenticationPrincipal CustomOAuth2UserDetails principal) {
-        Long userId = principal.getUser().getId();
+            @AuthenticationPrincipal Long userId) {
         return ResponseEntity.ok(userService.getUserProfile(userId));
     }
 
@@ -62,8 +63,7 @@ public class UserController {
     @GetMapping("/me/listings")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<ListingSummaryResponse>> getMyListings(
-            @AuthenticationPrincipal CustomOAuth2UserDetails principal) {
-        Long userId = principal.getUser().getId();
+            @AuthenticationPrincipal Long userId) {
         return ResponseEntity.ok(userService.getMyListings(userId));
     }
 
@@ -78,9 +78,8 @@ public class UserController {
     @PatchMapping("/me")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<UserProfileResponse> updateProfile(
-            @AuthenticationPrincipal CustomOAuth2UserDetails principal,
+            @AuthenticationPrincipal Long userId,
             @RequestBody UserProfileUpdateRequest request) {
-        Long userId = principal.getUser().getId();
         return ResponseEntity.ok(userService.updateProfile(userId, request));
     }
 
@@ -95,9 +94,8 @@ public class UserController {
     @PatchMapping("/me/server")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<UserProfileResponse> updateServer(
-            @AuthenticationPrincipal CustomOAuth2UserDetails principal,
+            @AuthenticationPrincipal Long userId,
             @RequestBody UserServerUpdateRequest request) {
-        Long userId = principal.getUser().getId();
         return ResponseEntity.ok(userService.updateServer(userId, request));
     }
 
@@ -111,10 +109,21 @@ public class UserController {
     @DeleteMapping("/me")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Void> withdrawal(
-            @AuthenticationPrincipal CustomOAuth2UserDetails principal) {
-        Long userId = principal.getUser().getId();
+            @AuthenticationPrincipal Long userId) {
         userService.withdrawal(userId);
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * 클리어타임 저장.
+     * 몬스터 클리어 기록을 저장하고 데이터 기여 보상으로 EXP를 지급한다.
+     */
+    @PostMapping("/me/clear-time")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ClearTimeResponse> saveClearTime(
+            @AuthenticationPrincipal Long userId,
+            @RequestBody @Valid ClearTimeRequest request) {
+        return ResponseEntity.ok(userService.saveClearTime(userId, request));
     }
 
     /**

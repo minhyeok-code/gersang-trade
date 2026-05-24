@@ -650,4 +650,58 @@ class ListingServiceTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("이미 완료되거나 취소된 거래 등록글입니다");
     }
+
+    // ── hideListing / unhideListing 테스트 ─────────────────────────────────
+
+    @Test
+    @DisplayName("hideListing_정상숨김_hide호출")
+    void hideListing_정상숨김_hide호출() {
+        // 준비: 삭제되지 않은 등록글 Mock
+        TradeListing listing = mock(TradeListing.class);
+        when(tradeListingRepository.findNotDeletedById(1L)).thenReturn(Optional.of(listing));
+
+        // 실행
+        listingService.hideListing(1L);
+
+        // 검증: hide()가 호출되어야 함
+        verify(listing).hide();
+    }
+
+    @Test
+    @DisplayName("hideListing_존재하지않는등록글_예외발생")
+    void hideListing_존재하지않는등록글_예외발생() {
+        // Mock 설정: 등록글 없음 (삭제됐거나 미존재)
+        when(tradeListingRepository.findNotDeletedById(999L)).thenReturn(Optional.empty());
+
+        // 실행 및 검증
+        assertThatThrownBy(() -> listingService.hideListing(999L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("존재하지 않는 등록글입니다");
+    }
+
+    @Test
+    @DisplayName("unhideListing_정상숨김해제_unhide호출")
+    void unhideListing_정상숨김해제_unhide호출() {
+        // 준비: 삭제되지 않은 등록글 Mock
+        TradeListing listing = mock(TradeListing.class);
+        when(tradeListingRepository.findNotDeletedById(1L)).thenReturn(Optional.of(listing));
+
+        // 실행
+        listingService.unhideListing(1L);
+
+        // 검증: unhide()가 호출되어야 함
+        verify(listing).unhide();
+    }
+
+    @Test
+    @DisplayName("unhideListing_존재하지않는등록글_예외발생")
+    void unhideListing_존재하지않는등록글_예외발생() {
+        // Mock 설정: 등록글 없음 (삭제됐거나 미존재)
+        when(tradeListingRepository.findNotDeletedById(999L)).thenReturn(Optional.empty());
+
+        // 실행 및 검증
+        assertThatThrownBy(() -> listingService.unhideListing(999L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("존재하지 않는 등록글입니다");
+    }
 }

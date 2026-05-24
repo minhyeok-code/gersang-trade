@@ -25,4 +25,10 @@ public interface MercenarySkillRepository extends JpaRepository<MercenarySkill, 
     /** skillKey가 null인 스킬 목록 조회 — 거니버스 데이터 보완 대상 선정 */
     @Query("SELECT ms FROM MercenarySkill ms WHERE ms.skillKey IS NULL")
     List<MercenarySkill> findBySkillKeyIsNull();
+
+    /** 거니버스 skillKey로 기존 스킬 조회 — 스킬 계수 JSON과 기존 스킬 연결에 사용 */
+    List<MercenarySkill> findBySkillKey(String skillKey);
+
+    /** 스킬명으로 기존 스킬 조회 — skillKey가 아직 비어 있는 크롤링 데이터 보완용 */
+    List<MercenarySkill> findBySkillName(String skillName);
 }

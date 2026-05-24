@@ -112,6 +112,13 @@ public class Mercenary extends BaseEntity {
         this.imageUrl = imageUrl;
     }
 
+    /** 시더에서 gerniverse key를 사후 세팅할 때 사용. 이미 key가 있으면 덮어쓰지 않는다. */
+    public void updateKeyIfAbsent(String key) {
+        if (this.key == null && key != null && !key.isBlank()) {
+            this.key = key;
+        }
+    }
+
     /** 관리자 수동 수정 — 이름, 카테고리, 국가, 속성, 속성값, 출시예정 여부 */
     public void updateInfo(String name, MercenaryCategory category, Nation nation,
                            Nature nature, Integer natureValue, boolean comingSoon) {

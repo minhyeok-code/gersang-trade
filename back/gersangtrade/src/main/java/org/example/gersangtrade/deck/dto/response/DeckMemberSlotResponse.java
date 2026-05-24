@@ -7,6 +7,7 @@ public record DeckMemberSlotResponse(
         EquipSlot slot,
         Long itemId,
         String itemName,
+        String imageUrl,
         SlotRitualResponse ritual   // null이면 주술 없음
 ) {
     public static DeckMemberSlotResponse of(UserDeckMemberSlot slot) {
@@ -17,6 +18,7 @@ public record DeckMemberSlotResponse(
                 slot.getSlot(),
                 slot.getEquipmentItem().getItemId(),
                 slot.getEquipmentItem().getItem().getName(),
+                slot.getEquipmentItem().getItem().getImageUrl(),
                 ritual
         );
     }

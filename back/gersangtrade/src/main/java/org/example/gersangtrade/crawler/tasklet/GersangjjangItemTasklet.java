@@ -9,6 +9,7 @@ import org.example.gersangtrade.catalog.repository.ItemSkillRepository;
 import org.example.gersangtrade.catalog.repository.ItemStatRepository;
 import org.example.gersangtrade.catalog.repository.RitualRepository;
 import org.example.gersangtrade.crawler.dto.ParsedItemDto;
+import org.example.gersangtrade.crawler.service.S3ImageService;
 import org.example.gersangtrade.crawler.parser.GersangjjangParser;
 import org.example.gersangtrade.crawler.parser.GersangjjangParser.CategoryInfo;
 import org.example.gersangtrade.crawler.parser.GersangjjangParser.ItemRow;
@@ -24,6 +25,7 @@ import org.example.gersangtrade.domain.catalog.Ritual;
 import org.example.gersangtrade.domain.catalog.enums.Element;
 import org.example.gersangtrade.domain.catalog.enums.EquipmentKind;
 import org.example.gersangtrade.domain.catalog.enums.EquipmentSlot;
+import org.example.gersangtrade.domain.deck.enums.EquipSlot;
 
 import org.example.gersangtrade.domain.catalog.enums.GemGrade;
 import org.example.gersangtrade.domain.catalog.enums.ItemType;
@@ -35,6 +37,7 @@ import org.springframework.batch.repeat.RepeatStatus;
 import org.springframework.stereotype.Component;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -60,6 +63,7 @@ public class GersangjjangItemTasklet implements Tasklet {
     private static final String INDEX_URL = "https://www.gersangjjang.com/item/index.asp";
 
     private final JsoupFetcher jsoupFetcher;
+    private final S3ImageService s3ImageService;
     private final ItemRepository itemRepository;
     private final ItemStatRepository itemStatRepository;
     private final ItemSkillRepository itemSkillRepository;
@@ -115,23 +119,27 @@ public class GersangjjangItemTasklet implements Tasklet {
                             Item item = upsertEquipmentItem(parsed.cleanName(), detectedSlot, category.kind());
                             upsertAllStats(item, row.stats());
                             upsertSkills(item, row.skills());
+                            uploadItemImage(item, row.imageUrl());
                             equipmentCount++;
                         } else {
                             log.warn("슬롯 감지 실패 — MATERIAL로 저장: [{}] ({})", parsed.cleanName(), category.text());
                             Item item = upsertMaterialItem(parsed.cleanName());
                             upsertAllStats(item, row.stats());
                             upsertSkills(item, row.skills());
+                            uploadItemImage(item, row.imageUrl());
                             materialCount++;
                         }
                     } else if (category.isEquipment()) {
                         Item item = upsertEquipmentItem(parsed.cleanName(), category.slot(), category.kind());
                         upsertAllStats(item, row.stats());
                         upsertSkills(item, row.skills());
+                        uploadItemImage(item, row.imageUrl());
                         equipmentCount++;
                     } else {
                         Item item = upsertMaterialItem(parsed.cleanName());
                         upsertAllStats(item, row.stats());
                         upsertSkills(item, row.skills());
+                        uploadItemImage(item, row.imageUrl());
                         materialCount++;
                     }
                 }
@@ -196,6 +204,7 @@ public class GersangjjangItemTasklet implements Tasklet {
     /**
      * 장비 아이템 UPSERT — EQUIPMENT 타입으로 저장하고 EquipmentItem도 생성.
      * 이미 MATERIAL 타입으로 저장된 경우 EQUIPMENT로 수정한다.
+     * 기존 레코드의 slot/equipSlot이 null이면 갱신한다.
      */
     private Item upsertEquipmentItem(String name, EquipmentSlot slot, EquipmentKind kind) {
         Item item = itemRepository.findByName(name)
@@ -212,14 +221,54 @@ public class GersangjjangItemTasklet implements Tasklet {
             item.updateType(ItemType.EQUIPMENT);
         }
 
-        if (!equipmentItemRepository.existsByItemId(item.getId())) {
+        EquipSlot equipSlot = deriveEquipSlot(slot, kind);
+        Optional<EquipmentItem> existing = equipmentItemRepository.findById(item.getId());
+        if (existing.isEmpty()) {
             equipmentItemRepository.save(EquipmentItem.builder()
                     .item(item)
                     .equipmentKind(kind)
                     .slot(slot)
+                    .equipSlot(equipSlot)
                     .build());
+        } else {
+            EquipmentItem ei = existing.get();
+            if (ei.getSlot() == null || ei.getEquipSlot() == null) {
+                ei.updateSlotInfo(slot, equipSlot);
+            }
         }
         return item;
+    }
+
+    /**
+     * EquipmentSlot + EquipmentKind 조합으로 덱 슬롯(EquipSlot)을 결정한다.
+     * RING은 RING_1/RING_2 둘 다 가능하므로 null 반환.
+     * ORB/WING/TITLE에 대응하는 덱 슬롯이 없으므로 null 반환.
+     */
+    private static EquipSlot deriveEquipSlot(EquipmentSlot slot, EquipmentKind kind) {
+        if (kind == EquipmentKind.APPEARANCE) {
+            return switch (slot) {
+                case ACCESSORY -> EquipSlot.APP_SPIRIT;
+                case DIVINE    -> EquipSlot.APP_WAR_GOD;
+                case BRACELET  -> EquipSlot.APP_BRACELET;
+                case LEGGING   -> EquipSlot.APP_GREAVES;
+                case EARRING   -> EquipSlot.APP_EARRING;
+                case NECKLACE  -> EquipSlot.APP_NECKLACE;
+                case HELMET    -> EquipSlot.APP_HELMET;
+                case ARMOR     -> EquipSlot.APP_ARMOR;
+                case WEAPON    -> EquipSlot.APP_WEAPON;
+                default        -> null; // ORB, WING, TITLE — 덱 슬롯 없음
+            };
+        }
+        return switch (slot) {
+            case WEAPON   -> EquipSlot.WEAPON;
+            case HELMET   -> EquipSlot.HELMET;
+            case ARMOR    -> EquipSlot.ARMOR;
+            case GLOVES   -> EquipSlot.GLOVES;
+            case BELT     -> EquipSlot.BELT;
+            case SHOES    -> EquipSlot.SHOES;
+            case TALISMAN -> EquipSlot.CHARM;
+            default       -> null; // RING — RING_1/RING_2 모두 가능
+        };
     }
 
     /** 파싱된 스탯 전체 UPSERT — (statType, element, scope) 조합이 이미 존재하면 건너뜀 */
@@ -239,6 +288,13 @@ public class GersangjjangItemTasklet implements Tasklet {
                 log.debug("스탯 저장: {} {} {} → {}", item.getName(), ps.element(), ps.statType(), ps.value());
             }
         }
+    }
+
+    /** imageUrl이 null이 아니고 item에 이미지가 없을 때만 S3 업로드 후 저장 */
+    private void uploadItemImage(Item item, String imageUrl) {
+        if (imageUrl == null || item.getImageUrl() != null) return;
+        String uploaded = s3ImageService.uploadItemImageFromUrl(imageUrl);
+        if (uploaded != null) item.updateImageUrl(uploaded);
     }
 
     /** 파싱된 스킬명 전체 UPSERT — 이미 존재하는 skillName은 건너뜀 */

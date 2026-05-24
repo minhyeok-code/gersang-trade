@@ -2,7 +2,6 @@ package org.example.gersangtrade.admin.controller;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.example.gersangtrade.auth.security.CustomOAuth2UserDetails;
 import org.example.gersangtrade.domain.report.enums.ReportStatus;
 import org.example.gersangtrade.report.dto.request.ReportProcessRequest;
 import org.example.gersangtrade.report.dto.request.UserBlockRequest;
@@ -65,9 +64,8 @@ public class ReportAdminController {
      */
     @PatchMapping("/reports/{reportId}/review")
     public ResponseEntity<ReportResponse> startReview(
-            @AuthenticationPrincipal CustomOAuth2UserDetails principal,
+            @AuthenticationPrincipal Long adminId,
             @PathVariable Long reportId) {
-        Long adminId = principal.getUser().getId();
         return ResponseEntity.ok(reportService.startReview(adminId, reportId));
     }
 
@@ -81,10 +79,9 @@ public class ReportAdminController {
      */
     @PatchMapping("/reports/{reportId}/process")
     public ResponseEntity<ReportResponse> processReport(
-            @AuthenticationPrincipal CustomOAuth2UserDetails principal,
+            @AuthenticationPrincipal Long adminId,
             @PathVariable Long reportId,
             @Valid @RequestBody ReportProcessRequest request) {
-        Long adminId = principal.getUser().getId();
         return ResponseEntity.ok(reportService.processReport(adminId, reportId, request));
     }
 
@@ -98,10 +95,9 @@ public class ReportAdminController {
      */
     @PatchMapping("/reports/{reportId}/dismiss")
     public ResponseEntity<ReportResponse> dismissReport(
-            @AuthenticationPrincipal CustomOAuth2UserDetails principal,
+            @AuthenticationPrincipal Long adminId,
             @PathVariable Long reportId,
             @Valid @RequestBody ReportProcessRequest request) {
-        Long adminId = principal.getUser().getId();
         return ResponseEntity.ok(reportService.dismissReport(adminId, reportId, request));
     }
 

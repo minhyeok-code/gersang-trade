@@ -31,6 +31,7 @@ import org.springframework.web.bind.annotation.*;
  *   <li>PUT  /admin/items/{id}/equipment-detail   — 장비 상세 수정 (slot, kind, setId 등)</li>
  *   <li>PUT  /admin/items/{id}/stats              — 스탯 전체 교체</li>
  *   <li>PUT  /admin/items/{id}/skills             — 스킬 전체 교체</li>
+ *   <li>DELETE /admin/items/{id}                  — 아이템 하드 삭제</li>
  * </ul>
  */
 @RestController
@@ -93,5 +94,12 @@ public class ItemAdminController {
             @PathVariable Long itemId,
             @Valid @RequestBody SkillReplaceRequest request) {
         return ResponseEntity.ok(itemAdminService.replaceSkills(itemId, request));
+    }
+
+    /** 아이템 하드 삭제 — 참조 중이면 409를 반환한다. */
+    @DeleteMapping("/{itemId}")
+    public ResponseEntity<Void> deleteItem(@PathVariable Long itemId) {
+        itemAdminService.deleteItem(itemId);
+        return ResponseEntity.noContent().build();
     }
 }

@@ -5,6 +5,8 @@ import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.example.gersangtrade.domain.catalog.DeckBuffSource;
+import org.example.gersangtrade.domain.catalog.Spirit;
 import org.example.gersangtrade.domain.user.User;
 
 import java.time.LocalDateTime;
@@ -55,6 +57,26 @@ public class UserDeck {
     @Column(name = "total_res_down")
     private Integer totalResDown;
 
+    /** 덱에 적용된 정령 1번 슬롯 */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "spirit_1_id")
+    private Spirit spirit1;
+
+    /** 덱에 적용된 정령 2번 슬롯 */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "spirit_2_id")
+    private Spirit spirit2;
+
+    /** 덱에 적용된 진법 */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "jinbeop_source_id")
+    private DeckBuffSource jinbeopSource;
+
+    /** 덱에 적용된 층진 */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "cheungjin_source_id")
+    private DeckBuffSource cheungjinSource;
+
     /** 덱 생성 시각 (불변) */
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -90,5 +112,15 @@ public class UserDeck {
     /** 비활성 전환 */
     public void deactivate() {
         this.active = false;
+    }
+
+    /** 덱 단위 버프 선택값 수정 */
+    public void updateEffects(Spirit spirit1, Spirit spirit2,
+                              DeckBuffSource jinbeopSource,
+                              DeckBuffSource cheungjinSource) {
+        this.spirit1 = spirit1;
+        this.spirit2 = spirit2;
+        this.jinbeopSource = jinbeopSource;
+        this.cheungjinSource = cheungjinSource;
     }
 }

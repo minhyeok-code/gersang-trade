@@ -136,6 +136,14 @@ public class User extends BaseEntity {
     private String gameAccessTime;
 
     /**
+     * 프로필 이미지 URL.
+     * OAuth2 최초 가입 시 제공자 프로필 사진으로 초기화된다.
+     * 유저가 직접 수정 가능. null: 미설정.
+     */
+    @Column(name = "profile_image_url", length = 500)
+    private String profileImageUrl;
+
+    /**
      * 소프트 삭제 시각.
      * null: 활성 계정, non-null: 탈퇴 처리된 계정 (1년 후 배치 하드딜리트 대상).
      */
@@ -144,12 +152,13 @@ public class User extends BaseEntity {
 
     @Builder
     public User(String oauthProvider, String oauthId, String nickname,
-                String email, Role role, UserStatus status) {
+                String email, Role role, UserStatus status, String profileImageUrl) {
         this.oauthProvider = oauthProvider;
         this.oauthId = oauthId;
         this.nickname = nickname;
         this.email = email;
         this.role = role;
+        this.profileImageUrl = profileImageUrl;
         // 상태 미지정 시 기본값 ACTIVE 적용
         this.status = (status != null) ? status : UserStatus.ACTIVE;
         // 등급·EXP·매너점수 초기값
@@ -173,6 +182,11 @@ public class User extends BaseEntity {
     /** 게임 접속 가능 시간대 변경 — null 전달 시 미입력 상태로 초기화 */
     public void updateGameAccessTime(String gameAccessTime) {
         this.gameAccessTime = gameAccessTime;
+    }
+
+    /** 프로필 이미지 URL 변경 — null 전달 시 미설정 상태로 초기화 */
+    public void updateProfileImageUrl(String profileImageUrl) {
+        this.profileImageUrl = profileImageUrl;
     }
 
     /** 기본 서버 설정 — null 전달 시 선택 해제 */

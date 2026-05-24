@@ -8,11 +8,13 @@ import org.example.gersangtrade.catalog.repository.ItemRepository;
 import org.example.gersangtrade.catalog.repository.ItemSkillRepository;
 import org.example.gersangtrade.catalog.repository.MercenaryRepository;
 import org.example.gersangtrade.catalog.repository.MercenarySkillRepository;
+import org.example.gersangtrade.catalog.repository.SetGrantedSkillRepository;
 import org.example.gersangtrade.catalog.repository.SkillCoefficientRepository;
 import org.example.gersangtrade.domain.catalog.Item;
 import org.example.gersangtrade.domain.catalog.ItemSkill;
 import org.example.gersangtrade.domain.catalog.Mercenary;
 import org.example.gersangtrade.domain.catalog.MercenarySkill;
+import org.example.gersangtrade.domain.catalog.SetGrantedSkill;
 import org.example.gersangtrade.domain.catalog.SkillCoefficient;
 import org.example.gersangtrade.domain.catalog.enums.SkillType;
 import org.springframework.boot.ApplicationArguments;
@@ -44,6 +46,7 @@ public class SkillCoeffSeeder implements ApplicationRunner {
     private final ItemRepository itemRepository;
     private final MercenarySkillRepository mercenarySkillRepository;
     private final ItemSkillRepository itemSkillRepository;
+    private final SetGrantedSkillRepository setGrantedSkillRepository;
     private final SkillCoefficientRepository skillCoefficientRepository;
     private final ObjectMapper objectMapper;
     private final ResourceLoader resourceLoader;
@@ -51,11 +54,7 @@ public class SkillCoeffSeeder implements ApplicationRunner {
     @Override
     @Transactional
     public void run(ApplicationArguments args) throws Exception {
-        if (skillCoefficientRepository.count() > 0) {
-            log.debug("스킬 계수 시딩 skip: 이미 존재");
-            return;
-        }
-
+        // row_id 기준 upsert이므로 전역 skip 없이 매 기동 시 실행한다
         Resource resource = resourceLoader.getResource("classpath:skill-coeff-entity.json");
         List<SkillCoeffEntry> entries = objectMapper.readValue(
                 resource.getInputStream(),
@@ -83,6 +82,8 @@ public class SkillCoeffSeeder implements ApplicationRunner {
             return processMercenaryEntry(e);
         } else if ("item".equals(e.type)) {
             return processItemEntry(e);
+        } else if ("set_granted".equals(e.type)) {
+            return processSetGrantedEntry(e);
         }
         log.warn("알 수 없는 타입 스킵 [rowId={}, type={}]", e.rowId, e.type);
         return false;
@@ -111,6 +112,45 @@ public class SkillCoeffSeeder implements ApplicationRunner {
                                 .skillKey(skillKey)
                                 .build()
                 ));
+    }
+
+    // ── 세트 부여 스킬 계수 ───────────────────────────────────────────────────
+
+    private boolean processSetGrantedEntry(SkillCoeffEntry e) {
+        SetGrantedSkill skill = setGrantedSkillRepository.findBySkillKey(e.skillKey).orElse(null);
+        if (skill == null) {
+            log.warn("스킬 계수 스킵 — 세트 부여 스킬 미등록 [skillKey={}, skill={}]", e.skillKey, e.skillName);
+            return false;
+        }
+        upsertSetGrantedCoeff(e, skill);
+        return true;
+    }
+
+    private void upsertSetGrantedCoeff(SkillCoeffEntry e, SetGrantedSkill skill) {
+        SkillType skillType = SkillType.valueOf(e.skillType);
+        skillCoefficientRepository.findByRowId(e.rowId).ifPresentOrElse(
+                existing -> existing.updateCoefficients(
+                        e.coefStr, e.coefDex, e.coefVit, e.coefInt,
+                        e.coefAtk, e.coefLvl, e.hitCount, e.damageRangeFactor,
+                        skillType, e.castsPerSecond, e.tickIntervalMs, e.confidence, e.note
+                ),
+                () -> skillCoefficientRepository.save(
+                        SkillCoefficient.ofSetGrantedSkill()
+                                .setGrantedSkill(skill)
+                                .rowId(e.rowId)
+                                .coefStr(e.coefStr).coefDex(e.coefDex)
+                                .coefVit(e.coefVit).coefInt(e.coefInt)
+                                .coefAtk(e.coefAtk).coefLvl(e.coefLvl)
+                                .hitCount(e.hitCount)
+                                .damageRangeFactor(e.damageRangeFactor)
+                                .skillType(skillType)
+                                .castsPerSecond(e.castsPerSecond)
+                                .tickIntervalMs(e.tickIntervalMs)
+                                .confidence(e.confidence)
+                                .measurementNote(e.note)
+                                .build()
+                )
+        );
     }
 
     // ── 아이템 스킬 계수 ──────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 package org.example.gersangtrade.catalog.controller;
 
 import lombok.RequiredArgsConstructor;
+import org.example.gersangtrade.catalog.dto.response.SetDetailResponse;
 import org.example.gersangtrade.catalog.dto.response.SetResponse;
 import org.example.gersangtrade.catalog.service.SetService;
 import org.springframework.data.domain.Page;
@@ -36,9 +37,9 @@ public class SetController {
         return ResponseEntity.ok(setService.getSets(name, pageable));
     }
 
-    /** 세트 단건 조회 */
+    /** 세트 단건 조회 (피스 목록 포함) */
     @GetMapping("/{id}")
-    public ResponseEntity<SetResponse> getSet(@PathVariable Long id) {
+    public ResponseEntity<SetDetailResponse> getSet(@PathVariable Long id) {
         return ResponseEntity.ok(setService.getSet(id));
     }
 }

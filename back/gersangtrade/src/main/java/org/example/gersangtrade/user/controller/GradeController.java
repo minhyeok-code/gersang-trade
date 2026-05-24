@@ -1,7 +1,6 @@
 package org.example.gersangtrade.user.controller;
 
 import lombok.RequiredArgsConstructor;
-import org.example.gersangtrade.auth.security.CustomOAuth2UserDetails;
 import org.example.gersangtrade.domain.user.enums.GradeLevel;
 import org.example.gersangtrade.user.dto.response.GradePolicyResponse;
 import org.example.gersangtrade.user.dto.response.MyGradeResponse;
@@ -50,8 +49,7 @@ public class GradeController {
     @GetMapping("/api/users/me/grade")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<MyGradeResponse> getMyGrade(
-            @AuthenticationPrincipal CustomOAuth2UserDetails principal) {
-        Long userId = principal.getUser().getId();
+            @AuthenticationPrincipal Long userId) {
         return ResponseEntity.ok(userService.getMyGrade(userId));
     }
 }

@@ -9,9 +9,12 @@ import org.example.gersangtrade.admin.dto.response.ItemAdminResponse;
 import org.example.gersangtrade.admin.dto.response.ItemDetailAdminResponse;
 import org.example.gersangtrade.catalog.repository.EquipmentItemRepository;
 import org.example.gersangtrade.catalog.repository.EquipmentSetRepository;
+import org.example.gersangtrade.catalog.repository.EquipmentSetPieceRepository;
 import org.example.gersangtrade.catalog.repository.ItemRepository;
 import org.example.gersangtrade.catalog.repository.ItemSkillRepository;
 import org.example.gersangtrade.catalog.repository.ItemStatRepository;
+import org.example.gersangtrade.catalog.repository.MaterialItemRepository;
+import org.example.gersangtrade.catalog.repository.RitualApplicabilityRepository;
 import org.example.gersangtrade.domain.catalog.EquipmentItem;
 import org.example.gersangtrade.domain.catalog.EquipmentSet;
 import org.example.gersangtrade.domain.catalog.Item;
@@ -19,10 +22,14 @@ import org.example.gersangtrade.domain.catalog.ItemSkill;
 import org.example.gersangtrade.domain.catalog.ItemStat;
 import org.example.gersangtrade.domain.catalog.enums.Element;
 import org.example.gersangtrade.domain.catalog.enums.ItemType;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.example.gersangtrade.config.CacheConfig;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -39,6 +46,9 @@ public class ItemAdminService {
     private final ItemSkillRepository itemSkillRepository;
     private final EquipmentItemRepository equipmentItemRepository;
     private final EquipmentSetRepository equipmentSetRepository;
+    private final MaterialItemRepository materialItemRepository;
+    private final RitualApplicabilityRepository ritualApplicabilityRepository;
+    private final EquipmentSetPieceRepository equipmentSetPieceRepository;
 
     // ── 아이템 목록 조회 ─────────────────────────────────────────────────────────
 
@@ -69,6 +79,10 @@ public class ItemAdminService {
      * MATERIAL 아이템에 호출하면 400 반환.
      */
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(value = CacheConfig.EQUIPMENT_SLOT, allEntries = true),
+            @CacheEvict(value = CacheConfig.RITUALS_BY_ITEM, allEntries = true)
+    })
     public ItemDetailAdminResponse updateEquipmentDetail(Long itemId, EquipmentDetailUpdateRequest req) {
         Item item = getItemOrThrow(itemId);
         if (item.getType() != ItemType.EQUIPMENT) {
@@ -85,7 +99,7 @@ public class ItemAdminService {
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
                             "존재하지 않는 세트 ID입니다: " + req.setId()));
         }
-        eq.updateInfo(req.slot(), req.equipmentKind(), req.ritualApplicable(), req.hasSlotOption(), set, req.equipSlot());
+        eq.updateInfo(req.slot(), req.equipmentKind(), req.ritualApplicable(), req.hasSlotOption(), set, req.equipSlot(), null, null);
 
         List<ItemStat> stats = itemStatRepository.findByItemId(itemId);
         List<ItemSkill> skills = itemSkillRepository.findByItemId(itemId);
@@ -113,6 +127,10 @@ public class ItemAdminService {
      * name은 null/공백이면 기존 값을 유지한다 (엔티티 updateInfo 동일 정책).
      */
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(value = CacheConfig.EQUIPMENT_SLOT, allEntries = true),
+            @CacheEvict(value = CacheConfig.RITUALS_BY_ITEM, allEntries = true)
+    })
     public ItemDetailAdminResponse updateInfo(Long itemId, ItemUpdateRequest req) {
         Item item = getItemOrThrow(itemId);
         item.updateInfo(req.name(), req.type(), req.tradeCategory());
@@ -130,6 +148,7 @@ public class ItemAdminService {
      * element가 null이면 NONE으로 처리된다 (ItemStat 빌더 동일 정책).
      */
     @Transactional
+    @CacheEvict(value = CacheConfig.EQUIPMENT_SLOT, allEntries = true)
     public ItemDetailAdminResponse replaceStats(Long itemId, ItemStatReplaceRequest req) {
         Item item = getItemOrThrow(itemId);
         itemStatRepository.deleteByItemId(itemId);
@@ -153,6 +172,7 @@ public class ItemAdminService {
      * 기존 스킬을 전부 삭제하고 요청 목록으로 재적재한다.
      */
     @Transactional
+    @CacheEvict(value = CacheConfig.EQUIPMENT_SLOT, allEntries = true)
     public ItemDetailAdminResponse replaceSkills(Long itemId, SkillReplaceRequest req) {
         Item item = getItemOrThrow(itemId);
         itemSkillRepository.deleteByItemId(itemId);
@@ -166,6 +186,38 @@ public class ItemAdminService {
         EquipmentItem equipmentItem = equipmentItemRepository.findWithItemByItemId(itemId).orElse(null);
         List<ItemStat> stats = itemStatRepository.findByItemId(itemId);
         return ItemDetailAdminResponse.of(item, equipmentItem, stats, saved);
+    }
+
+    // ── 아이템 하드 삭제 ────────────────────────────────────────────────────────
+
+    /**
+     * 아이템과 관리자 입력 하위 데이터를 실제 삭제한다.
+     * 거래·덱·시세 등 다른 도메인에서 참조 중이면 DB 제약으로 삭제를 거부한다.
+     */
+    @Transactional
+    @Caching(evict = {
+            @CacheEvict(value = CacheConfig.EQUIPMENT_SLOT, allEntries = true),
+            @CacheEvict(value = CacheConfig.RITUALS_BY_ITEM, allEntries = true)
+    })
+    public void deleteItem(Long itemId) {
+        Item item = getItemOrThrow(itemId);
+        try {
+            itemStatRepository.deleteByItemId(itemId);
+            itemSkillRepository.deleteByItemId(itemId);
+
+            equipmentItemRepository.findById(itemId).ifPresent(equipmentItem -> {
+                ritualApplicabilityRepository.deleteByEquipmentItem_ItemId(itemId);
+                equipmentSetPieceRepository.deleteByEquipmentItem_ItemId(itemId);
+                equipmentItemRepository.delete(equipmentItem);
+            });
+            materialItemRepository.findById(itemId).ifPresent(materialItemRepository::delete);
+
+            itemRepository.delete(item);
+            itemRepository.flush();
+        } catch (DataIntegrityViolationException e) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "다른 데이터에서 참조 중인 아이템은 삭제할 수 없습니다.", e);
+        }
     }
 
     // ── 내부 헬퍼 ────────────────────────────────────────────────────────────────

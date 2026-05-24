@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component;
 public class RefreshTokenCookieManager {
 
     private static final String RT_COOKIE_NAME = "refreshToken";
-    private static final String RT_COOKIE_PATH = "/auth";
+    private static final String RT_COOKIE_PATH = "/";
 
     /** 운영 환경에서는 true (HTTPS 필수). 로컬 개발 시 false. */
     @Value("${app.cookie.secure:false}")

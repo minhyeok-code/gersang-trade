@@ -53,7 +53,7 @@ public class AwakenedHeavenlyKingSeeder implements ApplicationRunner {
     // ── 각성 지국천왕 (FIRE) ──────────────────────────────────────────────────
 
     private void seedGakJiguk() {
-        Mercenary m = upsertMercenary("각성 지국천왕", Nature.FIRE);
+        Mercenary m = upsertMercenary("각성 지국천왕", "gakJigook", Nature.FIRE);
 
         // 각성 특성: ELEMENT_VALUE FIRE +20 영구 적용
         upsertAwakening(m, "awakenedHK-jiguk-awakening", "각성");
@@ -81,7 +81,7 @@ public class AwakenedHeavenlyKingSeeder implements ApplicationRunner {
     // ── 각성 광목천왕 (WIND) ──────────────────────────────────────────────────
 
     private void seedGakGwangmok() {
-        Mercenary m = upsertMercenary("각성 광목천왕", Nature.WIND);
+        Mercenary m = upsertMercenary("각성 광목천왕", "gakGwangmok", Nature.WIND);
 
         // 각성 특성: ELEMENT_VALUE WIND +20 영구 적용
         upsertAwakening(m, "awakenedHK-gwangmok-awakening", "각성");
@@ -108,7 +108,7 @@ public class AwakenedHeavenlyKingSeeder implements ApplicationRunner {
     // ── 각성 증장천왕 (THUNDER) ───────────────────────────────────────────────
 
     private void seedGakJeungjang() {
-        Mercenary m = upsertMercenary("각성 증장천왕", Nature.THUNDER);
+        Mercenary m = upsertMercenary("각성 증장천왕", "gakJeungjang", Nature.THUNDER);
 
         // 각성 특성: ELEMENT_VALUE THUNDER +20 영구 적용
         upsertAwakening(m, "awakenedHK-jeungjang-awakening", "각성");
@@ -136,7 +136,7 @@ public class AwakenedHeavenlyKingSeeder implements ApplicationRunner {
     // ── 각성 다문천왕 (WATER) ─────────────────────────────────────────────────
 
     private void seedGakDamun() {
-        Mercenary m = upsertMercenary("각성 다문천왕", Nature.WATER);
+        Mercenary m = upsertMercenary("각성 다문천왕", "gakDamoon", Nature.WATER);
 
         // 각성 특성: ELEMENT_VALUE WATER +20 영구 적용
         upsertAwakening(m, "awakenedHK-damun-awakening", "각성");
@@ -162,10 +162,14 @@ public class AwakenedHeavenlyKingSeeder implements ApplicationRunner {
 
     // ── 헬퍼 ──────────────────────────────────────────────────────────────────
 
-    private Mercenary upsertMercenary(String name, Nature nature) {
-        return mercenaryRepository.findByName(name).orElseGet(() ->
+    private Mercenary upsertMercenary(String name, String key, Nature nature) {
+        return mercenaryRepository.findByName(name).map(existing -> {
+            existing.updateKeyIfAbsent(key);
+            return existing;
+        }).orElseGet(() ->
                 mercenaryRepository.save(Mercenary.builder()
                         .name(name)
+                        .key(key)
                         .category(MercenaryCategory.FOUR_HEAVENLY_KINGS_AWAKENING)
                         .mercenaryType(MercenaryType.AWAKENED_HEAVENLY_KING)
                         .nature(nature)

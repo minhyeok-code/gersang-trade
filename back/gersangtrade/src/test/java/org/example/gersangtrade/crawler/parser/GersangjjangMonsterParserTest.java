@@ -86,7 +86,7 @@ class GersangjjangMonsterParserTest {
             );
             MonsterRow row = parseFirst(html);
 
-            assertThat(row.name()).isEqualTo("연못거북(水) (9급)");
+            assertThat(row.name()).isEqualTo("연못거북(水)");
             assertThat(row.hp()).isNull();
             assertThat(row.hittingResistance()).isEqualTo(290);
             assertThat(row.magicResistance()).isEqualTo(290);
@@ -305,6 +305,51 @@ class GersangjjangMonsterParserTest {
             assertThat(rows).hasSize(2);
             assertThat(rows.get(0).element()).isEqualTo(Element.WATER);
             assertThat(rows.get(1).element()).isEqualTo(Element.FIRE);
+        }
+    }
+
+    // ── normalizeName ───────────────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("normalizeName — 괄호 정제")
+    class NormalizeName {
+
+        @Test
+        @DisplayName("반각 괄호 기타정보 제거")
+        void 반각괄호_기타정보_제거() {
+            String html = monsterHtml("연못거북 (水) (9급)", "<img src='x'>",
+                    "<strong>저항력</strong>: 타저 290%, 마저 290%");
+            MonsterRow row = parseFirst(html);
+            assertThat(row.name()).isEqualTo("연못거북 (水)");
+        }
+
+        @Test
+        @DisplayName("전각 괄호 기타정보 제거")
+        void 전각괄호_기타정보_제거() {
+            String html = monsterHtml("황금두꺼비 （水） （보스급）", "<img src='x'>",
+                    "<strong>저항력</strong>: 타저 300%, 마저 300%");
+            MonsterRow row = parseFirst(html);
+            assertThat(row.name()).isEqualTo("황금두꺼비 （水）");
+            assertThat(row.element()).isEqualTo(Element.WATER);
+        }
+
+        @Test
+        @DisplayName("기타정보만 있는 이름 — 정보 제거 후 이름만 남음")
+        void 기타정보만_있는이름() {
+            String html = monsterHtml("산적 (10급)", "<img src='x'>",
+                    "<strong>저항력</strong>: 타저 200%, 마저 200%");
+            MonsterRow row = parseFirst(html);
+            assertThat(row.name()).isEqualTo("산적");
+            assertThat(row.element()).isNull();
+        }
+
+        @Test
+        @DisplayName("한자 괄호는 유지됨")
+        void 한자괄호_유지() {
+            String html = monsterHtml("드래곤 (火)", "<img src='x'>",
+                    "<strong>저항력</strong>: 타저 350%, 마저 350%, 화속성 25");
+            MonsterRow row = parseFirst(html);
+            assertThat(row.name()).isEqualTo("드래곤 (火)");
         }
     }
 

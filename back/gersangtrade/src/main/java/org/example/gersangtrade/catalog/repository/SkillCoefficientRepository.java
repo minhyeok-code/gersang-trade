@@ -54,4 +54,13 @@ public interface SkillCoefficientRepository extends JpaRepository<SkillCoefficie
             """)
     java.util.List<SkillCoefficient> findByItemIdIn(
             @org.springframework.data.repository.query.Param("itemIds") java.util.List<Long> itemIds);
+
+    /** 세트 부여 스킬 ID 목록으로 계수 일괄 조회 — DPS 계산기 배치 로딩용 */
+    @org.springframework.data.jpa.repository.Query("""
+            SELECT sc FROM SkillCoefficient sc
+            JOIN FETCH sc.setGrantedSkill
+            WHERE sc.setGrantedSkill.id IN :setGrantedSkillIds
+            """)
+    java.util.List<SkillCoefficient> findBySetGrantedSkillIdIn(
+            @org.springframework.data.repository.query.Param("setGrantedSkillIds") java.util.List<Long> setGrantedSkillIds);
 }

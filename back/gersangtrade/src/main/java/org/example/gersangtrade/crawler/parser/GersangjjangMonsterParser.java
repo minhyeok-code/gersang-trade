@@ -88,7 +88,7 @@ public final class GersangjjangMonsterParser {
     }
 
     private static MonsterRow parseRow(org.jsoup.nodes.Element row, String pageUrl) {
-        String rawName = row.select(".monster-name").text().trim();
+        String rawName = normalizeName(row.select(".monster-name").text().trim());
         if (rawName.isEmpty()) return null;
 
         String spriteText = row.select(".monster-sprite").text().trim();
@@ -222,6 +222,11 @@ public final class GersangjjangMonsterParser {
             case "明" -> Element.NONE;
             default -> null;
         };
+    }
+
+/** 한자 속성(火水雷風土明)이 없는 괄호 그룹(기타정보)을 제거한다. 반각/전각 괄호 모두 처리. */
+    private static String normalizeName(String name) {
+        return name.replaceAll("\\s*[（(][^火水雷風土明)）]*[）)]", "").trim();
     }
 
     /** 패턴 A 전용: 한국어 속성명("화","수" 등) → Element */

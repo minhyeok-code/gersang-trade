@@ -6,11 +6,12 @@ import org.example.gersangtrade.domain.catalog.enums.SkillType;
 
 /**
  * 스킬 계수 수동 생성 요청.
- * mercenarySkillId 또는 itemSkillId 중 하나만 입력한다.
+ * mercenarySkillId / itemSkillId / setGrantedSkillId 중 하나만 입력한다.
  */
 public record SkillCoefficientCreateRequest(
         Long mercenarySkillId,
         Long itemSkillId,
+        Long setGrantedSkillId,
         String rowId,
         float coefStr,
         float coefDex,

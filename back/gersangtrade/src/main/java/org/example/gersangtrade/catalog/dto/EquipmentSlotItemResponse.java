@@ -15,8 +15,10 @@ public record EquipmentSlotItemResponse(
         Long itemId,
         String name,
         String equipmentKind,
+        String imageUrl,
         boolean ritualApplicable,
         boolean hasSlotOption,
+        Long setId,
         String setName,
         List<StatEntry> stats
 ) {
@@ -27,8 +29,10 @@ public record EquipmentSlotItemResponse(
                 item.getItemId(),
                 item.getItem().getName(),
                 item.getEquipmentKind().name(),
+                item.getItem().getImageUrl(),
                 item.isRitualApplicable(),
                 item.isHasSlotOption(),
+                item.getEquipmentSet() != null ? item.getEquipmentSet().getId() : null,
                 item.getEquipmentSet() != null ? item.getEquipmentSet().getName() : null,
                 stats.stream()
                         .map(s -> new StatEntry(s.getStatType(), s.getElement(), s.getValue(), s.getScope().name()))

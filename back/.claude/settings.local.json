@@ -47,7 +47,20 @@
       "Bash(node *)",
       "Bash(git *)",
       "Bash(./gradlew compileJava -q)",
-      "Bash(awk '{print length, $0}')"
+      "Bash(awk '{print length, $0}')",
+      "Bash(python *)",
+      "Bash(powershell *)",
+      "Bash(xargs ls *)",
+      "Bash(npm install *)",
+      "Bash(npx tsc *)",
+      "Bash(npm run *)",
+      "Read(//mnt/d/Java/gersangTrade/back/**)",
+      "Bash(./gradlew bootRun --args='--spring.profiles.active=local')",
+      "Bash(echo \"PID: $!\")",
+      "Bash(mysql -u root -e \"SELECT 1\")",
+      "Bash(powershell.exe *)",
+      "Bash(python3 *)",
+      "Bash(grep -v \"//\")"
     ]
   }
 }

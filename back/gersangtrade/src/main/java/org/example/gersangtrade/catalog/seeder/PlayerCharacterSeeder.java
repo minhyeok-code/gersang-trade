@@ -5,10 +5,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.example.gersangtrade.catalog.repository.MercenaryCharacteristicLevelRepository;
 import org.example.gersangtrade.catalog.repository.MercenaryCharacteristicRepository;
 import org.example.gersangtrade.catalog.repository.MercenaryRepository;
+import org.example.gersangtrade.catalog.repository.MercenaryStatRepository;
 import org.example.gersangtrade.catalog.repository.PlayerCharacterDetailRepository;
 import org.example.gersangtrade.domain.catalog.Mercenary;
 import org.example.gersangtrade.domain.catalog.MercenaryCharacteristic;
 import org.example.gersangtrade.domain.catalog.MercenaryCharacteristicLevel;
+import org.example.gersangtrade.domain.catalog.MercenaryStat;
 import org.example.gersangtrade.domain.catalog.PlayerCharacterDetail;
 import org.example.gersangtrade.domain.catalog.enums.*;
 import org.springframework.boot.ApplicationArguments;
@@ -32,6 +34,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class PlayerCharacterSeeder implements ApplicationRunner {
 
     private final MercenaryRepository mercenaryRepository;
+    private final MercenaryStatRepository mercenaryStatRepository;
     private final MercenaryCharacteristicRepository characteristicRepository;
     private final MercenaryCharacteristicLevelRepository levelRepository;
     private final PlayerCharacterDetailRepository detailRepository;
@@ -39,7 +42,7 @@ public class PlayerCharacterSeeder implements ApplicationRunner {
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
-        if (mercenaryRepository.findByName("조선 신궁").isPresent()) {
+        if (mercenaryRepository.findByName("신궁").isPresent()) {
             log.debug("주인공 시딩 skip: 이미 존재");
             return;
         }
@@ -61,8 +64,9 @@ public class PlayerCharacterSeeder implements ApplicationRunner {
     // ── 조선 남 (신궁) ────────────────────────────────────────────────────────
 
     private void seedJoseonMale() {
-        Mercenary m = upsertMercenary("조선 신궁", Nation.JOSEON, Nature.FIRE);
+        Mercenary m = upsertMercenary("신궁", Nation.JOSEON, Nature.FIRE);
         upsertDetail(m, Nation.JOSEON, Gender.MALE);
+        upsertStats(m, 150, 400, 200, 150, 70, 80, 25, 11);
 
         // 확산 (하위 point=1)
         MercenaryCharacteristic hwaksan = upsertChar(m, "pc-joseon-m-hwaksan", "확산", 1, null);
@@ -86,8 +90,9 @@ public class PlayerCharacterSeeder implements ApplicationRunner {
     // ── 조선 여 (포수) ────────────────────────────────────────────────────────
 
     private void seedJoseonFemale() {
-        Mercenary m = upsertMercenary("조선 포수", Nation.JOSEON, Nature.FIRE);
+        Mercenary m = upsertMercenary("포수", Nation.JOSEON, Nature.FIRE);
         upsertDetail(m, Nation.JOSEON, Gender.FEMALE);
+        upsertStats(m, 450, 50, 250, 150, 60, 90, 25, 6);
 
         // 집중 (하위 point=1)
         MercenaryCharacteristic jipjung = upsertChar(m, "pc-joseon-f-jipjung", "집중", 1, null);
@@ -111,11 +116,12 @@ public class PlayerCharacterSeeder implements ApplicationRunner {
         seedLevels(sangjae, "상점판매액", new float[]{10, 15, 20, 25, 30}, null);
     }
 
-    // ── 일본 남 (사무라이) ────────────────────────────────────────────────────
+    // ── 일본 남 (검호) ────────────────────────────────────────────────────────
 
     private void seedJapanMale() {
-        Mercenary m = upsertMercenary("일본 사무라이", Nation.JAPAN, Nature.WATER);
+        Mercenary m = upsertMercenary("검호", Nation.JAPAN, Nature.WATER);
         upsertDetail(m, Nation.JAPAN, Gender.MALE);
+        upsertStats(m, 380, 60, 260, 200, 80, 70, 25, 6);
 
         // 집중 (하위 point=1)
         MercenaryCharacteristic jipjung = upsertChar(m, "pc-japan-m-jipjung", "집중", 1, null);
@@ -126,21 +132,22 @@ public class PlayerCharacterSeeder implements ApplicationRunner {
         seedLevels(chimyeongsang, "3배 피해 확률", new float[]{10, 20, 30, 40, 50}, null);
         seedLevels(chimyeongsang, "기절 확률",     new float[]{20, 25, 30, 35, 40}, null);
 
-        // 난도 (하위 point=1)
-        MercenaryCharacteristic nando = upsertChar(m, "pc-japan-m-nando", "난도", 1, null);
+        // 교활 (하위 point=1)
+        MercenaryCharacteristic gyohwal = upsertChar(m, "pc-japan-m-gyohwal", "교활", 1, null);
+        seedLevelsFlat(gyohwal, "저항력 감소", new float[]{2, 4, 6, 8, 10}, StatType.RESIST_PIERCE);
+
+        // 난도 (상위 point=2, required=교활)
+        MercenaryCharacteristic nando = upsertChar(m, "pc-japan-m-nando", "난도", 2, "pc-japan-m-gyohwal");
         seedLevels(nando, "피해 증가",        new float[]{10, 25, 40, 55, 70}, null);
         seedLevels(nando, "표식 필요 데미지", new float[]{10, 20, 30, 40, 50}, null);
-
-        // 교활 (상위 point=2, required=난도)
-        MercenaryCharacteristic gyohwal = upsertChar(m, "pc-japan-m-gyohwal", "교활", 2, "pc-japan-m-nando");
-        seedLevelsFlat(gyohwal, "저항력 감소", new float[]{2, 4, 6, 8, 10}, StatType.RESIST_PIERCE);
     }
 
-    // ── 일본 여 (무녀) ────────────────────────────────────────────────────────
+    // ── 일본 여 (이타코) ──────────────────────────────────────────────────────
 
     private void seedJapanFemale() {
-        Mercenary m = upsertMercenary("일본 무녀", Nation.JAPAN, Nature.WATER);
+        Mercenary m = upsertMercenary("이타코", Nation.JAPAN, Nature.WATER);
         upsertDetail(m, Nation.JAPAN, Gender.FEMALE);
+        upsertStats(m, 180, 70, 300, 350, 70, 80, 25, 6);
 
         // 분노 (하위 point=1)
         MercenaryCharacteristic bunno = upsertChar(m, "pc-japan-f-bunno", "분노", 1, null);
@@ -160,11 +167,12 @@ public class PlayerCharacterSeeder implements ApplicationRunner {
         seedLevels(maryeoksachul, "마법력", new float[]{10, 20, 30, 40, 50}, null);
     }
 
-    // ── 중국 남 (무술가) ──────────────────────────────────────────────────────
+    // ── 중국 남 (일대종사) ────────────────────────────────────────────────────
 
     private void seedChinaMale() {
-        Mercenary m = upsertMercenary("중국 무술가", Nation.CHINA, Nature.WIND);
+        Mercenary m = upsertMercenary("일대종사", Nation.CHINA, Nature.WIND);
         upsertDetail(m, Nation.CHINA, Gender.MALE);
+        upsertStats(m, 320, 30, 450, 100, 100, 50, 25, 6);
 
         // 충격 (하위 point=1)
         MercenaryCharacteristic chungyeok = upsertChar(m, "pc-china-m-chungyeok", "충격", 1, null);
@@ -184,18 +192,19 @@ public class PlayerCharacterSeeder implements ApplicationRunner {
         seedLevelsFlat(gihap, "저항력 감소", new float[]{2, 4, 6, 8, 10}, StatType.RESIST_PIERCE);
     }
 
-    // ── 중국 여 (강신사) ──────────────────────────────────────────────────────
+    // ── 중국 여 (강신) ────────────────────────────────────────────────────────
 
     private void seedChinaFemale() {
-        Mercenary m = upsertMercenary("중국 강신사", Nation.CHINA, Nature.WIND);
+        Mercenary m = upsertMercenary("강신", Nation.CHINA, Nature.WIND);
         upsertDetail(m, Nation.CHINA, Gender.FEMALE);
+        upsertStats(m, 200, 60, 300, 340, 50, 100, 25, 6);
 
         // 축복 (하위 point=1)
         MercenaryCharacteristic chukbok = upsertChar(m, "pc-china-f-chukbok", "축복", 1, null);
         seedLevels(chukbok, "회복량",   new float[]{10, 20, 30, 40, 50}, null);
         seedLevelsSec(chukbok, "유지시간", new float[]{ 5, 10, 15, 20, 25});
 
-        // 가호 (상위 point=2, required=축복) — 소수점 값
+        // 가호 (상위 point=2, required=축복)
         MercenaryCharacteristic gaho = upsertChar(m, "pc-china-f-gaho", "가호", 2, "pc-china-f-chukbok");
         seedLevels(gaho, "마법력 추가 회복량",
                 new float[]{0.1f, 0.2f, 0.3f, 0.4f, 0.5f}, null);
@@ -209,11 +218,12 @@ public class PlayerCharacterSeeder implements ApplicationRunner {
         seedLevelsTile(hwaksan, "보호막 적용 범위", new float[]{1, 2, 3, 4, 5});
     }
 
-    // ── 대만 여 (야수소환사) ──────────────────────────────────────────────────
+    // ── 대만 여 (백수왕) ──────────────────────────────────────────────────────
 
     private void seedTaiwanFemale() {
-        Mercenary m = upsertMercenary("대만 야수소환사", Nation.TAIWAN, Nature.THUNDER);
+        Mercenary m = upsertMercenary("백수왕", Nation.TAIWAN, Nature.THUNDER);
         upsertDetail(m, Nation.TAIWAN, Gender.FEMALE);
+        upsertStats(m, 370, 60, 320, 150, 70, 80, 25, 6);
 
         // 강인함 (하위 point=1)
         MercenaryCharacteristic ganginham = upsertChar(m, "pc-taiwan-f-ganginham", "강인함", 1, null);
@@ -238,19 +248,20 @@ public class PlayerCharacterSeeder implements ApplicationRunner {
     // ── 대만 남 (도사) ────────────────────────────────────────────────────────
 
     private void seedTaiwanMale() {
-        Mercenary m = upsertMercenary("대만 도사", Nation.TAIWAN, Nature.THUNDER);
+        Mercenary m = upsertMercenary("도사", Nation.TAIWAN, Nature.THUNDER);
         upsertDetail(m, Nation.TAIWAN, Gender.MALE);
+        upsertStats(m, 280, 90, 280, 250, 65, 85, 25, 6);
 
         // 영험 (하위 point=1)
         MercenaryCharacteristic yeonghyeom = upsertChar(m, "pc-taiwan-m-yeonghyeom", "영험", 1, null);
         seedLevels(yeonghyeom, "체력회복량", new float[]{10, 20, 30, 40, 50}, null);
 
-        // 활성화 (상위 point=2, required=영험) — 아군 공격력: MIN+MAX 분리 저장
+        // 활성화 (상위 point=2, required=영험)
         MercenaryCharacteristic hwalseonghwa = upsertChar(m, "pc-taiwan-m-hwalseonghwa", "활성화", 2, "pc-taiwan-m-yeonghyeom");
         seedLevels(hwalseonghwa, "아군 최소공격력", new float[]{5, 10, 15, 20, 25}, StatType.MIN_POWER);
         seedLevels(hwalseonghwa, "아군 최대공격력", new float[]{5, 10, 15, 20, 25}, StatType.MAX_POWER);
 
-        // 무기력 (하위 point=1) — 적군 공격력 감소: MIN+MAX 분리 저장 (음수)
+        // 무기력 (하위 point=1)
         MercenaryCharacteristic mugiryeok = upsertChar(m, "pc-taiwan-m-mugiryeok", "무기력", 1, null);
         seedLevels(mugiryeok, "적군 최소공격력 감소", new float[]{ -5, -15, -25, -35, -45}, StatType.MIN_POWER);
         seedLevels(mugiryeok, "적군 최대공격력 감소", new float[]{ -5, -15, -25, -35, -45}, StatType.MAX_POWER);
@@ -261,11 +272,12 @@ public class PlayerCharacterSeeder implements ApplicationRunner {
         seedLevelsFlat(honran, "적군 사거리 감소", new float[]{  0,   0,  -1,  -1,  -2}, StatType.SKILL_RANGE);
     }
 
-    // ── 인도 남 (무투가) ──────────────────────────────────────────────────────
+    // ── 인도 남 (투신) ────────────────────────────────────────────────────────
 
     private void seedIndiaMale() {
-        Mercenary m = upsertMercenary("인도 무투가", Nation.INDIA, Nature.EARTH);
+        Mercenary m = upsertMercenary("투신", Nation.INDIA, Nature.EARTH);
         upsertDetail(m, Nation.INDIA, Gender.MALE);
+        upsertStats(m, 250, 50, 450, 150, 95, 85, 25, 6);
 
         // 무쇠주먹 (하위 point=1)
         MercenaryCharacteristic musoe = upsertChar(m, "pc-india-m-musoe", "무쇠주먹", 1, null);
@@ -285,13 +297,14 @@ public class PlayerCharacterSeeder implements ApplicationRunner {
         seedLevelsSec(wonhan, "표식 유지시간", new float[]{1, 2, 3, 4, 5});
     }
 
-    // ── 인도 여 (악사) ────────────────────────────────────────────────────────
+    // ── 인도 여 (무희) ────────────────────────────────────────────────────────
 
     private void seedIndiaFemale() {
-        Mercenary m = upsertMercenary("인도 악사", Nation.INDIA, Nature.EARTH);
+        Mercenary m = upsertMercenary("무희", Nation.INDIA, Nature.EARTH);
         upsertDetail(m, Nation.INDIA, Gender.FEMALE);
+        upsertStats(m, 100, 50, 300, 450, 55, 95, 25, 6);
 
-        // 화음 (하위 point=1) — 아군/적군 공격력: MIN+MAX 분리 저장
+        // 화음 (하위 point=1)
         MercenaryCharacteristic hwaeum = upsertChar(m, "pc-india-f-hwaeum", "화음", 1, null);
         seedLevels(hwaeum, "아군 최소공격력",     new float[]{10, 20, 30, 40, 50}, StatType.MIN_POWER);
         seedLevels(hwaeum, "아군 최대공격력",     new float[]{10, 20, 30, 40, 50}, StatType.MAX_POWER);
@@ -334,6 +347,27 @@ public class PlayerCharacterSeeder implements ApplicationRunner {
                 .jobType(JobType.SECOND)
                 .gender(gender)
                 .build());
+    }
+
+    private void upsertStats(Mercenary m, int str, int dex, int vit, int intel,
+                              int hitRes, int magRes, int elemVal, int sight) {
+        upsertStat(m, StatType.STRENGTH,           str);
+        upsertStat(m, StatType.DEXTERITY,          dex);
+        upsertStat(m, StatType.VITALITY,           vit);
+        upsertStat(m, StatType.INTELLECT,          intel);
+        upsertStat(m, StatType.HITTING_RESISTANCE, hitRes);
+        upsertStat(m, StatType.MAGIC_RESISTANCE,   magRes);
+        upsertStat(m, StatType.ELEMENT_VALUE,      elemVal);
+        upsertStat(m, StatType.SIGHT,              sight);
+    }
+
+    private void upsertStat(Mercenary m, StatType type, int value) {
+        mercenaryStatRepository.findByMercenaryIdAndStatKey(m.getId(), type)
+                .ifPresentOrElse(
+                        s -> s.updateValue(value),
+                        () -> mercenaryStatRepository.save(MercenaryStat.builder()
+                                .mercenary(m).statKey(type).statValue(value).build())
+                );
     }
 
     private MercenaryCharacteristic upsertChar(Mercenary mercenary, String key, String name,

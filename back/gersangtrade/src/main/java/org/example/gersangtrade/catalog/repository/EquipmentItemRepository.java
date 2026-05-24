@@ -91,4 +91,13 @@ public interface EquipmentItemRepository extends JpaRepository<EquipmentItem, Lo
             WHERE ei.slot = :slot
             """)
     List<EquipmentItem> findBySlotWithItem(@Param("slot") EquipmentSlot slot);
+
+    /** 세트 ID로 소속 장비 목록 조회 — equipment_set_pieces가 없을 때 일괄 장착 fallback */
+    @Query("""
+            SELECT ei FROM EquipmentItem ei
+            JOIN FETCH ei.item
+            LEFT JOIN FETCH ei.equipmentSet
+            WHERE ei.equipmentSet.id = :setId
+            """)
+    List<EquipmentItem> findBySetIdWithItem(@Param("setId") Long setId);
 }

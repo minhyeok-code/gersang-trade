@@ -5,6 +5,7 @@ import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.example.gersangtrade.domain.catalog.enums.Enhancement;
 import org.example.gersangtrade.domain.catalog.enums.EquipmentKind;
 import org.example.gersangtrade.domain.catalog.enums.EquipmentSlot;
 import org.example.gersangtrade.domain.deck.enums.EquipSlot;
@@ -66,6 +67,23 @@ public class EquipmentItem {
     private EquipSlot equipSlot;
 
     /**
+     * 전설장수 고유 장비 소속 용병.
+     * 전설장수 전용 장비는 해당 용병 FK를 가진다. 일반 세트 장비는 null.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "mercenary_id")
+    private Mercenary mercenary;
+
+    /**
+     * 전설장수 장비 기본 강화 단계.
+     * 전설장수 세트의 대표 강화 수치 (0강 / 5강 / 10강).
+     * 일반 장비는 null. DB에는 실제 숫자(0/5/10)로 저장한다.
+     */
+    @Convert(converter = EnhancementConverter.class)
+    @Column(name = "enhancement")
+    private Enhancement enhancement;
+
+    /**
      * 홈이 있는(슬롯 옵션) 버전 존재 여부.
      * true이면 보석을 장착할 수 있는 홈 버전이 별도로 존재함을 의미한다.
      * 크롤러 Batch Job이 geota 아이템 정보 파싱 결과를 바탕으로 설정한다.
@@ -77,7 +95,8 @@ public class EquipmentItem {
     public EquipmentItem(Item item, EquipmentKind equipmentKind,
                          EquipmentSlot slot, EquipmentSet equipmentSet,
                          boolean ritualApplicable, boolean hasSlotOption,
-                         EquipSlot equipSlot) {
+                         EquipSlot equipSlot, Mercenary mercenary,
+                         Enhancement enhancement) {
         this.item = item;
         this.equipmentKind = equipmentKind;
         this.slot = slot;
@@ -85,6 +104,8 @@ public class EquipmentItem {
         this.ritualApplicable = ritualApplicable;
         this.hasSlotOption = hasSlotOption;
         this.equipSlot = equipSlot;
+        this.mercenary = mercenary;
+        this.enhancement = enhancement;
     }
 
     /** 세트 크롤러 upsert 시 세트 소속 FK 갱신 */
@@ -92,15 +113,24 @@ public class EquipmentItem {
         this.equipmentSet = equipmentSet;
     }
 
-    /** 관리자 수동 수정 — 슬롯, 장비 종류, 주술 가능 여부, 홈 옵션 여부, 세트 소속, 덱 슬롯 */
+    /** 크롤러 재실행 시 null인 slot/equipSlot 갱신 */
+    public void updateSlotInfo(EquipmentSlot slot, EquipSlot equipSlot) {
+        if (slot != null) this.slot = slot;
+        if (equipSlot != null) this.equipSlot = equipSlot;
+    }
+
+    /** 관리자 수동 수정 — 슬롯, 장비 종류, 주술 가능 여부, 홈 옵션 여부, 세트 소속, 덱 슬롯, 용병 소속, 강화 단계 */
     public void updateInfo(EquipmentSlot slot, EquipmentKind equipmentKind,
                            boolean ritualApplicable, boolean hasSlotOption,
-                           EquipmentSet equipmentSet, EquipSlot equipSlot) {
+                           EquipmentSet equipmentSet, EquipSlot equipSlot,
+                           Mercenary mercenary, Enhancement enhancement) {
         if (slot != null) this.slot = slot;
         if (equipmentKind != null) this.equipmentKind = equipmentKind;
         this.ritualApplicable = ritualApplicable;
         this.hasSlotOption = hasSlotOption;
         this.equipmentSet = equipmentSet;
         this.equipSlot = equipSlot;
+        this.mercenary = mercenary;
+        this.enhancement = enhancement;
     }
 }

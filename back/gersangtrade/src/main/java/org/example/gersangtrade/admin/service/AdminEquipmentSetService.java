@@ -38,7 +38,7 @@ public class AdminEquipmentSetService {
     @Transactional
     public AdminSetResponse updateSet(Long id, AdminSetUpdateRequest req) {
         EquipmentSet set = findOrThrow(id);
-        set.updateInfo(req.name(), req.totalPieces(), req.isTradeable());
+        set.updateInfo(req.name(), req.totalPieces(), req.isTradeable(), null);
         return AdminSetResponse.from(set);
     }
 

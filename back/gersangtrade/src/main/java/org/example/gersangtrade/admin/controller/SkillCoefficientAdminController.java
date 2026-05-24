@@ -83,7 +83,7 @@ public class SkillCoefficientAdminController {
      * 요청 body는 JSON 파일 내용 그대로 전달한다.
      */
     @PutMapping
-    public ResponseEntity<Map<String, Integer>> bulkUpsert(
+    public ResponseEntity<Map<String, Object>> bulkUpsert(
             @Valid @RequestBody List<SkillCoefficientJsonRow> rows) {
         return ResponseEntity.ok(skillCoefficientAdminService.bulkUpsert(rows));
     }

@@ -6,6 +6,7 @@ import org.example.gersangtrade.catalog.repository.ItemRepository;
 import org.example.gersangtrade.catalog.repository.MaterialItemRepository;
 import org.example.gersangtrade.crawler.parser.GersangjjangParser;
 import org.example.gersangtrade.crawler.parser.GersangjjangParser.MaterialRow;
+import org.example.gersangtrade.crawler.service.S3ImageService;
 import org.example.gersangtrade.crawler.util.JsoupFetcher;
 import org.example.gersangtrade.domain.catalog.Item;
 import org.example.gersangtrade.domain.catalog.MaterialItem;
@@ -54,6 +55,7 @@ public class GersangjjangMaterialTasklet implements Tasklet {
     );
 
     private final JsoupFetcher jsoupFetcher;
+    private final S3ImageService s3ImageService;
     private final ItemRepository itemRepository;
     private final MaterialItemRepository materialItemRepository;
 
@@ -116,9 +118,10 @@ public class GersangjjangMaterialTasklet implements Tasklet {
             log.debug("재료 아이템 신규 저장: {}", name);
         }
 
-        // 이미지 URL은 새로 수집된 값으로 갱신 (기존 null이거나 새 값이 있을 때만)
-        if (imageUrl != null && !imageUrl.equals(item.getImageUrl())) {
-            item.updateImageUrl(imageUrl);
+        // 이미지가 없을 때만 S3에 업로드 후 저장 (기존 S3 URL을 덮어쓰지 않음)
+        if (imageUrl != null && item.getImageUrl() == null) {
+            String uploaded = s3ImageService.uploadItemImageFromUrl(imageUrl);
+            if (uploaded != null) item.updateImageUrl(uploaded);
         }
 
         if (!materialItemRepository.existsByItemId(item.getId())) {

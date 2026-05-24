@@ -50,7 +50,7 @@ public class HeavenlyKingSeeder implements ApplicationRunner {
     // ── 지국천왕 (FIRE) ───────────────────────────────────────────────────────
 
     private void seedJiguk() {
-        Mercenary mercenary = upsertMercenary("지국천왕", Nature.FIRE);
+        Mercenary mercenary = upsertMercenary("지국천왕", "jigook", Nature.FIRE);
 
         // 특성1: 겁화 — 염룡살진 데미지 (계산기 스킵)
         MercenaryCharacteristic geophwa = upsertCharacteristic(
@@ -71,7 +71,7 @@ public class HeavenlyKingSeeder implements ApplicationRunner {
     // ── 광목천왕 (WIND) ───────────────────────────────────────────────────────
 
     private void seedGwangmok() {
-        Mercenary mercenary = upsertMercenary("광목천왕", Nature.WIND);
+        Mercenary mercenary = upsertMercenary("광목천왕", "gwangmok", Nature.WIND);
 
         // 특성1: 광풍 — 풍룡섬 데미지 (계산기 스킵)
         MercenaryCharacteristic gwangpung = upsertCharacteristic(
@@ -90,7 +90,7 @@ public class HeavenlyKingSeeder implements ApplicationRunner {
     // ── 증장천왕 (THUNDER) ────────────────────────────────────────────────────
 
     private void seedJeungjang() {
-        Mercenary mercenary = upsertMercenary("증장천왕", Nature.THUNDER);
+        Mercenary mercenary = upsertMercenary("증장천왕", "jeungjang", Nature.THUNDER);
 
         // 특성1: 감전 — 뇌룡격 데미지 (계산기 스킵)
         MercenaryCharacteristic gamjeon = upsertCharacteristic(
@@ -108,7 +108,7 @@ public class HeavenlyKingSeeder implements ApplicationRunner {
     // ── 다문천왕 (WATER) ──────────────────────────────────────────────────────
 
     private void seedDamun() {
-        Mercenary mercenary = upsertMercenary("다문천왕", Nature.WATER);
+        Mercenary mercenary = upsertMercenary("다문천왕", "damoon", Nature.WATER);
 
         // 특성1: 강화 — 흑귀 능력치 (소환수 강화, 계산기 스킵)
         MercenaryCharacteristic ganghwa = upsertCharacteristic(
@@ -125,10 +125,14 @@ public class HeavenlyKingSeeder implements ApplicationRunner {
 
     // ── 헬퍼 ──────────────────────────────────────────────────────────────────
 
-    private Mercenary upsertMercenary(String name, Nature nature) {
-        return mercenaryRepository.findByName(name).orElseGet(() ->
+    private Mercenary upsertMercenary(String name, String key, Nature nature) {
+        return mercenaryRepository.findByName(name).map(existing -> {
+            existing.updateKeyIfAbsent(key);
+            return existing;
+        }).orElseGet(() ->
                 mercenaryRepository.save(Mercenary.builder()
                         .name(name)
+                        .key(key)
                         .category(MercenaryCategory.FOUR_HEAVENLY_KINGS)
                         .mercenaryType(MercenaryType.HEAVENLY_KING)
                         .nature(nature)

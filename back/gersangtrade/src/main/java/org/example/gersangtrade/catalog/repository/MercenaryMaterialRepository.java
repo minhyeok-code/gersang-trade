@@ -43,4 +43,7 @@ public interface MercenaryMaterialRepository extends JpaRepository<MercenaryMate
      * 크롤러 재파싱 시 재료 목록 초기화 후 재적재에 사용된다.
      */
     void deleteByResultMercenaryId(Long resultMercenaryId);
+
+    /** 특정 용병이 다른 용병의 재료로 참조되는지 확인한다. */
+    boolean existsByMaterialMercenaryId(Long materialMercenaryId);
 }

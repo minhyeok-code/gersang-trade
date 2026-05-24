@@ -61,7 +61,8 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
             case "google" -> new OAuthUserInfo(
                     (String) attributes.get("sub"),
                     (String) attributes.get("email"),
-                    (String) attributes.get("name")
+                    (String) attributes.get("name"),
+                    (String) attributes.get("picture")
             );
             case "naver" -> {
                 // 네이버 응답 구조: { "resultcode": "00", "response": { "id": "...", "email": "...", "name": "..." } }
@@ -70,7 +71,8 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
                 yield new OAuthUserInfo(
                         (String) response.get("id"),
                         (String) response.get("email"),
-                        (String) response.get("name")
+                        (String) response.get("name"),
+                        (String) response.get("profile_image")
                 );
             }
             // Kakao는 MVP 범위 외 — 추후 확장 시 추가
@@ -106,6 +108,7 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
                 .oauthId(info.oauthId())
                 .email(info.email())
                 .nickname(info.nickname())
+                .profileImageUrl(info.profileImageUrl())
                 .role(Role.USER)
                 .status(UserStatus.ACTIVE)
                 .build();
@@ -115,5 +118,5 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
     }
 
     /** OAuth2 제공자에서 추출한 사용자 정보 */
-    private record OAuthUserInfo(String oauthId, String email, String nickname) {}
+    private record OAuthUserInfo(String oauthId, String email, String nickname, String profileImageUrl) {}
 }

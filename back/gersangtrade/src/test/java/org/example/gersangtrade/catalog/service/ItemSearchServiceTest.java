@@ -45,7 +45,7 @@ class ItemSearchServiceTest {
     @DisplayName("search_정상키워드_jooqRepository호출후결과반환")
     void search_정상키워드_jooqRepository호출후결과반환() {
         ItemSearchResult expected = new ItemSearchResult(
-                1L, "강화석", ItemType.MATERIAL, null, null, null, "개");
+                1L, "강화석", ItemType.MATERIAL, null, null, null, "개", null, null, null);
         when(itemJooqRepository.searchRanked("강화", null, null, 20))
                 .thenReturn(List.of(expected));
 

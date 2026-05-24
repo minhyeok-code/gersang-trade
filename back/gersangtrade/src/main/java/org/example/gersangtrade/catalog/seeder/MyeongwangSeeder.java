@@ -54,7 +54,7 @@ public class MyeongwangSeeder implements ApplicationRunner {
     // ── 항삼세명왕 (FIRE) — STRENGTH 기본 이전율 10% ──────────────────────────
 
     private void seedHangsamse() {
-        Mercenary m = upsertMercenary("항삼세명왕", Nature.FIRE);
+        Mercenary m = upsertMercenary("항삼세명왕", "hangsamse", Nature.FIRE);
 
         // 특성1: 파괴 — 이전되는 힘
         MercenaryCharacteristic pakoe = upsertChar(m, "myeongwang-hangsamse-pakoe", "파괴");
@@ -72,7 +72,7 @@ public class MyeongwangSeeder implements ApplicationRunner {
     // ── 군다리명왕 (THUNDER) — DEXTERITY 기본 이전율 10% ─────────────────────
 
     private void seedGundari() {
-        Mercenary m = upsertMercenary("군다리명왕", Nature.THUNDER);
+        Mercenary m = upsertMercenary("군다리명왕", "goondari", Nature.THUNDER);
 
         // 특성1: 신속 — 이전되는 민첩
         MercenaryCharacteristic sinsok = upsertChar(m, "myeongwang-gundari-sinsok", "신속");
@@ -90,7 +90,7 @@ public class MyeongwangSeeder implements ApplicationRunner {
     // ── 대위덕명왕 (WIND) — VITALITY 기본 이전율 5% ──────────────────────────
 
     private void seedDaewidok() {
-        Mercenary m = upsertMercenary("대위덕명왕", Nature.WIND);
+        Mercenary m = upsertMercenary("대위덕명왕", "daewideok", Nature.WIND);
 
         // 특성1: 끈기 — 이전되는 생명력
         MercenaryCharacteristic kkeungi = upsertChar(m, "myeongwang-daewidok-kkeungi", "끈기");
@@ -108,7 +108,7 @@ public class MyeongwangSeeder implements ApplicationRunner {
     // ── 부동명왕 (EARTH) — 스탯 이전 없음 ────────────────────────────────────
 
     private void seedBudong() {
-        Mercenary m = upsertMercenary("부동명왕", Nature.EARTH);
+        Mercenary m = upsertMercenary("부동명왕", "boodong", Nature.EARTH);
 
         // 특성1: 집중
         MercenaryCharacteristic jipjung = upsertChar(m, "myeongwang-budong-jipjung", "집중");
@@ -126,7 +126,7 @@ public class MyeongwangSeeder implements ApplicationRunner {
     // ── 금강야차명왕 (WATER) — INTELLECT 기본 이전율 5% ──────────────────────
 
     private void seedGeumgangyacha() {
-        Mercenary m = upsertMercenary("금강야차명왕", Nature.WATER);
+        Mercenary m = upsertMercenary("금강야차명왕", "geumgangyacha", Nature.WATER);
 
         // 특성1: 신비 — 이전되는 지력 + 회복 마법력
         MercenaryCharacteristic sinbi = upsertChar(m, "myeongwang-geumgangyacha-sinbi", "신비");
@@ -145,10 +145,14 @@ public class MyeongwangSeeder implements ApplicationRunner {
 
     // ── 헬퍼 ──────────────────────────────────────────────────────────────────
 
-    private Mercenary upsertMercenary(String name, Nature nature) {
-        return mercenaryRepository.findByName(name).orElseGet(() ->
+    private Mercenary upsertMercenary(String name, String key, Nature nature) {
+        return mercenaryRepository.findByName(name).map(existing -> {
+            existing.updateKeyIfAbsent(key);
+            return existing;
+        }).orElseGet(() ->
                 mercenaryRepository.save(Mercenary.builder()
                         .name(name)
+                        .key(key)
                         .category(MercenaryCategory.MYEONG_KING)
                         .mercenaryType(MercenaryType.MYUNGWANG)
                         .nature(nature)

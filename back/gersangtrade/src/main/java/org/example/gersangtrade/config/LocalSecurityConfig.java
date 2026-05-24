@@ -36,7 +36,7 @@ public class LocalSecurityConfig {
     @Bean
     public SecurityFilterChain localCrawlerFilterChain(HttpSecurity http) throws Exception {
         http
-                .securityMatcher("/admin/crawler/**", "/local/**")
+                .securityMatcher("/admin/crawler/**", "/admin/skill-coefficients/**", "/local/**")
                 .csrf(AbstractHttpConfigurer::disable)
                 .addFilterBefore(new LocalAdminInjectFilter(), UsernamePasswordAuthenticationFilter.class)
                 .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());

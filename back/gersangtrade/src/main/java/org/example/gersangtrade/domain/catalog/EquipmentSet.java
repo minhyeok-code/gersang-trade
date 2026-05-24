@@ -5,6 +5,7 @@ import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.example.gersangtrade.domain.catalog.enums.Enhancement;
 
 /**
  * 장비 세트 정의 엔티티.
@@ -38,11 +39,22 @@ public class EquipmentSet {
     @Column(name = "is_tradeable", nullable = false, columnDefinition = "BOOLEAN DEFAULT TRUE")
     private boolean isTradeable = true;
 
+    /**
+     * 세트 대표 강화 단계.
+     * 전설장수 세트(최무선 등): 0강·5강·10강 구분 있음.
+     * 일반 세트: null (강화 개념 없음).
+     * DB에는 실제 숫자(0/5/10)로 저장한다.
+     */
+    @Convert(converter = EnhancementConverter.class)
+    @Column(name = "enhancement")
+    private Enhancement enhancement;
+
     @Builder
-    public EquipmentSet(String name, Integer totalPieces, boolean isTradeable) {
+    public EquipmentSet(String name, Integer totalPieces, boolean isTradeable, Enhancement enhancement) {
         this.name = name;
         this.totalPieces = totalPieces;
         this.isTradeable = isTradeable;
+        this.enhancement = enhancement;
     }
 
     /** 크롤링 upsert 시 피스 수 갱신 — isTradeable은 관리자 관리 필드이므로 건드리지 않음 */
@@ -50,10 +62,11 @@ public class EquipmentSet {
         this.totalPieces = totalPieces;
     }
 
-    /** 관리자 수동 수정 — 이름, 피스 수, 거래 노출 여부 */
-    public void updateInfo(String name, Integer totalPieces, boolean isTradeable) {
+    /** 관리자 수동 수정 — 이름, 피스 수, 거래 노출 여부, 강화 단계 */
+    public void updateInfo(String name, Integer totalPieces, boolean isTradeable, Enhancement enhancement) {
         if (name != null && !name.isBlank()) this.name = name;
         if (totalPieces != null && totalPieces > 0) this.totalPieces = totalPieces;
         this.isTradeable = isTradeable;
+        this.enhancement = enhancement;
     }
 }

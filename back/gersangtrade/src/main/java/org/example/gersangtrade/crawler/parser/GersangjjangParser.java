@@ -128,6 +128,8 @@ public class GersangjjangParser {
             Map.entry("무신",   CategoryMeta.appearance(EquipmentSlot.DIVINE)),
             Map.entry("팔찌",   CategoryMeta.appearance(EquipmentSlot.BRACELET)),
             Map.entry("각반",   CategoryMeta.appearance(EquipmentSlot.LEGGING)),
+            Map.entry("귀걸이", CategoryMeta.appearance(EquipmentSlot.EARRING)),
+            Map.entry("목걸이", CategoryMeta.appearance(EquipmentSlot.NECKLACE)),
             Map.entry("보주",   CategoryMeta.appearance(EquipmentSlot.ORB)),
             Map.entry("날개",   CategoryMeta.appearance(EquipmentSlot.WING)),
             Map.entry("칭호",   CategoryMeta.appearance(EquipmentSlot.TITLE)),
@@ -258,11 +260,12 @@ public class GersangjjangParser {
     /**
      * 카테고리 페이지 아이템 1행 파싱 결과.
      *
-     * @param name   아이템명
-     * @param stats  파싱된 스탯 목록 (없으면 빈 리스트)
-     * @param skills 파싱된 고유 스킬명 목록 (없으면 빈 리스트)
+     * @param name     아이템명
+     * @param stats    파싱된 스탯 목록 (없으면 빈 리스트)
+     * @param skills   파싱된 고유 스킬명 목록 (없으면 빈 리스트)
+     * @param imageUrl 아이템 이미지 절대 URL (.w-img img 없으면 null)
      */
-    public record ItemRow(String name, List<ParsedStat> stats, List<String> skills) {}
+    public record ItemRow(String name, List<ParsedStat> stats, List<String> skills, String imageUrl) {}
 
     /**
      * 재료 카테고리 페이지 아이템 1행 파싱 결과.
@@ -321,6 +324,14 @@ public class GersangjjangParser {
         }
 
         return rows;
+    }
+
+    /** img 엘리먼트의 src → 절대 URL. null이거나 src가 비어있으면 null 반환 */
+    static String parseImageUrl(Element imgEl) {
+        if (imgEl == null) return null;
+        String src = imgEl.attr("src").trim();
+        if (src.isBlank()) return null;
+        return src.startsWith("http") ? src : BASE_URL + src;
     }
 
     private GersangjjangParser() {}
@@ -386,7 +397,8 @@ public class GersangjjangParser {
             List<String> skills = new ArrayList<>();
             parseStatCell(row.selectFirst(".w-stat"), stats, skills);
 
-            rows.add(new ItemRow(name, stats, skills));
+            String imageUrl = parseImageUrl(row.selectFirst(".w-img img"));
+            rows.add(new ItemRow(name, stats, skills, imageUrl));
         }
 
         // Type B: .item-row .sub-row 구조 (무기 페이지 — strong 없이 첫 텍스트 노드가 이름)
@@ -407,7 +419,10 @@ public class GersangjjangParser {
                 List<String> skills = new ArrayList<>();
                 parseStatCell(subRow.selectFirst(".w-stat"), stats, skills);
 
-                rows.add(new ItemRow(name, stats, skills));
+                // Type B 행은 아이템 이미지가 상위 .item-row에 있을 수 있음
+                Element parentRow = subRow.parent();
+                Element imgEl = (parentRow != null) ? parentRow.selectFirst(".w-img img") : null;
+                rows.add(new ItemRow(name, stats, skills, parseImageUrl(imgEl)));
             }
         }
 

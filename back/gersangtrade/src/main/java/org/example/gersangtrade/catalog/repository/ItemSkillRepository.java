@@ -27,4 +27,10 @@ public interface ItemSkillRepository extends JpaRepository<ItemSkill, Long> {
             """)
     java.util.Optional<ItemSkill> findByItemIdAndSkillName(@Param("itemId") Long itemId,
                                                            @Param("skillName") String skillName);
+
+    /** 거니버스 skillKey로 기존 스킬 조회 — itemKey가 비어 있는 기존 데이터 보완용 */
+    List<ItemSkill> findBySkillKey(String skillKey);
+
+    /** 스킬명으로 기존 스킬 조회 — skillKey가 아직 비어 있는 크롤링 데이터 보완용 */
+    List<ItemSkill> findBySkillName(String skillName);
 }

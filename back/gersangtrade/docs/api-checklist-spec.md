@@ -4,6 +4,8 @@
 > 목적: API 구현 점검 및 미구현 항목 명세  
 > 대상: 백엔드 개발자 / Claude Code
 
+> **Flyway 정책**: Flyway(V1 스키마 마이그레이션)는 프론트엔드 구현 완료 후 로컬 개발 전체가 끝난 시점에 한 번에 진행한다. 개발 중 엔티티 변경이 잦으므로 스키마 안정화 전까지 `ddl-auto=create` 유지.
+
 > **경로 규칙**: 유저 API는 `/api/` 접두사 사용. 관리자 API는 `/admin/` 접두사 사용.
 
 ---
@@ -80,10 +82,10 @@
 | 메서드 | 경로 | 설명 | 인증 | 구현 여부 |
 |---|---|---|---|---|
 | `GET` | `/api/users/me` | 내 프로필 조회 | 필요 | ✅ |
-| `PATCH` | `/api/users/me` | 닉네임·사진·접속시간 등 수정 | 필요 | ❌ 미구현 |
+| `PATCH` | `/api/users/me` | 닉네임·사진·접속시간 등 수정 | 필요 | ✅ (`profileImageUrl` 포함) |
 | `PATCH` | `/api/users/me/server` | 서버 설정 저장 | 필요 | ✅ |
-| `GET` | `/api/users/{userId}` | 타 유저 프로필 조회 | 불필요 | ❌ 미구현 |
-| `POST` | `/api/users/me/clear-time` | 클리어타임 저장 (경험치 지급) | 필요 | ❌ 미구현 |
+| `GET` | `/api/users/{userId}` | 타 유저 프로필 조회 | 불필요 | ✅ |
+| `POST` | `/api/users/me/clear-time` | 클리어타임 저장 (경험치 지급) | 필요 | ✅ (5 EXP 지급) |
 | `GET` | `/api/decks` | 내 덱 목록 조회 | 필요 | ✅ |
 | `POST` | `/api/decks` | 덱 생성 | 필요 | ✅ |
 | `GET` | `/api/decks/{deckId}` | 덱 상세 (멤버·슬롯 포함) | 필요 | ✅ |
@@ -428,9 +430,9 @@ PK: (item_id, stat_date)
 
 | 메서드 | 경로 | 설명 | 인증 | 구현 여부 |
 |---|---|---|---|---|
-| `POST` | `/api/calculator/dps` | DPS 계산 (덱 기반) | 불필요 | ❌ 미구현 (재설계 중) |
-| `GET` | `/api/monsters` | 몬스터 목록 조회 | 불필요 | ❌ 미구현 |
-| `GET` | `/api/monsters/{monsterId}` | 몬스터 스펙 (저항·속성·속성값) | 불필요 | ❌ 미구현 |
+| `POST` | `/api/calculator/dps` | DPS 계산 (덱 기반) | 불필요 | ✅ 구현 (`CalculatorController`) |
+| `GET` | `/api/monsters` | 몬스터 목록 조회 | 불필요 | ✅ 구현 (`MonsterController`) |
+| `GET` | `/api/monsters/{monsterId}` | 몬스터 스펙 (저항·속성·속성값) | 불필요 | ✅ 구현 (`MonsterController`) |
 
 ---
 
@@ -535,13 +537,13 @@ DPS 계산기가 완성된 이후에 의미 있는 기능이다.
 | `PATCH` | `/admin/messages/{messageId}/unhide` | 채팅 메시지 숨김 해제 | ✅ |
 | `GET` | `/admin/sets` | 세트 목록 조회 | ✅ |
 | `GET` | `/admin/sets/{id}` | 세트 단건 조회 | ✅ |
-| `PATCH` | `/admin/sets/{id}` | 세트 수정 (isTradeable 포함) | ✅ |
+| `PATCH` | `/admin/sets/{id}` | 세트 수정 (isTradeable·enhancement 포함) | ✅ |
 | `GET` | `/admin/items` | 아이템 목록 조회 | ✅ |
 | `GET` | `/admin/items/{itemId}` | 아이템 상세 조회 | ✅ |
 | `PUT` | `/admin/items/{itemId}` | 아이템 기본정보 수정 | ✅ |
-| `PUT` | `/admin/items/{itemId}/equipment-detail` | 장비 상세 수정 | ✅ |
+| `PUT` | `/admin/items/{itemId}/equipment-detail` | 장비 상세 수정 (slot·kind·ritual·hasSlot·set·equipSlot·**mercenary·enhancement** 포함) | ✅ |
 | `PUT` | `/admin/items/{itemId}/stats` | 아이템 스탯 전체 교체 | ✅ |
-| `PUT` | `/admin/items/{itemId}/skills` | 아이템 스킬 전체 교체 | ✅ |
+| `PUT` | `/admin/items/{itemId}/skills` | 아이템 스킬 전체 교체 (**skillBehaviorType·replacesBaseSkill·triggerEveryN·triggerBaseSkillKey·note** 포함) | ✅ |
 | `GET` | `/admin/mercenaries` | 용병 목록 조회 | ✅ |
 | `GET` | `/admin/mercenaries/{mercenaryId}` | 용병 상세 조회 | ✅ |
 | `PUT` | `/admin/mercenaries/{mercenaryId}` | 용병 기본정보 수정 | ✅ |
@@ -554,8 +556,15 @@ DPS 계산기가 완성된 이후에 의미 있는 기능이다.
 | `DELETE` | `/admin/mercenaries/{mercenaryId}/characteristics/{charId}` | 특성 삭제 | ✅ |
 | `PUT` | `/admin/mercenaries/{mercenaryId}/characteristics/{charId}/levels` | 레벨 수치 일괄 저장 | ✅ |
 | `GET` | `/admin/skill-coefficients` | 스킬 계수 목록 | ✅ |
-| `PUT` | `/admin/skill-coefficients` | JSON 파일 bulk upsert | ✅ |
+| `PUT` | `/admin/skill-coefficients` | JSON 파일 bulk upsert (mercenarySkill·itemSkill·**setGrantedSkill** 3종 지원) | ✅ |
 | `PATCH` | `/admin/skill-coefficients/{id}/measurement` | 측정값 입력 | ✅ |
+| `GET` | `/admin/set-granted-skills` | 세트 부여 스킬 목록 조회 | ❌ 미구현 |
+| `POST` | `/admin/set-granted-skills` | 세트 부여 스킬 등록 | ❌ 미구현 |
+| `PUT` | `/admin/set-granted-skills/{id}` | 세트 부여 스킬 수정 | ❌ 미구현 |
+| `DELETE` | `/admin/set-granted-skills/{id}` | 세트 부여 스킬 삭제 | ❌ 미구현 |
+| `GET` | `/admin/sets/{setId}/skill-effects` | 세트 스킬 효과 목록 조회 (세트+피스수+강화단계→스킬 매핑) | ❌ 미구현 |
+| `POST` | `/admin/sets/{setId}/skill-effects` | 세트 스킬 효과 등록 | ❌ 미구현 |
+| `DELETE` | `/admin/sets/{setId}/skill-effects/{effectId}` | 세트 스킬 효과 삭제 | ❌ 미구현 |
 | `POST` | `/admin/crawler/master` | 전체 마스터 데이터 수집 | ✅ |
 | `POST` | `/admin/crawler/items` | 장비·보석 수집 | ✅ |
 | `POST` | `/admin/crawler/materials` | 재료 수집 | ✅ |
@@ -577,13 +586,13 @@ DPS 계산기가 완성된 이후에 의미 있는 기능이다.
 | 채팅·거래 확정 | 100% | — |
 | 신고 시스템 | 95% | 어뷰징 모니터링 |
 | 시세 조회 | 90% | `days` 파라미터 추가 여부 결정 |
-| 유저 프로필·등급 | 60% | PATCH /me, GET /{userId}, 클리어타임 API |
+| 유저 프로필·등급 | 100% | 프로필 조회·수정(사진 포함)·클리어타임 저장 완료 |
 | 덱 관리 | 100% | CRUD API·슬롯 API·주술 API·용병 합산 스탯 조회 API 구현 완료 |
 | 거래 평가 | 100% | — |
 | 알림 (SSE) | 100% | — |
-| DPS 계산기 | 10% | 재설계 중 (UserDeck 기반) |
+| DPS 계산기 | 100% | `DpsCalculatorService` + `POST /api/calculator/dps` + 단위 테스트 11케이스 완료 |
 | 가성비 비교 | 10% | DPS 완성 후 이어서 |
-| 관리자 기능 | 95% | 어뷰징 모니터링 |
+| 관리자 기능 | 90% | SetGrantedSkill·EquipmentSetSkillEffect CRUD API 미구현, 어뷰징 모니터링 |
 | 홈 화면 | — | 관심아이템 시세 점검, 스펙업 미구현 |
 | 크롤링 (마스터) | 80% | 거상짱 전환 완료, 잔여 점검 |
 | 크롤링 (가격) | 50% | — |

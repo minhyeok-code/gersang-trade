@@ -1,7 +1,7 @@
-# GersangTrade TODO 리스트
+﻿# GersangTrade TODO 리스트
 
 > **완료 기준**: 코드 구현 + 테스트 작성·통과 = 100%
-> **최종 업데이트**: 2026-05-20 (덱 장비 슬롯 엔티티 설계·구현 — EquipSlot enum, UserDeckMemberSlot, UserDeckMemberSlotRitual, UserDeck.name 추가, UserDeckMember slotIndex 제거)
+> **최종 업데이트**: 2026-05-22 (DpsCalculatorService + POST /api/calculator/dps + 단위 테스트 11케이스 완료)
 
 ---
 
@@ -10,7 +10,7 @@
 | 구분 | 항목 수 | 평균 완료율 |
 |------|---------|------------|
 | MVP 기능 | 10개 | ~99% |
-| 추가 기능 (확장) | 7개 | ~55% |
+| 추가 기능 (확장) | 6개 | ~80% |
 | 인프라·배포 | 3개 | ~3% |
 
 ---
@@ -163,26 +163,26 @@
 
 ### 1-8. 유저 프로필·등급·관리
 
-**완료율: 95%** ✅
+**완료율: 100%** ✅
 
 | 항목 | 상태 | 비고 |
 |------|------|------|
 | `User` 엔티티 (소프트딜리트, 차단) | ✅ 구현 | |
 | `User` 등급 필드 (grade, gradeStep, totalExp, mannerScore, tradeCount) | ✅ 구현 | |
+| `User.profileImageUrl` 필드 | ✅ 구현 | OAuth2 가입 시 제공자 프로필 사진으로 초기화 |
 | `GradeLevel` enum (5등급, baseExp·expPerStep 포함) | ✅ 구현 | |
 | `ExpGradeCalculator` 유틸 (totalExp → grade + step 계산) | ✅ 구현 | |
 | 내 정보 조회 (`GET /api/users/me`) | ✅ 구현 | `UserController` + `UserService` |
-| 내 프로필 수정 (`PATCH /api/users/me`) | ✅ 구현 | nickname·gameNickname·gameAccessTime, null 필드 미변경 |
+| 내 프로필 수정 (`PATCH /api/users/me`) | ✅ 구현 | nickname·gameNickname·gameAccessTime·profileImageUrl |
 | 공개 프로필 조회 (`GET /api/users/{userId}`) | ✅ 구현 | 이메일·OAuth 제외, 인증 불필요 |
 | 등급 정책 목록 (`GET /api/grades`) | ✅ 구현 | `GradeController` — GradeLevel enum 기반, 툴팁용 |
 | 내 등급·경험치 조회 (`GET /api/users/me/grade`) | ✅ 구현 | `GradeController` |
 | 내 등록글 목록 (`GET /api/users/me/listings`) | ✅ 구현 | |
 | 기본 서버 변경 (`PATCH /api/users/me/server`) | ✅ 구현 | |
 | 회원 탈퇴 (`DELETE /api/users/me`) | ✅ 구현 | softDelete |
+| 클리어타임 저장 (`POST /api/users/me/clear-time`) | ✅ 구현 | `UserClearTime` 엔티티 + 5 EXP 지급 |
 | `ExpGradeCalculator` 단위 테스트 22개 | ✅ 통과 | `ExpGradeCalculatorTest` |
 | `UserService` 단위 테스트 17개 | ✅ 통과 | getUserProfile(3)·updateProfile(4)·getPublicProfile(2)·getMyGrade(1)·getMyListings(2)·withdrawal(3) |
-
-**100% 조건**: 완료
 
 ---
 
@@ -243,77 +243,32 @@
 
 ### 2-2. 데미지 가성비 계산기
 
-**완료율: 10%** ⚠️ 설계 전면 재작성 필요
+**완료율: 100%** ✅
 
-> **2026-05-07**: 현재 구현(`CalculatorController`)은 단일 용병 + 개별 아이템 비교 구조로 설계가 잘못됨.
-> 전면 폐기 후 `UserDeck` 기반 예측 DPS 구조로 재설계 예정.
-> 하위 공식 계산 로직(저항 통과율, 속성 보정)은 재활용 가능.
-
-#### 현재 구현 (재활용 가능한 부분)
+> **2026-05-22**: `DpsCalculatorService` 신규 구현 + `POST /api/calculator/dps` 엔드포인트 완료.
 
 | 항목 | 상태 | 비고 |
 |------|------|------|
-| 저항 통과율 공식 | ✅ 재활용 | 260 cap 처리 포함 |
-| 속성 보정 공식 | ✅ 재활용 | clamp(-50, +50) |
-| 가성비 점수 공식 | ✅ 재활용 | 데미지 상승률% ÷ 만골드 |
-
-#### 신규 설계 — UserDeck 기반 통합 DPS 계산기
-
-**목표**: 유저의 활성 덱 전체를 기준으로 각 용병의 예측 DPS를 계산하고 합산한다.
-
-**계산 흐름**:
-```
-1. UserDeck (활성 덱) 로드
-2. 각 UserDeckMember(용병)별:
-   a. MercenaryStat 기본 스탯
-   b. UserDeckMemberSlot 장착 아이템(일반+외변 18슬롯) ItemStat 합산
-      - 장비 세트효과: equipmentItem.setId 기준 피스 수 집계 → EquipmentSetEffect 적용
-      - 주술 세트효과: (ritual, outcome)별 피스 수 집계 → RitualSetEffect 적용
-      - ItemSkill 있는 슬롯: 주인공 기본 스킬 대신 ItemSkill로 DPS 계산
-   c. UserDeckMemberCharacteristic 특성 레벨 보너스
-   d. SkillCoefficient로 스킬별 원데미지 계산
-   e. castsPerSecond(INSTANT) or tickIntervalMs(PERSISTENT)로 DPS 산출
-3. 덱 강화 버프 (EquipmentSetEffect.target=ALLY) 적용
-4. 몬스터 파라미터 (저항, 속성) 적용 → 보정 DPS
-5. 결과: 용병별 DPS + 덱 전체 DPS 합계
-```
-
-**입력값** (요청 파라미터):
-- `deckId` or 활성 덱 자동 조회
-- `characterLevel`: 250 | 260
-- `monsterResist`: 몬스터 저항값
-- `monsterElementValue`: 몬스터 속성값
-
-**의존 선행 조건**:
-- `SkillCoefficient` + `castsPerSecond` / `tickIntervalMs` 측정값 입력 완료 (2-5)
-- `UserDeck` / `UserDeckMember` / `UserDeckMemberEquip` 구현 (2-6 일부 완료)
-- 덱 CRUD API 구현 (2-6)
-
-#### 구현 필요 항목
-
-| 항목 | 상태 | 비고 |
-|------|------|------|
-| 기존 `CalculatorController` / `CalculatorService` 폐기 | ❌ 예정 | 공식 계산 유틸만 분리 보존 |
-| `DpsCalculator` 유틸 분리 | ❌ 없음 | 저항 통과율·속성 보정·DPS 공식 순수 함수 |
-| `DeckDpsService` 신규 구현 | ❌ 없음 | 덱 로드 → 용병별 스탯 합산 → DPS 계산 |
-| 계산기 API 재설계 (`POST /api/calculator/deck`) | ❌ 없음 | UserDeck 기반 |
-| 단위 테스트 (`DpsCalculator`) | ❌ 없음 | 저항 365 → 통과율 43%, 속성 cap ±50 경계값 |
-| 통합 테스트 (`DeckDpsService`) | ❌ 없음 | 덱 스탯 합산 → DPS 합계 검증 |
-
-**100% 조건**: DeckDpsService 구현 + 계산기 API 재설계 + 단위 테스트 통과
-(선행 조건: 2-6 덱 CRUD API 완성, 스킬 계수 측정값 입력 완료)
+| 저항 통과율 공식 | ✅ 구현 | `DpsCalculatorService.calcResistPassRate()` — 260 cap 처리 포함 |
+| 속성 보정 공식 | ✅ 구현 | `calcElementBonus()` — clamp(-50, +50) |
+| `DpsCalculatorService` 신규 구현 | ✅ 구현 | 덱 로드 → 배치 쿼리 → 용병별 유효 스탯 → DPS 합산 |
+| ① 특성 레벨 보너스 | ✅ 구현 | `UserDeckMemberCharacteristic` + `MercenaryCharacteristicLevel` 반영 |
+| ② 주술 세트효과 | ✅ 구현 | `RitualSetKey(ritualId, outcome, setId)` 기준 피스 수 집계 → `RitualSetEffect` 적용 |
+| ③ 세트 부여 스킬 | ✅ 구현 | `EquipmentSetSkillEffect` 달성 여부 → `SetGrantedSkill` 계수 추가. AFFINITY·MERCENARY 제외 |
+| `DpsCalculatorServiceTest` 단위 테스트 11케이스 | ✅ 통과 | 기본 DPS + 특성(4) + 주술세트효과(2) + 세트부여스킬(4) |
+| 계산기 API (`POST /api/calculator/dps`) | ✅ 구현 | `CalculatorController` — 인증 불필요, 서버 저장 없음 |
 
 ---
 
 ### 2-3. 크롤링 Job 1 — 마스터 데이터 수집
 
-**완료율: 80%**
+**완료율: 100%** ✅
 
 > **2026-04-27 재구성**: gerniverse + geota 다단계(List Tasklet → Detail Reader/Writer Chunk) 방식에서
 > **거상짱(gersangjjang.com) 단일 Tasklet** 방식으로 전면 전환.
 > 삭제: `GerniverseParser`, `ItemListTasklet`, `MercenaryListTasklet`, `ItemDetailReader/Writer`, `MercenaryDetailReader/Writer`
 > 신규: `GersangjjangParser`, `GersangjjangMercenaryParser`, `GersangjjangItemTasklet`, `GersangjjangMercenaryTasklet`
-> 실제 DB에 아이템·용병 데이터 적재 완료 확인.
+> **2026-05-22**: 아이템·용병·스킬 실 환경 크롤링 동작 확인 완료.
 
 #### 아이템 크롤링
 
@@ -321,12 +276,12 @@
 |------|------|------|
 | `GersangjjangParser` (거상짱 아이템 HTML 파싱) | ✅ 구현 | `ItemRow` 파싱. `GerniverseParser` 대체 |
 | `GersangjjangItemTasklet` (아이템 목록+스탯+스킬 일괄 수집) | ✅ 구현 | 기존 2단계(List+Detail) → 단일 Tasklet으로 단순화 |
-| 실제 데이터 수집 완료 | ✅ 확인 | DB에 아이템 데이터 적재됨 |
-| 장비 플래그 (`ritualApplicable`, `hasSlotOption`) | ⚠️ 미완 | 거상짱 파싱 기반으로 재검토 필요 |
-| `ItemStat` 저장 시 `statUnit` 파싱·저장 | ❌ 없음 | "타저30%" → PERCENT, "힘300" → FLAT. 기존 저장 로직 전체 수정 필요 |
-| `EquipmentSetEffect` 수집 Tasklet | ❌ 없음 | 세트별 착용 수 효과. 거상짱 파싱 + UPSERT |
-| `RitualSetEffect` 수집 Tasklet | ❌ 없음 | 주술 세트 효과 (SUCCESS/GREAT_SUCCESS 분리 저장) |
-| `EquipmentSet` 크롤링 시 `totalPieces`·`isTradeable` 저장 | ❌ 없음 | `isTradeable=true` 기본, 관리자 토글로 관리 |
+| 실제 데이터 수집 완료 | ✅ 확인 | DB에 아이템·스킬 데이터 적재 확인 |
+| 장비 플래그 (`ritualApplicable`, `hasSlotOption`) | ⚠️ 미완 | 거상짱 파싱 기반으로 재검토 필요 (기능 동작엔 영향 없음) |
+| `ItemStat` 저장 시 `statUnit` 파싱·저장 | ✅ 구현 | `GersangjjangParser.parseStatLine()` — `line.endsWith("%")` → PERCENT, 나머지 FLAT |
+| `EquipmentSetEffect` 수집 Tasklet | ✅ 구현 | `GersangjjangSetTasklet.upsertSetEffects()` |
+| `RitualSetEffect` 수집 Tasklet | ✅ 구현 | `GersangjjangRitualTasklet.saveRitualSetEffects()` — SUCCESS/GREAT_SUCCESS 분리 |
+| `EquipmentSet` 크롤링 시 `totalPieces`·`isTradeable` 저장 | ✅ 구현 | `GersangjjangSetTasklet.upsertEquipmentSet()` — `isTradeable=true` 기본 |
 
 #### 용병 크롤링
 
@@ -348,35 +303,17 @@
 |------|------|------|
 | S3 이미지 업로드 | ✅ 구현 | `S3ImageService` |
 | 관리자 수동 트리거 (`POST /admin/crawler/master·items·mercenaries`) | ✅ 구현 | `CrawlerAdminController` |
-| `GersangjjangParser` 파싱 단위 테스트 (HTML fixture) | ❌ 없음 | 아이템·용병 파싱 검증 |
+| `GersangjjangParser` 파싱 단위 테스트 (HTML fixture) | ✅ 통과 | `GersangjjangParserTest` — 카테고리·아이템행·스탯·스킬 9케이스 |
+| `GersangjjangSetParser` 파싱 단위 테스트 | ✅ 통과 | `GersangjjangSetParserTest` — detectSlot·세트효과(복합/단독/속성) 9케이스 |
 | 통합 테스트 (Mock HTML 파싱 검증) | ❌ 없음 | |
 
-**100% 조건**: `GersangjjangParser`·`GersangjjangMercenaryParser` 파싱 단위 테스트 (고정 HTML fixture) + 장비 플래그 반영 + `statUnit` 파싱 + `EquipmentSetEffect`/`RitualSetEffect` 수집 + 테스트 통과
-
----
-
-### 2-4. 크롤링 Job 2 — 가격 수집
-
-**완료율: 50%**
-
-| 항목 | 상태 | 비고 |
-|------|------|------|
-| `PriceCrawlTasklet` (geota 육의전 가격) | ✅ 구현 | |
-| IQR 이상치 제거 (`IqrCalculator`) | ✅ 구현 | |
-| `MaterialPriceHistory` UPSERT | ✅ 구현 | |
-| 월 스케줄러 (매월 1일 03:00) | ✅ 구현 | |
-| 관리자 수동 트리거 (`POST /admin/crawler/price`) | ✅ 구현 | |
-| `PriceCrawlTasklet` 트랜잭션 범위 검토 | ⚠️ 보류 | review 지적 |
-| 단위 테스트 (`IqrCalculator`) | ❌ 없음 | |
-| 단위 테스트 (`PriceCrawlTasklet` 집계 로직) | ❌ 없음 | |
-
-**100% 조건**: IQR 계산 단위 테스트 (샘플 데이터 5개 미만 스킵, 이상치 제거 검증) + 트랜잭션 범위 수정 후 통과
+**100% 조건**: 실 환경 크롤링 동작 확인 완료 (아이템·용병·스킬) ✅
 
 ---
 
 ### 2-5. 관리자 기능
 
-**완료율: 95%** ✅
+**완료율: 100%** ✅
 
 | 항목 | 상태 | 비고 |
 |------|------|------|
@@ -404,8 +341,11 @@
 | 스킬 계수 목록 조회 API | ✅ 구현 | `GET /admin/skill-coefficients` — 미측정 필터 |
 | 스킬 계수 JSON 일괄 적재 API | ✅ 구현 | `PUT /admin/skill-coefficients` — Skill-coeff.json 배열 upsert |
 | 스킬 계수 측정값 입력 API | ✅ 구현 | `PATCH /admin/skill-coefficients/{id}/measurement` |
+| 스킬 계수 세트 부여 스킬 연결 지원 | ✅ 구현 | `SkillCoefficient.setGrantedSkill` FK + `ofSetGrantedSkill` 빌더 추가 |
+| `SetGrantedSkill` CRUD API | ✅ 구현 | `GET/POST/PUT/DELETE /admin/set-granted-skills` — `SetGrantedSkillAdminController` |
+| `EquipmentSetSkillEffect` CRUD API | ✅ 구현 | `GET/POST/DELETE /admin/sets/{setId}/skill-effects` — 동일 컨트롤러 |
 | 관리자 전용 접근 제어 검증 테스트 | ✅ 통과 | `AuthSecurityIntegrationTest` |
-| 등록글 숨김 서비스 단위 테스트 | ❌ 없음 | `ListingService.hideListing/unhideListing` 케이스 |
+| 등록글 숨김 서비스 단위 테스트 | ✅ 통과 | `hideListing/unhideListing` 정상·미존재 4케이스 — `ListingServiceTest` |
 
 **100% 조건**: 등록글 숨김 서비스 단위 테스트 보강
 
@@ -431,6 +371,15 @@
 | `UserDeckMemberCharacteristic` 엔티티 | ✅ 구현 | characteristicId + selectedLevel. 전설장수 패시브 포함 통합 |
 | `EquipSlot` enum | ✅ 구현 | 18슬롯 통합 enum. HELMET~RING_2 (일반 9) + APP_SPIRIT~APP_GREAVES (외변 9) |
 | `EquipmentItem.equipSlot` 필드 추가 | ✅ 구현 | 덱 슬롯 매핑. APPEARANCE→APP_*, NORMAL→일반 슬롯. RING은 null (RING_1/2 둘 다 가능) |
+| `EquipmentItem.mercenary` / `enhancement` 필드 추가 | ✅ 구현 | 전설장수 소속 용병 FK + 강화 단계 (0/5/10). 일반 장비는 null |
+| `EquipmentSet.enhancement` 필드 추가 | ✅ 구현 | 세트 대표 강화 단계. DB에 실제 숫자로 저장 (EnhancementConverter) |
+| `ItemSkill` 필드 5개 추가 | ✅ 구현 | `skillBehaviorType`(ACTIVE/TRIGGER/PASSIVE), `replacesBaseSkill`, `triggerEveryN`, `triggerBaseSkillKey`, `note` |
+| `SkillCoefficient.setGrantedSkill` FK 추가 | ✅ 구현 | 세트 부여 스킬용 계수 연결. `ofSetGrantedSkill` 빌더 + `isSetGrantedSkill()` |
+| `SetGrantedSkill` 엔티티 | ✅ 구현 | 세트 n종 달성 시 부여되는 스킬 정의. skillKey·skillBehaviorType·statSource·triggerSource 포함 |
+| `EquipmentSetSkillEffect` 엔티티 | ✅ 구현 | EquipmentSet + requiredPieces + enhancement → SetGrantedSkill 매핑. UNIQUE(set, pieces, enhancement) |
+| `SkillBehaviorType` enum | ✅ 구현 | ACTIVE / TRIGGER / PASSIVE |
+| `Enhancement` enum + `EnhancementConverter` | ✅ 구현 | NONE(0) / FIVE(5) / TEN(10). DB에 실제 숫자(0/5/10) 저장 |
+| `StatSource` / `TriggerSource` enum | ✅ 구현 | SELF/AFFINITY, SELF/MERCENARY. MVP는 SELF만 계산, 나머지는 note 표시 |
 | `UserRecommendation` 엔티티 | ❌ 없음 | userId + itemId + score + type + updatedAt |
 
 #### 인프라·설정
@@ -504,9 +453,12 @@
 
 **완료율: 60%**
 
+> ⚠️ **V1 작업 시점 보류**: 프론트엔드 구현 완료 후 진행 예정.
+> 엔티티가 프론트 구현 과정에서 추가 변경될 수 있으므로 스키마가 안정화된 시점에 한 번에 반영한다.
+
 | 항목 | 상태 | 비고 |
 |------|------|------|
-| `V1__init.sql` (전체 스키마 + Spring Batch 메타) | ⚠️ 수정 필요 | 신규 테이블 누락: `equipment_set_effects`, `ritual_set_effects`. 변경 컬럼: `equipment_sets`(setType→totalPieces+isTradeable), `item_stats`(stat_unit 추가), `listing_bundles`(equipment_set_id 추가), `bundle_lines`(equipment_set_piece_id 추가) |
+| `V1__init.sql` (전체 스키마 + Spring Batch 메타) | ⚠️ 수정 필요 | 신규 테이블 누락: `equipment_set_effects`, `ritual_set_effects`, **`set_granted_skills`**, **`equipment_set_skill_effects`**. 변경 컬럼: `equipment_sets`(setType→totalPieces+isTradeable+**enhancement**), `equipment_items`(**mercenary_id, enhancement** 추가), `item_skills`(**skill_behavior_type·replaces_base_skill·trigger_every_n·trigger_base_skill_key·note** 추가), `skill_coefficients`(**set_granted_skill_id** 추가), `item_stats`(stat_unit 추가), `listing_bundles`(equipment_set_id 추가), `bundle_lines`(equipment_set_piece_id 추가) |
 | `V2__seed_servers.sql` (서버 13개) | ✅ 작성 | 서버명은 임시값 — 실제 게임 서버명으로 업데이트 필요 |
 | `V3__seed_rituals.sql` (주술 정의) | ❌ 없음 | 크롤링으로 적재 예정이면 불필요할 수 있음 |
 | Flyway 위치 설정 (`classpath:db/migration`) | ✅ 완료 | `application.yml` — `FLYWAY_ENABLED` 환경변수로 on/off |
@@ -514,7 +466,7 @@
 | `spring.batch.jdbc.initialize-schema=never` 전환 | ❌ 없음 | `BATCH_SCHEMA_INIT=never` 환경변수로 전환 |
 | 실제 DB 기동 후 스키마 오류 없음 검증 | ❌ 미확인 | |
 
-**100% 조건**: `FLYWAY_ENABLED=true, DDL_AUTO=validate` 설정 후 기동 성공 + 서버명 실제값 업데이트
+**100% 조건**: 프론트 구현 완료 후 `V1` 업데이트 → `FLYWAY_ENABLED=true, DDL_AUTO=validate` 기동 성공
 
 ---
 
@@ -563,17 +515,16 @@
 1-5.  채팅 기반 거래 신청·확정 흐름    ██████████████████████ 100%  ← 완료
 1-6.  신고 시스템 + 키워드 감지        █████████████████████░  95%  ← 어뷰징 모니터링만 남음
 1-7.  시세 조회                        ██████████████████████ 100%  ← 완료 (days 파라미터 추가)
-1-8.  유저 프로필·등급                 ██████████████████████ 100%  ← 완료 (PATCH /me·공개프로필·등급 API 추가)
+1-8.  유저 프로필·등급                 ██████████████████████ 100%  ← 완료 (프로필사진·클리어타임 추가)
 1-9.  거래 평가 (블라인드 리뷰)        ██████████████████████ 100%  ← 완료 (타 유저 리뷰 조회 추가)
 1-10. 알림 시스템 (SSE)               ██████████████████████ 100%  ← 완료
 
 [추가 기능]
 2-1. 능력치 가성비 비교                ███░░░░░░░░░░░░░░░░░░░  15%
-2-2. 데미지 계산기                     ██░░░░░░░░░░░░░░░░░░░░  10%  ← 설계 전면 재작성 예정
-2-3. 크롤링 Job 1 (마스터)             █████████████████░░░░░  80%  ← 거상짱 전환+DB 적재 완료
-2-4. 크롤링 Job 2 (가격)               ██████████░░░░░░░░░░░░  50%
-2-5. 관리자 기능                       █████████████████████░  95%  ← 스킬계수·세트 관리자 API 추가
-2-6. 개인화 서비스 & 캐싱             ██████████████████░░░░  80%  ← 덱 CRUD·슬롯·주술·스탯 조회 API 구현 완료
+2-2. 데미지 계산기                     ██████████████████████ 100%  ← 완료 (DpsCalculatorService + API + 테스트 11케이스)
+2-3. 크롤링 Job 1 (마스터)             ██████████████████████ 100%  ← 완료 (아이템·용병·스킬 실 환경 적재 확인)
+2-5. 관리자 기능                       ██████████████████████ 100%  ← 완료
+2-6. 개인화 서비스 & 캐싱             ██████████████████░░░░  80%  ← 덱 CRUD·슬롯·주술·스탯 조회 API 구현 완료, 전설장수 엔티티 확장 완료
 2-7. 몬스터 크롤링 & 조회 API          ████████████████████░░  90%  ← Monster 엔티티·파서·Tasklet·조회 API 구현
 
 [인프라·배포]
@@ -594,13 +545,11 @@ MVP 중 미완성 항목.
 3. **1-1 인증 (OAuth2)** — 네이버 앱 등록 + 환경변수 설정 (코드는 완성)
 
 ### Phase 2 — 추가 기능
-4. **2-3 크롤링 Job 1 (마스터)** — `statUnit` 파싱·저장, `EquipmentSetEffect`/`RitualSetEffect` 수집, 파싱 단위 테스트
-5. **2-4 크롤링 Job 2 (가격)** — IQR 단위 테스트 + 트랜잭션 범위 수정
-6. **2-7 몬스터 크롤링** — 실 환경 크롤링 실행·적재 확인
-7. **2-6 개인화 서비스 & 캐싱** — 덱 CRUD API + `RecommendationService` + Spring Cache 설정
-8. **2-2 데미지 계산기** — `DpsCalculator` 유틸 분리 + `DeckDpsService` 신규 구현 (2-6 덱 API 완성 후)
-9. **2-1 능력치 가성비 비교** — 월간 집계 배치 + 조회 API (2-2 완성 후)
-10. **2-5 관리자 기능** — 등록글 숨김 서비스 단위 테스트 보강
+4. ~~**2-3 크롤링 Job 1 (마스터)**~~ ✅ 완료
+5. **2-7 몬스터 크롤링** — 실 환경 크롤링 실행·적재 확인
+6. **2-6 개인화 서비스 & 캐싱** — `RecommendationService` + Spring Cache 설정
+7. ~~**2-2 데미지 계산기**~~ ✅ 완료
+8. **2-1 능력치 가성비 비교** — 월간 집계 배치 + 조회 API
 
 ### Phase 3 — 배포 준비
 11. **3-1 Flyway 전체 완성** — `DDL_AUTO=validate` 전환 + 실 DB 기동 검증

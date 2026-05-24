@@ -5,6 +5,7 @@ import org.example.gersangtrade.catalog.dto.ItemSearchResult;
 import org.example.gersangtrade.domain.catalog.enums.EquipmentKind;
 import org.example.gersangtrade.domain.catalog.enums.EquipmentSlot;
 import org.example.gersangtrade.domain.catalog.enums.ItemType;
+import org.example.gersangtrade.domain.deck.enums.EquipSlot;
 import org.jooq.DSLContext;
 import org.springframework.stereotype.Repository;
 import org.springframework.util.StringUtils;
@@ -63,9 +64,9 @@ public class ItemJooqRepository {
         String containsPattern = "%" + keyword + "%";
 
         StringBuilder sql = new StringBuilder("""
-                SELECT i.id, i.name, i.type,
-                       ei.equipment_kind, ei.slot,
-                       es.name AS set_name,
+                SELECT i.id, i.name, i.type, i.image_url,
+                       ei.equipment_kind, ei.slot, ei.equip_slot,
+                       es.id AS set_id, es.name AS set_name,
                        mi.stack_unit_name,
                        CASE WHEN i.name LIKE ? THEN 0 ELSE 1 END AS match_priority
                 FROM items i
@@ -102,8 +103,11 @@ public class ItemJooqRepository {
                         parseEnum(ItemType.class, r.get("type", String.class)),
                         parseEnum(EquipmentKind.class, r.get("equipment_kind", String.class)),
                         parseEnum(EquipmentSlot.class, r.get("slot", String.class)),
+                        r.get("set_id", Long.class),
                         r.get("set_name", String.class),
-                        r.get("stack_unit_name", String.class)
+                        r.get("stack_unit_name", String.class),
+                        r.get("image_url", String.class),
+                        parseEnum(EquipSlot.class, r.get("equip_slot", String.class))
                 ));
     }
 

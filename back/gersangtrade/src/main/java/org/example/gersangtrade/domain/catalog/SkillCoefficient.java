@@ -20,6 +20,7 @@ import org.example.gersangtrade.domain.catalog.enums.SkillType;
  * 원데미지 = coef_str×STR + coef_dex×DEX + coef_vit×VIT + coef_int×INT + coef_atk×ATK + coef_lvl×LVL
  * INSTANT:    DPS = 원데미지 × hitCount × castsPerSecond
  * PERSISTENT: DPS = 원데미지 / (tickIntervalMs / 1000.0)
+ * TRIGGER:    trigger_every_n은 연결된 ItemSkill 또는 SetGrantedSkill에서 조회
  */
 @Entity
 @Table(
@@ -52,6 +53,15 @@ public class SkillCoefficient {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "item_skill_id")
     private ItemSkill itemSkill;
+
+    /**
+     * 세트 부여 스킬 FK.
+     * mercenarySkill·itemSkill이 not null이면 이 필드는 null.
+     * 전설장수 세트 n종 달성 시 발동되는 스킬 (예: 최무선 10강 7종 → 천자총통:개량).
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "set_granted_skill_id")
+    private SetGrantedSkill setGrantedSkill;
 
     /** 스킬 계수 원본 row_id — upsert 기준 키. Skill-coeff-entity.json의 row_id와 대응한다. */
     @Column(name = "row_id", length = 100)
@@ -93,9 +103,10 @@ public class SkillCoefficient {
     private float damageRangeFactor;
 
     /**
-     * 스킬 시전 방식.
-     * INSTANT: 즉발형 → casts_per_second로 DPS 계산.
+     * 스킬 DPS 계산 방식.
+     * INSTANT:    즉발형 → casts_per_second로 DPS 계산.
      * PERSISTENT: 지속/장판형 → tick_interval_ms로 DPS 계산.
+     * TRIGGER:    트리거형 → 연결된 ItemSkill/SetGrantedSkill의 trigger_every_n 참조.
      * 거니버스 데이터에 없으므로 수동 분류가 필요하다.
      */
     @Enumerated(EnumType.STRING)
@@ -144,6 +155,33 @@ public class SkillCoefficient {
                             String confidence, String measurementNote) {
         this.mercenarySkill = mercenarySkill;
         this.itemSkill = null;
+        this.rowId = rowId;
+        this.coefStr = coefStr;
+        this.coefDex = coefDex;
+        this.coefVit = coefVit;
+        this.coefInt = coefInt;
+        this.coefAtk = coefAtk;
+        this.coefLvl = coefLvl;
+        this.hitCount = hitCount;
+        this.damageRangeFactor = damageRangeFactor;
+        this.skillType = skillType;
+        this.castsPerSecond = castsPerSecond;
+        this.tickIntervalMs = tickIntervalMs;
+        this.confidence = confidence;
+        this.measurementNote = measurementNote;
+    }
+
+    /** 세트 부여 스킬용 생성자 */
+    @Builder(builderMethodName = "ofSetGrantedSkill")
+    public SkillCoefficient(SetGrantedSkill setGrantedSkill, String rowId,
+                            float coefStr, float coefDex, float coefVit, float coefInt,
+                            float coefAtk, float coefLvl, int hitCount,
+                            float damageRangeFactor, SkillType skillType,
+                            Float castsPerSecond, Integer tickIntervalMs,
+                            String confidence, String measurementNote) {
+        this.mercenarySkill = null;
+        this.itemSkill = null;
+        this.setGrantedSkill = setGrantedSkill;
         this.rowId = rowId;
         this.coefStr = coefStr;
         this.coefDex = coefDex;
@@ -225,5 +263,9 @@ public class SkillCoefficient {
 
     public boolean isItemSkill() {
         return itemSkill != null;
+    }
+
+    public boolean isSetGrantedSkill() {
+        return setGrantedSkill != null;
     }
 }

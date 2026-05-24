@@ -17,4 +17,13 @@ public interface MercenaryCharacteristicLevelRepository extends JpaRepository<Me
 
     /** 크롤링 재적재 시 특성 레벨 전체 삭제 */
     void deleteByCharacteristicId(Long characteristicId);
+
+    /** 특성 ID 목록으로 전체 레벨 수치 일괄 조회 — DPS 계산기 배치 로딩용 */
+    @org.springframework.data.jpa.repository.Query("""
+            SELECT l FROM MercenaryCharacteristicLevel l
+            JOIN FETCH l.characteristic
+            WHERE l.characteristic.id IN :characteristicIds
+            """)
+    List<MercenaryCharacteristicLevel> findByCharacteristicIdIn(
+            @org.springframework.data.repository.query.Param("characteristicIds") List<Long> characteristicIds);
 }

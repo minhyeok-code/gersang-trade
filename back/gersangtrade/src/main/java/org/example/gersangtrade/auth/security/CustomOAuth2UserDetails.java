@@ -15,7 +15,7 @@ import java.util.Map;
  * User 엔티티와 OAuth2 제공자의 원본 attributes를 함께 보관한다.
  */
 @Getter
-public class CustomOAuth2UserDetails implements OAuth2User {
+public class CustomOAuth2UserDetails implements OAuth2User, CustomUserPrincipal {
 
     /** DB에 저장된 사용자 엔티티 */
     private final User user;

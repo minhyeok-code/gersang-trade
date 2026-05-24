@@ -37,6 +37,9 @@ public class PlayerCharacterBuffCalculator {
      * 해당 Element 속성을 가진 아군 용병의 ELEMENT_VALUE에 value를 가산한다.
      */
     public NationBuff getNationBuff(Nation nation) {
+        if (nation == null) {
+            return new NationBuff(Element.NONE, 0f);
+        }
         return switch (nation) {
             case JOSEON -> new NationBuff(Element.FIRE,    5f);
             case JAPAN  -> new NationBuff(Element.WATER,   5f);

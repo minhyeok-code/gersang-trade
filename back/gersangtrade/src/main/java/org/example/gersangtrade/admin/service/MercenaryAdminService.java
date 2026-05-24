@@ -13,6 +13,7 @@ import org.example.gersangtrade.admin.dto.response.MercenaryAdminResponse;
 import org.example.gersangtrade.admin.dto.response.MercenaryDetailAdminResponse;
 import org.example.gersangtrade.catalog.repository.MercenaryCharacteristicLevelRepository;
 import org.example.gersangtrade.catalog.repository.MercenaryCharacteristicRepository;
+import org.example.gersangtrade.catalog.repository.MercenaryMaterialRepository;
 import org.example.gersangtrade.catalog.repository.MercenaryRepository;
 import org.example.gersangtrade.catalog.repository.MercenarySkillRepository;
 import org.example.gersangtrade.catalog.repository.MercenaryStatRepository;
@@ -25,14 +26,15 @@ import org.example.gersangtrade.domain.catalog.enums.MercenaryCategory;
 import org.example.gersangtrade.domain.catalog.enums.Nation;
 import org.example.gersangtrade.domain.catalog.enums.Nature;
 import org.example.gersangtrade.domain.catalog.enums.StatType;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.example.gersangtrade.config.CacheConfig;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
-
-import java.util.List;
 
 import java.util.List;
 import java.util.Map;
@@ -47,6 +49,7 @@ public class MercenaryAdminService {
     private final MercenaryCharacteristicLevelRepository levelRepository;
     private final MercenaryStatRepository statRepository;
     private final MercenarySkillRepository skillRepository;
+    private final MercenaryMaterialRepository mercenaryMaterialRepository;
 
     // ── 용병 상세 조회 ───────────────────────────────────────────────────────────
 
@@ -68,6 +71,7 @@ public class MercenaryAdminService {
      * name은 null/공백이면 기존 값을 유지한다 (엔티티 updateInfo 동일 정책).
      */
     @Transactional
+    @CacheEvict(value = CacheConfig.MERCENARIES, allEntries = true)
     public MercenaryDetailAdminResponse updateInfo(Long mercenaryId, MercenaryUpdateRequest req) {
         Mercenary mercenary = getMercenaryOrThrow(mercenaryId);
         mercenary.updateInfo(req.name(), req.category(), req.nation(),
@@ -84,6 +88,7 @@ public class MercenaryAdminService {
      * 기존 스탯을 전부 삭제하고 요청 목록으로 재적재한다.
      */
     @Transactional
+    @CacheEvict(value = CacheConfig.MERCENARIES, allEntries = true)
     public MercenaryDetailAdminResponse replaceStats(Long mercenaryId, MercenaryStatReplaceRequest req) {
         Mercenary mercenary = getMercenaryOrThrow(mercenaryId);
         statRepository.deleteByMercenaryId(mercenaryId);
@@ -105,6 +110,7 @@ public class MercenaryAdminService {
      * 기존 스킬을 전부 삭제하고 요청 목록으로 재적재한다.
      */
     @Transactional
+    @CacheEvict(value = CacheConfig.MERCENARIES, allEntries = true)
     public MercenaryDetailAdminResponse replaceSkills(Long mercenaryId, SkillReplaceRequest req) {
         Mercenary mercenary = getMercenaryOrThrow(mercenaryId);
         skillRepository.deleteByMercenaryId(mercenaryId);
@@ -157,6 +163,7 @@ public class MercenaryAdminService {
      * 해당 statType이 이미 있으면 값을 업데이트하고, 없으면 새로 추가한다.
      */
     @Transactional
+    @CacheEvict(value = CacheConfig.MERCENARIES, allEntries = true)
     public MercenaryAdminResponse.StatEntry patchStat(Long mercenaryId, StatType statType, int value) {
         Mercenary mercenary = getMercenaryOrThrow(mercenaryId);
         MercenaryStat stat = statRepository
@@ -180,6 +187,7 @@ public class MercenaryAdminService {
      * @return 변경된 총 행 수
      */
     @Transactional
+    @CacheEvict(value = CacheConfig.MERCENARIES, allEntries = true)
     public int bulkUpdate(MercenaryBulkUpdateRequest req) {
         if (req.ids() == null || req.ids().isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "ids는 1개 이상이어야 합니다.");
@@ -251,7 +259,7 @@ public class MercenaryAdminService {
             requiredKey = parent.getKey();
         }
 
-        String key = generateKey(mercenaryId, req.name());
+        String key = generateKey(mercenary, req.name());
         MercenaryCharacteristic saved = characteristicRepository.save(
                 MercenaryCharacteristic.builder()
                         .mercenary(mercenary)
@@ -344,6 +352,38 @@ public class MercenaryAdminService {
         return CharacteristicAdminResponse.from(characteristic, requiredId, saved);
     }
 
+    // ── 용병 하드 삭제 ───────────────────────────────────────────────────────────
+
+    /**
+     * 용병과 관리자 입력 하위 데이터를 실제 삭제한다.
+     * 덱, 장비, 전직 재료 등 다른 데이터에서 참조 중이면 삭제를 거부한다.
+     */
+    @Transactional
+    @CacheEvict(value = CacheConfig.MERCENARIES, allEntries = true)
+    public void deleteMercenary(Long mercenaryId) {
+        Mercenary mercenary = getMercenaryOrThrow(mercenaryId);
+        if (mercenaryMaterialRepository.existsByMaterialMercenaryId(mercenaryId)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "다른 용병의 재료로 사용 중인 용병은 삭제할 수 없습니다.");
+        }
+
+        try {
+            for (MercenaryCharacteristic characteristic : characteristicRepository.findByMercenaryId(mercenaryId)) {
+                levelRepository.deleteByCharacteristicId(characteristic.getId());
+            }
+            characteristicRepository.deleteByMercenaryId(mercenaryId);
+            statRepository.deleteByMercenaryId(mercenaryId);
+            skillRepository.deleteByMercenaryId(mercenaryId);
+            mercenaryMaterialRepository.deleteByResultMercenaryId(mercenaryId);
+
+            mercenaryRepository.delete(mercenary);
+            mercenaryRepository.flush();
+        } catch (DataIntegrityViolationException e) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "다른 데이터에서 참조 중인 용병은 삭제할 수 없습니다.", e);
+        }
+    }
+
     // ── 내부 헬퍼 ────────────────────────────────────────────────────────────────
 
     private Mercenary getMercenaryOrThrow(Long id) {
@@ -376,9 +416,9 @@ public class MercenaryAdminService {
         }
     }
 
-    /** 특성 내부 키 자동 생성 — "merc-{mercenaryId}-{name슬러그}" */
-    private String generateKey(Long mercenaryId, String name) {
+    /** 특성 내부 키 자동 생성 — "{mercenary.key}-{name슬러그}" */
+    private String generateKey(Mercenary mercenary, String name) {
         String slug = name.replaceAll("[^가-힣a-zA-Z0-9]", "");
-        return "merc-" + mercenaryId + "-" + slug;
+        return mercenary.getKey() + "-" + slug;
     }
 }

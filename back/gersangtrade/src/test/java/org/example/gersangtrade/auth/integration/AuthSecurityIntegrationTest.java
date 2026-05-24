@@ -8,6 +8,7 @@ import org.example.gersangtrade.auth.handler.OAuth2LoginSuccessHandler;
 import org.example.gersangtrade.auth.jwt.JwtTokenizer;
 import org.example.gersangtrade.auth.service.AuthService;
 import org.example.gersangtrade.auth.service.CustomOAuth2UserService;
+import org.example.gersangtrade.auth.service.CustomOidcUserService;
 import org.example.gersangtrade.config.OAuth2ClientRegistrationConfig;
 import org.example.gersangtrade.config.SecurityConfig;
 import org.example.gersangtrade.auth.service.AuthService.RefreshResult;
@@ -67,6 +68,9 @@ class AuthSecurityIntegrationTest {
     private CustomOAuth2UserService customOAuth2UserService;
 
     @MockitoBean
+    private CustomOidcUserService customOidcUserService;
+
+    @MockitoBean
     private OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler;
 
     @MockitoBean
@@ -89,6 +93,12 @@ class AuthSecurityIntegrationTest {
 
     @MockitoBean(name = "setDataJob")
     private Job setDataJob;
+
+    @MockitoBean(name = "ritualDataJob")
+    private Job ritualDataJob;
+
+    @MockitoBean(name = "monsterDataJob")
+    private Job monsterDataJob;
 
     @MockitoBean(name = "priceCrawlJob")
     private Job priceCrawlJob;
