@@ -28,6 +28,8 @@ public class SpiritSeeder implements ApplicationRunner {
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
+        correctWaterLegendBuffs(); // 기존 DB: ADAPTIVE → 4속성 명시 정정
+
         long count = spiritRepository.count();
         if (count >= 25) {
             log.debug("정령 시딩 skip: 이미 {}개 존재", count);
@@ -44,6 +46,32 @@ public class SpiritSeeder implements ApplicationRunner {
     }
 
     // ── 헬퍼 ──────────────────────────────────────────────────────────────────
+
+    /** 기존 DB에 ADAPTIVE로 저장된 물 전설 속성값 버프를 토 제외 4속성 명시로 정정한다. */
+    private void correctWaterLegendBuffs() {
+        spiritRepository.findByNatureAndGrade(Nature.WATER, SpiritGrade.LEGEND).ifPresent(spirit -> {
+            boolean hasAdaptive = spirit.getBuffs().stream()
+                    .anyMatch(b -> b.getElement() == Element.ADAPTIVE
+                            && b.getStatType() == StatType.ELEMENT_VALUE);
+            if (!hasAdaptive) return;
+
+            log.info("물 전설 정령 버프 정정: ADAPTIVE+5 → 화/수/풍/뇌 각 +5, 토 +2");
+            List<SpiritBuff> nonElementBuffs = spirit.getBuffs().stream()
+                    .filter(b -> b.getStatType() != StatType.ELEMENT_VALUE)
+                    .toList();
+
+            spirit.getBuffs().clear();
+            spirit.getBuffs().addAll(nonElementBuffs);
+            for (Element el : List.of(Element.FIRE, Element.WATER, Element.WIND, Element.THUNDER)) {
+                spirit.getBuffs().add(SpiritBuff.builder().spirit(spirit)
+                        .target(BuffTarget.ALLY).element(el).statType(StatType.ELEMENT_VALUE)
+                        .statUnit(StatUnit.FLAT).value(5f).build());
+            }
+            spirit.getBuffs().add(SpiritBuff.builder().spirit(spirit)
+                    .target(BuffTarget.ALLY).element(Element.EARTH).statType(StatType.ELEMENT_VALUE)
+                    .statUnit(StatUnit.FLAT).value(2f).build());
+        });
+    }
 
     private void upsert(Nature nature, SpiritGrade grade, String name,
                         String acquireCondition, String specialEffectNote,
@@ -115,12 +143,15 @@ public class SpiritSeeder implements ApplicationRunner {
         upsert(Nature.WATER, SpiritGrade.LEGEND, "어린 심아리",
                 "친밀도50000, 안정된푸른시약, 물의정령옥30, 봉인의서3, 푸른색알", null,
                 List.of(
-                        buff(BuffTarget.ENEMY,    Element.NONE,     StatType.MOVE_SPEED,    StatUnit.PERCENT, -8f),
-                        buff(BuffTarget.ENEMY,    Element.NONE,     StatType.ATTACK_SPEED,  StatUnit.PERCENT, -8f),
-                        buff(BuffTarget.ALLY,     Element.ADAPTIVE, StatType.ELEMENT_VALUE, StatUnit.FLAT,     5f),
-                        buff(BuffTarget.ALLY,     Element.EARTH,    StatType.ELEMENT_VALUE, StatUnit.FLAT,     2f),
-                        buff(BuffTarget.ALLY,     Element.NONE,     StatType.MIN_POWER,     StatUnit.FLAT,   200f),
-                        buff(BuffTarget.ALLY,     Element.NONE,     StatType.MAX_POWER,     StatUnit.FLAT,   200f)
+                        buff(BuffTarget.ENEMY, Element.NONE,    StatType.MOVE_SPEED,    StatUnit.PERCENT, -8f),
+                        buff(BuffTarget.ENEMY, Element.NONE,    StatType.ATTACK_SPEED,  StatUnit.PERCENT, -8f),
+                        buff(BuffTarget.ALLY,  Element.FIRE,    StatType.ELEMENT_VALUE, StatUnit.FLAT,     5f),
+                        buff(BuffTarget.ALLY,  Element.WATER,   StatType.ELEMENT_VALUE, StatUnit.FLAT,     5f),
+                        buff(BuffTarget.ALLY,  Element.WIND,    StatType.ELEMENT_VALUE, StatUnit.FLAT,     5f),
+                        buff(BuffTarget.ALLY,  Element.THUNDER, StatType.ELEMENT_VALUE, StatUnit.FLAT,     5f),
+                        buff(BuffTarget.ALLY,  Element.EARTH,   StatType.ELEMENT_VALUE, StatUnit.FLAT,     2f),
+                        buff(BuffTarget.ALLY,  Element.NONE,    StatType.MIN_POWER,     StatUnit.FLAT,   200f),
+                        buff(BuffTarget.ALLY,  Element.NONE,    StatType.MAX_POWER,     StatUnit.FLAT,   200f)
                 ));
     }
 

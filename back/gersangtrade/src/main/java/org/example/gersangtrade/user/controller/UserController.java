@@ -3,6 +3,7 @@ package org.example.gersangtrade.user.controller;
 import lombok.RequiredArgsConstructor;
 import jakarta.validation.Valid;
 import org.example.gersangtrade.listing.dto.response.ListingSummaryResponse;
+import org.example.gersangtrade.trade.dto.response.TradeHistoryResponse;
 import org.example.gersangtrade.trade.dto.response.TradeReviewResponse;
 import org.example.gersangtrade.trade.service.TradeReviewService;
 import org.example.gersangtrade.user.dto.request.ClearTimeRequest;
@@ -26,6 +27,7 @@ import java.util.List;
  * GET    /api/users/me                — 내 프로필 조회 (로그인 필수)
  * PATCH  /api/users/me                — 내 프로필 수정 (로그인 필수)
  * GET    /api/users/me/listings       — 내 등록글 목록 조회 (로그인 필수)
+ * GET    /api/users/me/trades        — 내 거래 확정 내역 조회 (로그인 필수)
  * PATCH  /api/users/me/server         — 기본 서버 변경 (로그인 필수)
  * DELETE /api/users/me               — 회원 탈퇴 (소프트 삭제, 로그인 필수)
  * GET    /api/users/{userId}          — 타 유저 공개 프로필 (인증 불필요)
@@ -65,6 +67,20 @@ public class UserController {
     public ResponseEntity<List<ListingSummaryResponse>> getMyListings(
             @AuthenticationPrincipal Long userId) {
         return ResponseEntity.ok(userService.getMyListings(userId));
+    }
+
+    /**
+     * 내 거래 확정 내역 조회.
+     * 판매자·구매자 양쪽으로 참여한 완료 거래를 모두 반환한다.
+     *
+     * @param userId 로그인된 사용자 인증 정보
+     * @return 거래 확정 내역 목록
+     */
+    @GetMapping("/me/trades")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<List<TradeHistoryResponse>> getMyTradeHistory(
+            @AuthenticationPrincipal Long userId) {
+        return ResponseEntity.ok(userService.getMyTradeHistory(userId));
     }
 
     /**

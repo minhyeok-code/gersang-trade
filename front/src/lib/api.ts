@@ -7,10 +7,12 @@ export function getToken(): string | null {
 
 export function setToken(token: string) {
   localStorage.setItem('accessToken', token);
+  window.dispatchEvent(new Event('auth-changed'));
 }
 
 export function clearToken() {
   localStorage.removeItem('accessToken');
+  window.dispatchEvent(new Event('auth-changed'));
 }
 
 export function getTokenRole(): string | null {
@@ -21,15 +23,12 @@ export function getTokenRole(): string | null {
     const payload = token.split('.')[1];
     if (!payload) return null;
 
-    // JWT payload는 base64url 인코딩이므로 브라우저에서 읽을 수 있게 변환한다.
-    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
-    const json = decodeURIComponent(
-      atob(base64)
-        .split('')
-        .map((char) => `%${char.charCodeAt(0).toString(16).padStart(2, '0')}`)
-        .join('')
-    );
-    const claims = JSON.parse(json) as { role?: string };
+    // JWT payload는 base64url 인코딩 — 패딩 보정 후 파싱
+    let base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const pad = base64.length % 4;
+    if (pad) base64 += '='.repeat(4 - pad);
+
+    const claims = JSON.parse(atob(base64)) as { role?: string };
     return claims.role ?? null;
   } catch {
     return null;
@@ -44,6 +43,23 @@ export function getServer(): string | null {
 export function setServer(server: string) {
   if (typeof window === 'undefined') return;
   localStorage.setItem('selectedServer', server);
+  window.dispatchEvent(new Event('server-changed'));
+}
+
+/** 채팅 메시지 — sentAt 기준 오래된 순(위→아래) */
+export function sortChatMessages(messages: ChatMessageDto[]): ChatMessageDto[] {
+  return [...messages].sort((a, b) => {
+    const ta = a.sentAt ?? a.createdAt ?? '';
+    const tb = b.sentAt ?? b.createdAt ?? '';
+    return ta.localeCompare(tb);
+  });
+}
+
+/** localStorage의 serverId → 서버명 (리스팅 API server 필터용) */
+export function getSelectedServerName(servers: ServerDto[]): string | null {
+  const serverId = getServer();
+  if (!serverId) return null;
+  return servers.find((s) => String(s.serverId) === serverId)?.name ?? null;
 }
 
 async function request<T>(path: string, options: RequestInit = {}, withServer = false): Promise<T> {
@@ -71,7 +87,7 @@ async function request<T>(path: string, options: RequestInit = {}, withServer = 
 
 export const api = {
   // ── 인증 ──
-  logout: () => request<void>('/api/auth/logout', { method: 'POST' }),
+  logout: () => request<void>('/auth/logout', { method: 'POST' }),
 
   // ── 서버 ──
   getServers: () => request<ServerDto[]>('/api/servers'),
@@ -88,12 +104,23 @@ export const api = {
     });
     return request<ItemSearchResult[]>(`/api/items/search?${sp}`);
   },
-  getItemRituals: (itemId: number) => request<unknown[]>(`/api/items/${itemId}/rituals`),
+  getItemRituals: (itemId: number) => request<RitualDto[]>(`/api/items/${itemId}/rituals`),
   getItemPriceHistory: (itemId: number, days?: number) => {
     const sp = days ? `?days=${days}` : '';
     return request<PriceHistoryDto>(`/api/items/${itemId}/price-history${sp}`);
   },
   getEquipmentBySlot: (slot: string) => request<EquipmentItemDto[]>(`/api/items/equipment?slot=${slot}`),
+  /** 덱 설정 페이지 초기 로딩 — 슬롯별 장비 API를 병렬 호출 */
+  getEquipmentByAllSlots: async (slots: string[]) => {
+    const results = await Promise.all(
+      slots.map((slot) =>
+        request<EquipmentItemDto[]>(`/api/items/equipment?slot=${slot}`)
+          .then((items) => ({ slot, items }))
+          .catch(() => ({ slot, items: [] as EquipmentItemDto[] }))
+      )
+    );
+    return Object.fromEntries(results.map(({ slot, items }) => [slot, items])) as Record<string, EquipmentItemDto[]>;
+  },
   getSets: () => request<unknown[]>('/api/sets'),
   getSet: (setId: number) => request<unknown>(`/api/sets/${setId}`),
 
@@ -121,20 +148,29 @@ export const api = {
   // ── 채팅 ──
   getChatRooms: () => request<ChatRoomSummaryDto[]>('/api/chat-rooms'),
   getChatRoom: (id: number) => request<ChatRoomDetailDto>(`/api/chat-rooms/${id}`),
+  markChatRoomRead: (roomId: number) =>
+    request<void>(`/api/chat-rooms/${roomId}/read`, { method: 'POST' }),
   createChatRoom: (body: unknown) =>
     request<unknown>('/api/chat-rooms', { method: 'POST', body: JSON.stringify(body) }),
   sendMessage: (roomId: number, content: string) =>
-    request<unknown>(`/api/chat-rooms/${roomId}/messages`, {
+    request<ChatMessageDto>(`/api/chat-rooms/${roomId}/messages`, {
       method: 'POST',
       body: JSON.stringify({ content }),
     }),
-  posterConfirm: (roomId: number, finalPrice?: number) =>
-    request<unknown>(`/api/chat-rooms/${roomId}/poster-confirm`, {
+  confirmTrade: (roomId: number, finalPrice?: number) =>
+    request<ChatRoomSummaryDto>(`/api/chat-rooms/${roomId}/trade-confirm`, {
       method: 'POST',
-      body: JSON.stringify({ finalPrice }),
+      body: JSON.stringify({ finalPrice: finalPrice ?? null }),
     }),
+  /** @deprecated confirmTrade 사용 */
+  posterConfirm: (roomId: number, finalPrice?: number) =>
+    request<unknown>(`/api/chat-rooms/${roomId}/trade-confirm`, {
+      method: 'POST',
+      body: JSON.stringify({ finalPrice: finalPrice ?? null }),
+    }),
+  /** @deprecated confirmTrade 사용 */
   counterpartyConfirm: (roomId: number) =>
-    request<unknown>(`/api/chat-rooms/${roomId}/counterparty-confirm`, { method: 'POST' }),
+    request<unknown>(`/api/chat-rooms/${roomId}/trade-confirm`, { method: 'POST', body: '{}' }),
 
   // ── 유저 ──
   getMe: () => request<UserDto>('/api/users/me'),
@@ -144,6 +180,7 @@ export const api = {
     request<void>('/api/users/me/server', { method: 'PATCH', body: JSON.stringify({ serverId }) }),
   getUser: (userId: number) => request<UserDto>(`/api/users/${userId}`),
   getMyListings: () => request<unknown[]>('/api/users/me/listings'),
+  getMyTrades: () => request<unknown[]>('/api/users/me/trades'),
   deleteMe: () => request<void>('/api/users/me', { method: 'DELETE' }),
 
   // ── 덱 ──
@@ -236,7 +273,7 @@ export const api = {
 // ── 타입 정의 ──
 
 export interface ServerDto {
-  id: number;
+  serverId: number;
   name: string;
 }
 
@@ -289,25 +326,34 @@ export interface BundleDto {
 
 export interface WantedDto {
   id: number;
-  price: number;
-  status: string;
-  server: string;
-  description?: string;
-  createdAt: string;
-  buyer: {
+  /** 목록 API — 구매자 닉네임 (flat) */
+  buyerName?: string;
+  /** 상세 API 등 — 중첩 buyer (레거시/확장) */
+  buyer?: {
     id: number;
     nickname: string;
     gameNickname?: string;
     gameAccessTime?: string;
     grade?: string;
   };
+  /** 목록 API */
+  offeredPrice?: number;
+  price?: number;
+  status: string;
+  server: string;
+  note?: string;
+  description?: string;
+  /** 목록 API — 구매 희망 아이템명 목록 */
+  itemNames?: string[];
   itemName?: string;
   setName?: string;
+  createdAt: string;
 }
 
 export interface UserDto {
   id: number;
   nickname: string;
+  role?: 'USER' | 'ADMIN';
   email: string;
   gameNickname?: string;
   gameAccessTime?: string;
@@ -325,9 +371,14 @@ export interface UserDto {
 
 export interface GradeDto {
   grade: string;
-  gradeStep: number;
+  gradeStep: number | null;
+  stepUnit: string | null;
+  maxStep: number;
+  expPerStep: number;
+  stepProgressExp: number;
   totalExp: number;
-  nextLevelExp: number;
+  mannerScore?: number;
+  tradeCount?: number;
 }
 
 export interface NotificationDto {
@@ -352,6 +403,9 @@ export interface ChatRoomSummaryDto {
   status: string;
   finalPrice?: number;
   createdAt: string;
+  hasUnread?: boolean;
+  myTradeConfirmed?: boolean;
+  partnerTradeConfirmed?: boolean;
 }
 
 export interface ChatMessageDto {
@@ -380,6 +434,8 @@ export interface ChatRoomDetailDto {
   counterpartyNickname: string;
   posterConfirmedAt?: string;
   counterpartyConfirmedAt?: string;
+  myTradeConfirmed?: boolean;
+  partnerTradeConfirmed?: boolean;
   completedAt?: string;
   messages: ChatMessageDto[];
 }
@@ -416,8 +472,12 @@ export interface MonsterDto {
   name: string;
   imageUrl?: string;
   element?: string;
-  resistance?: number;
+  hp?: number;
+  hittingResistance?: number;
+  magicResistance?: number;
   elementValue?: number;
+  /** 구 API 호환 */
+  resistance?: number;
 }
 
 export interface MercenaryDto {
@@ -448,9 +508,12 @@ export interface MemberStatsDto {
   partyCharacteristicStats?: { statType: string; value: number }[];
   enemyDebuffStats?: { statType: string; value: number }[];
   ritualStats?: { statType: string; value: number }[];
+  ritualSetEffectStats?: { statType: string; value: number }[];
   deckBuffStats?: { statType: string; value: number }[];
   levelBonusStats?: { statType: string; value: number }[];
   bonusStats?: { statType: string; value: number }[];
+  protagonistBuffStats?: { statType: string; value: number }[];
+  awakenedMyeongwangBuffStats?: { statType: string; value: number }[];
   resolvedMainStat?: string;
   myungwangTransferStats?: { statType: string; value: number }[];
   myungwangTransferDetails?: {
@@ -473,6 +536,7 @@ export interface MemberStatsDto {
     requiredPieces: number;
     statType: string;
     statValue: number;
+    statUnit?: 'FLAT' | 'PERCENT';
   }[];
   totalStats: { statType: string; value: number }[];
   slots: {
@@ -480,7 +544,7 @@ export interface MemberStatsDto {
     itemId: number;
     itemName: string;
     imageUrl?: string;
-    ritual?: { id: number; name: string; mark: string };
+    ritual?: SlotRitualDto | null;
   }[];
 }
 
@@ -574,9 +638,23 @@ export interface DeckDetailDto {
       itemId: number;
       itemName: string;
       imageUrl?: string;
-      ritual?: { id: number; name: string; mark: string };
+      ritual?: SlotRitualDto | null;
     }[];
   }[];
+}
+
+export interface RitualDto {
+  id: number;
+  displayName: string;
+  ritualType?: 'WEAPON' | 'ARMOR';
+  successMark?: string;
+  greatSuccessMark?: string | null;
+}
+
+export interface SlotRitualDto {
+  ritualId: number;
+  displayName: string;
+  outcome: 'SUCCESS' | 'GREAT_SUCCESS';
 }
 
 export interface EquipmentItemDto {
@@ -584,6 +662,7 @@ export interface EquipmentItemDto {
   itemId: number;
   name: string;
   slot?: string;
+  equipSlot?: string;
   equipmentKind?: string;
   imageUrl?: string;
   ritualApplicable?: boolean;

@@ -7,6 +7,7 @@ import org.example.gersangtrade.domain.notification.enums.NotificationType;
 import org.example.gersangtrade.domain.user.User;
 import org.example.gersangtrade.notification.dto.response.NotificationResponse;
 import org.example.gersangtrade.notification.repository.NotificationRepository;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -19,79 +20,66 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * 알림 서비스.
  *
- * SSE(Server-Sent Events) emitter를 사용자별로 관리하며,
- * 알림 발생 시 DB 저장과 실시간 push를 함께 처리한다.
+ * 알림 발생 시 DB 저장 후 WebSocket으로 실시간 push한다.
+ * SSE /subscribe 엔드포인트는 테스트 및 하위 호환용으로 유지한다.
  *
- * 오프라인 사용자: DB에만 저장 → 다음 SSE 연결 시점에 미읽음 목록으로 제공
- * 온라인 사용자: DB 저장 + SSE push (즉시 전달)
+ * 오프라인 사용자: DB에만 저장 → 다음 WS 연결 시점에 미읽음 목록으로 제공
+ * 온라인 사용자: DB 저장 + WebSocket push (즉시 전달)
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class NotificationService {
 
-    /** SSE 연결 유지 시간 (30분) */
     private static final long SSE_TIMEOUT_MS = 30 * 60 * 1000L;
 
     private final NotificationRepository notificationRepository;
+    private final SimpMessagingTemplate messagingTemplate;
 
-    /** userId → SseEmitter 연결 관리 (사용자당 최신 연결 1개 유지) */
+    /** userId → SseEmitter (SSE 테스트 엔드포인트 전용) */
     private final Map<Long, SseEmitter> emitters = new ConcurrentHashMap<>();
 
     // ──────────────────────────────────────────────────────────────────────
-    // SSE 구독
+    // SSE 구독 (테스트·하위 호환용)
     // ──────────────────────────────────────────────────────────────────────
 
-    /**
-     * SSE 구독 — 연결 즉시 미읽음 알림 전송 후 대기.
-     * 같은 사용자의 기존 연결이 있으면 종료 후 새 연결로 교체한다.
-     */
     public SseEmitter subscribe(Long userId) {
-        // 기존 연결 종료
         SseEmitter existing = emitters.remove(userId);
-        if (existing != null) {
-            existing.complete();
-        }
+        if (existing != null) existing.complete();
 
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
         emitters.put(userId, emitter);
 
-        // 연결 종료·만료·에러 시 emitter 제거
         emitter.onCompletion(() -> emitters.remove(userId, emitter));
         emitter.onTimeout(() -> emitters.remove(userId, emitter));
         emitter.onError(e -> emitters.remove(userId, emitter));
 
         try {
-            // SSE 연결 유지를 위한 초기 이벤트
             emitter.send(SseEmitter.event().name("connect").data("connected"));
-
-            // 미읽음 알림 즉시 전송
             List<Notification> unread = notificationRepository.findUnreadByUserId(userId);
             for (Notification n : unread) {
-                emitter.send(SseEmitter.event()
-                        .name("notification")
-                        .data(NotificationResponse.of(n)));
+                if (n.getType() == NotificationType.CHAT_MESSAGE) {
+                    continue;
+                }
+                emitter.send(SseEmitter.event().name("notification").data(NotificationResponse.of(n)));
             }
         } catch (IOException e) {
             emitters.remove(userId, emitter);
             log.warn("SSE 초기 전송 실패: userId={}", userId, e);
         }
-
         return emitter;
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // 알림 전송 (DB 저장 + SSE push)
+    // 알림 전송 (DB 저장 + WebSocket push)
     // ──────────────────────────────────────────────────────────────────────
 
     /**
-     * 알림을 저장하고 SSE로 즉시 전송한다.
-     * ChatService 등 다른 서비스에서 알림 발생 시 호출한다.
-     * 사용자가 SSE 미연결 상태이면 DB 저장만 수행한다.
+     * 알림을 저장하고 WebSocket으로 즉시 전송한다.
+     * 사용자가 미연결 상태이면 DB 저장만 수행한다 (다음 연결 시 미읽음 목록 제공).
      */
     @Transactional
     public void send(User user, NotificationType type, Long chatRoomId, String message) {
-        // DB 저장
         Notification notification = Notification.builder()
                 .user(user)
                 .type(type)
@@ -100,18 +88,14 @@ public class NotificationService {
                 .build();
         notificationRepository.save(notification);
 
-        // SSE push (연결 중인 경우만)
-        SseEmitter emitter = emitters.get(user.getId());
-        if (emitter != null) {
-            try {
-                emitter.send(SseEmitter.event()
-                        .name("notification")
-                        .data(NotificationResponse.of(notification)));
-            } catch (IOException e) {
-                // push 실패 시 emitter 제거 (예외는 외부로 전파하지 않음)
-                emitters.remove(user.getId(), emitter);
-                log.warn("SSE push 실패, emitter 제거: userId={}", user.getId(), e);
-            }
+        // WebSocket push (연결 중인 사용자에게만 전달 — 미연결 시 예외 없이 무시됨)
+        try {
+            messagingTemplate.convertAndSendToUser(
+                    user.getId().toString(),
+                    "/queue/notification",
+                    NotificationResponse.of(notification));
+        } catch (Exception e) {
+            log.warn("WebSocket 알림 push 실패: userId={}", user.getId(), e);
         }
     }
 
@@ -119,38 +103,27 @@ public class NotificationService {
     // 알림 조회·읽음 처리
     // ──────────────────────────────────────────────────────────────────────
 
-    /**
-     * 미읽음 알림 목록 조회 (최신순).
-     */
     @Transactional(readOnly = true)
     public List<NotificationResponse> getUnread(Long userId) {
         return notificationRepository.findUnreadByUserId(userId).stream()
+                .filter(n -> n.getType() != NotificationType.CHAT_MESSAGE)
                 .map(NotificationResponse::of)
                 .toList();
     }
 
-    /**
-     * 알림 목록 전체 조회 (최신순, 최대 50건).
-     */
     @Transactional(readOnly = true)
     public List<NotificationResponse> getAll(Long userId) {
         return notificationRepository.findTop50ByUserId(userId).stream()
+                .filter(n -> n.getType() != NotificationType.CHAT_MESSAGE)
                 .map(NotificationResponse::of)
                 .toList();
     }
 
-    /**
-     * 사용자의 미읽음 알림 전체 읽음 처리.
-     */
     @Transactional
     public void markAllRead(Long userId) {
         notificationRepository.markAllReadByUserId(userId);
     }
 
-    /**
-     * 특정 알림 읽음 처리.
-     * 본인 소유가 아니거나 존재하지 않으면 404 반환.
-     */
     @Transactional
     public void markRead(Long userId, Long notificationId) {
         int updated = notificationRepository.markReadByIdAndUserId(notificationId, userId);

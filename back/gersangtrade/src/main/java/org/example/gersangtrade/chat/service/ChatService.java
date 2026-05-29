@@ -1,12 +1,16 @@
 package org.example.gersangtrade.chat.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.example.gersangtrade.chat.dto.request.ChatMessageSendRequest;
 import org.example.gersangtrade.chat.dto.request.ChatRoomCreateRequest;
 import org.example.gersangtrade.chat.dto.request.PosterConfirmRequest;
 import org.example.gersangtrade.chat.dto.response.ChatMessageResponse;
+import org.example.gersangtrade.chat.dto.response.ChatMessageSseEvent;
 import org.example.gersangtrade.chat.dto.response.ChatRoomDetailResponse;
 import org.example.gersangtrade.chat.dto.response.ChatRoomSummaryResponse;
+import org.example.gersangtrade.chat.dto.response.RoomStatusSseEvent;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.example.gersangtrade.chat.repository.ChatMessageRepository;
 import org.example.gersangtrade.chat.repository.ChatRoomRepository;
 import org.example.gersangtrade.domain.chat.ChatMessage;
@@ -15,6 +19,7 @@ import org.example.gersangtrade.domain.chat.enums.ChatMessageType;
 import org.example.gersangtrade.domain.chat.enums.ChatRoomStatus;
 import org.example.gersangtrade.domain.chat.enums.ListingType;
 import org.example.gersangtrade.domain.listing.TradeListing;
+import org.example.gersangtrade.domain.listing.enums.ListingStatus;
 import org.example.gersangtrade.domain.notification.enums.NotificationType;
 import org.example.gersangtrade.domain.trade.TradeConfirmed;
 import org.example.gersangtrade.domain.trade.TradeReview;
@@ -22,6 +27,7 @@ import org.example.gersangtrade.domain.user.User;
 import org.example.gersangtrade.domain.user.UserRepository;
 import org.example.gersangtrade.domain.user.enums.UserStatus;
 import org.example.gersangtrade.domain.wanted.WantedListing;
+import org.example.gersangtrade.domain.wanted.enums.WantedStatus;
 import org.example.gersangtrade.listing.repository.BundleLineRepository;
 import org.example.gersangtrade.listing.repository.ListingBundleRepository;
 import org.example.gersangtrade.listing.repository.TradeListingRepository;
@@ -41,6 +47,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
@@ -50,6 +57,7 @@ import java.util.stream.Collectors;
  * 거래완료 순서: 게시자(poster) 확인 → 상대방(counterparty) 확인 → TradeConfirmed 생성.
  * 상세 흐름: docs/trade-flow-design.ko.md 참고.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -68,6 +76,7 @@ public class ChatService {
     private final TradeStatService tradeStatService;
     private final NotificationService notificationService;
     private final KeywordDetectionService keywordDetectionService;
+    private final SimpMessagingTemplate messagingTemplate;
 
     // ──────────────────────────────────────────────────────────────────────
     // 채팅방 생성
@@ -92,18 +101,22 @@ public class ChatService {
             throw new IllegalStateException("본인 게시물에는 채팅을 개설할 수 없습니다.");
         }
 
-        // 이미 OPEN 상태의 채팅방이 있으면 기존 채팅방 반환
-        boolean exists = chatRoomRepository.existsByListingTypeAndListingIdAndCounterpartyIdAndStatus(
-                request.listingType(), request.listingId(), userId, ChatRoomStatus.OPEN);
+        // 이미 거래 완료·취소된 게시물에는 채팅 불가
+        validateListingOpenForNewChat(request.listingType(), request.listingId());
+
+        // 이미 진행 중(OPEN/AWAITING_PARTNER)인 채팅방이 있으면 기존 채팅방 반환
+        boolean exists = chatRoomRepository.existsActiveByListingTypeAndListingIdAndCounterpartyId(
+                request.listingType(), request.listingId(), userId);
         if (exists) {
-            // 기존 채팅방을 찾아서 반환
             ChatRoom existing = chatRoomRepository
                     .findByListingTypeAndListingId(request.listingType(), request.listingId())
                     .stream()
-                    .filter(r -> r.getCounterparty().getId().equals(userId) && r.getStatus() == ChatRoomStatus.OPEN)
+                    .filter(r -> r.getCounterparty().getId().equals(userId))
+                    .filter(r -> r.getStatus() == ChatRoomStatus.OPEN
+                            || r.getStatus() == ChatRoomStatus.AWAITING_PARTNER)
                     .findFirst()
                     .orElseThrow(() -> new IllegalStateException("채팅방 조회 중 오류가 발생했습니다."));
-            return ChatRoomSummaryResponse.of(existing, userId, resolveListingDisplayName(existing));
+            return toSummary(existing, userId);
         }
 
         // 새 채팅방 생성
@@ -123,7 +136,7 @@ public class ChatService {
         saveNotification(poster, NotificationType.CHAT_OPENED, room.getId(),
                 counterparty.getNickname() + "님이 채팅을 요청했습니다.");
 
-        return ChatRoomSummaryResponse.of(room, userId, resolveListingDisplayName(room));
+        return toSummary(room, userId);
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -139,7 +152,7 @@ public class ChatService {
 
         return java.util.stream.Stream.concat(asPoster.stream(), asCounterparty.stream())
                 .sorted((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()))
-                .map(room -> ChatRoomSummaryResponse.of(room, userId, resolveListingDisplayName(room)))
+                .map(room -> toSummary(room, userId))
                 .collect(Collectors.toList());
     }
 
@@ -150,19 +163,24 @@ public class ChatService {
     /**
      * 채팅방 상세 정보와 메시지 목록을 반환한다 (최신 50건).
      * 채팅방 참여자(poster 또는 counterparty)만 조회 가능하다.
+     * 조회 시 해당 사용자의 읽음 시각을 갱신한다.
      */
+    @Transactional
     public ChatRoomDetailResponse getChatRoomDetail(Long userId, Long chatRoomId) {
         ChatRoom room = loadChatRoom(chatRoomId);
         validateParticipant(room, userId);
+        room.markReadBy(userId);
 
         Slice<ChatMessage> messages = chatMessageRepository.findActiveByRoomId(
                 chatRoomId, PageRequest.of(0, 50));
 
+        // 최신 50건을 sentAt 오름차순(오래된 것 위, 최신 아래)으로 반환
         List<ChatMessageResponse> msgResponses = messages.getContent().stream()
+                .sorted(java.util.Comparator.comparing(ChatMessage::getSentAt))
                 .map(ChatMessageResponse::of)
                 .collect(Collectors.toList());
 
-        return ChatRoomDetailResponse.of(room, resolveListingDisplayName(room), msgResponses);
+        return ChatRoomDetailResponse.of(room, userId, resolveListingDisplayName(room), msgResponses);
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -173,7 +191,7 @@ public class ChatService {
      * 메시지를 전송한다.
      *
      * - 채팅방 참여자만 전송 가능
-     * - OPEN 또는 POSTER_CONFIRMED 상태의 채팅방에서만 전송 가능
+     * - OPEN 또는 AWAITING_PARTNER 상태의 채팅방에서만 전송 가능
      * - 메시지 저장 후 KeywordDetectionService로 현금거래 키워드 감지 (Soft 방식)
      */
     @Transactional
@@ -182,8 +200,8 @@ public class ChatService {
         ChatRoom room = loadChatRoom(chatRoomId);
         validateParticipant(room, userId);
 
-        // OPEN 또는 POSTER_CONFIRMED 상태에서만 메시지 전송 가능
-        if (room.getStatus() != ChatRoomStatus.OPEN && room.getStatus() != ChatRoomStatus.POSTER_CONFIRMED) {
+        // OPEN 또는 AWAITING_PARTNER 상태에서만 메시지 전송 가능
+        if (room.getStatus() != ChatRoomStatus.OPEN && room.getStatus() != ChatRoomStatus.AWAITING_PARTNER) {
             throw new IllegalStateException("종료된 채팅방에는 메시지를 전송할 수 없습니다.");
         }
 
@@ -201,92 +219,145 @@ public class ChatService {
         // 현금거래 키워드 감지 (Soft 방식 — 메시지 전송은 허용, 자동 신고만 생성)
         keywordDetectionService.detect(request.content(), msg.getId(), chatRoomId);
 
-        // 상대방에게 채팅 알림
+        // 발신자는 채팅 중이므로 읽음 처리
+        room.markReadBy(userId);
+
+        // 상대방에게 WebSocket push (알림 센터 CHAT_MESSAGE는 발행하지 않음)
         User recipient = room.getPoster().getId().equals(userId) ? room.getCounterparty() : room.getPoster();
-        saveNotification(recipient, NotificationType.CHAT_MESSAGE, chatRoomId,
-                sender.getNickname() + "님이 메시지를 보냈습니다.");
+        pushChatMessageToUser(recipient, chatRoomId, msg);
 
         return ChatMessageResponse.of(msg);
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // 거래완료 확인 (1단계) — 게시자
+    // 거래완료 확인 — 양측 누구나 먼저 가능, 양측 모두 확인 시 거래 확정
     // ──────────────────────────────────────────────────────────────────────
 
     /**
-     * 게시자가 거래완료를 요청한다 (1단계).
-     * finalPrice가 null이면 게시물 원래 가격을 사용한다.
-     * OPEN → POSTER_CONFIRMED 상태 전이 후 상대방에게 알림.
+     * 거래완료 확인.
+     * 게시자·상대방 모두 호출 가능하며, 한쪽만 확인된 경우 상대방에게 알림을 보낸다.
+     * 양측 모두 확인되면 TradeConfirmed 생성 및 EXP·평가 처리를 수행한다.
      */
     @Transactional
-    public ChatRoomSummaryResponse posterConfirm(Long userId, Long chatRoomId, PosterConfirmRequest request) {
-        ChatRoom room = loadChatRoom(chatRoomId);
+    public ChatRoomSummaryResponse confirmTrade(Long userId, Long chatRoomId, PosterConfirmRequest request) {
+        // 비관적 잠금: 두 사용자가 동시에 confirmTrade 호출 시 lost-update 방지
+        ChatRoom room = chatRoomRepository.findWithLockById(chatRoomId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 채팅방입니다."));
+        validateParticipant(room, userId);
 
-        // 게시자만 호출 가능
-        if (!room.getPoster().getId().equals(userId)) {
-            throw new IllegalStateException("게시자만 거래완료를 먼저 요청할 수 있습니다.");
-        }
-        // OPEN 상태에서만 호출 가능
-        if (room.getStatus() != ChatRoomStatus.OPEN) {
-            throw new IllegalStateException("현재 상태에서는 거래완료를 요청할 수 없습니다. (현재: " + room.getStatus() + ")");
+        if (room.getStatus() == ChatRoomStatus.COMPLETED || room.getStatus() == ChatRoomStatus.CLOSED) {
+            throw new IllegalStateException("종료된 채팅방에서는 거래완료할 수 없습니다.");
         }
 
-        room.posterConfirm(request.finalPrice());
+        boolean isPoster = room.getPoster().getId().equals(userId);
+        // 이번 confirm으로 양측 확인이 채워지면 거래 확정 시도
+        boolean willComplete = isPoster
+                ? room.getCounterpartyConfirmedAt() != null
+                : room.getPosterConfirmedAt() != null;
 
-        saveSystemMessage(room, "게시자가 거래완료를 요청했습니다. 거래 내용을 확인 후 거래완료 버튼을 눌러주세요.");
+        // 게시물·다른 채팅방에서 이미 거래 완료된 경우 채팅방을 닫고 안내 (롤백 방지를 위해 예외 대신 반환)
+        Optional<String> staleReason = findStaleRoomReason(room, willComplete);
+        if (staleReason.isPresent()) {
+            closeRoomAsStale(room, staleReason.get());
+            return toSummary(room, userId);
+        }
 
-        saveNotification(room.getCounterparty(), NotificationType.POSTER_CONFIRMED, chatRoomId,
-                room.getPoster().getNickname() + "님이 거래완료를 요청했습니다. 확인 후 거래완료 버튼을 눌러주세요.");
+        Long finalPrice = request != null ? request.finalPrice() : null;
+        Long priceToApply = (room.getFinalPrice() == null && finalPrice != null) ? finalPrice : null;
 
-        return ChatRoomSummaryResponse.of(room, userId, resolveListingDisplayName(room));
+        room.recordParticipantConfirm(isPoster, priceToApply);
+        // 더티 체킹에만 의존하지 않고 명시적으로 플러시하여 DB 반영 보장
+        chatRoomRepository.saveAndFlush(room);
+
+        User confirmer = isPoster ? room.getPoster() : room.getCounterparty();
+        User other = isPoster ? room.getCounterparty() : room.getPoster();
+
+        if (room.getStatus() == ChatRoomStatus.COMPLETED) {
+            // 확정 처리 성공 후에만 COMPLETED 상태를 push (실패 시 롤백·잘못된 push 방지)
+            finalizeTrade(room);
+            pushRoomStatus(room);
+        } else {
+            pushRoomStatus(room);
+            saveSystemMessage(room,
+                    confirmer.getNickname() + "님이 거래완료를 요청했습니다. 거래가 완료되었다면 거래완료 버튼을 눌러주세요.");
+            saveNotification(other, NotificationType.POSTER_CONFIRMED, chatRoomId,
+                    confirmer.getNickname() + "님이 거래완료를 눌렀습니다. 거래가 완료되었다면 거래완료 버튼을 눌러주세요.");
+        }
+
+        return toSummary(room, userId);
     }
 
-    // ──────────────────────────────────────────────────────────────────────
-    // 거래완료 확인 (2단계) — 상대방
-    // ──────────────────────────────────────────────────────────────────────
+    /** 양쪽 참여자에게 채팅방 상태 변경 WebSocket push (viewer 기준 확인 여부 포함) */
+    private void pushRoomStatus(ChatRoom room) {
+        pushRoomStatusToUser(room, room.getPoster());
+        pushRoomStatusToUser(room, room.getCounterparty());
+    }
 
-    /**
-     * 상대방(counterparty)이 거래완료를 확인한다 (2단계).
-     *
-     * 처리 순서 (단일 트랜잭션):
-     *  1. ChatRoom → COMPLETED
-     *  2. 거래 확정 가격 결정 (finalPrice 또는 게시물 가격)
-     *  3. TradeConfirmed 생성 (통계 집계의 원천 데이터)
-     *  4. 양측 EXP 지급 및 등급 갱신
-     *  5. 양측 tradeCount 증가
-     *  6. TradeReview 2건 생성 (블라인드, revealAt = now + 3일)
-     *  7. 게시물 상태 SOLD/PURCHASED 전환
-     *  8. 동일 게시물의 다른 OPEN/POSTER_CONFIRMED 채팅방 CLOSED 처리
-     *  9. 양측에 TRADE_COMPLETED + REVIEW_REQUESTED 알림 저장
-     */
+    private void pushRoomStatusToUser(ChatRoom room, User viewer) {
+        boolean isPoster = room.getPoster().getId().equals(viewer.getId());
+        boolean myTradeConfirmed = isPoster
+                ? room.getPosterConfirmedAt() != null
+                : room.getCounterpartyConfirmedAt() != null;
+        boolean partnerTradeConfirmed = isPoster
+                ? room.getCounterpartyConfirmedAt() != null
+                : room.getPosterConfirmedAt() != null;
+        RoomStatusSseEvent statusEvent = new RoomStatusSseEvent(
+                room.getId(),
+                room.getStatus().name(),
+                myTradeConfirmed,
+                partnerTradeConfirmed
+        );
+        messagingTemplate.convertAndSendToUser(
+                viewer.getId().toString(), "/queue/room-status", statusEvent);
+    }
+
+    /** @deprecated {@link #confirmTrade(Long, Long, PosterConfirmRequest)} 로 통합 */
+    @Deprecated
+    @Transactional
+    public ChatRoomSummaryResponse posterConfirm(Long userId, Long chatRoomId, PosterConfirmRequest request) {
+        return confirmTrade(userId, chatRoomId, request);
+    }
+
+    /** @deprecated {@link #confirmTrade(Long, Long, PosterConfirmRequest)} 로 통합 */
+    @Deprecated
     @Transactional
     public ChatRoomSummaryResponse counterpartyConfirm(Long userId, Long chatRoomId) {
-        ChatRoom room = loadChatRoom(chatRoomId);
+        return confirmTrade(userId, chatRoomId, new PosterConfirmRequest(null));
+    }
 
-        // 상대방만 호출 가능
-        if (!room.getCounterparty().getId().equals(userId)) {
-            throw new IllegalStateException("상대방만 거래완료를 최종 확인할 수 있습니다.");
+    /**
+     * 양측 거래완료 확인 후 TradeConfirmed·EXP·평가·알림 처리.
+     */
+    private void finalizeTrade(ChatRoom room) {
+        log.info("finalizeTrade 시작: chatRoomId={}, listingType={}, listingId={}",
+                room.getId(), room.getListingType(), room.getListingId());
+        try {
+            finalizeTradeInternal(room);
+        } catch (Exception e) {
+            log.error("finalizeTrade 실패 — chatRoomId={}, 원인: {}", room.getId(), e.getMessage(), e);
+            throw e;
         }
-        // POSTER_CONFIRMED 상태에서만 호출 가능
-        if (room.getStatus() != ChatRoomStatus.POSTER_CONFIRMED) {
-            throw new IllegalStateException("게시자가 먼저 거래완료를 요청해야 합니다. (현재: " + room.getStatus() + ")");
+    }
+
+    private void finalizeTradeInternal(ChatRoom room) {
+        Long chatRoomId = room.getId();
+        Long posterId = room.getPoster().getId();
+        Long counterpartyId = room.getCounterparty().getId();
+
+        // 이미 확정된 채팅방이면 중복 처리 방지 (재시도·동시 요청 대비)
+        if (tradeConfirmedRepository.findByChatRoomId(chatRoomId).isPresent()) {
+            log.warn("trade_confirmed 이미 존재 — chatRoomId={}", chatRoomId);
+            return;
         }
 
-        room.counterpartyConfirm();
-
-        User poster = room.getPoster();
-        User counterparty = room.getCounterparty();
-
-        // 거래 확정 가격 결정 (finalPrice 없으면 게시물 원래 가격)
         long confirmedPrice = resolveConfirmedPrice(room);
-
-        // 서버명 스냅샷 조회
+        log.info("confirmedPrice={}", confirmedPrice);
         String serverSnapshot = resolveServerSnapshot(room);
-
-        // 통계 집계 키 결정 ("ITEM:{itemId}" 형식)
         String statKeySnapshot = resolveStatKey(room);
 
-        // TradeConfirmed 생성
+        User poster = loadManagedUser(posterId);
+        User counterparty = loadManagedUser(counterpartyId);
+
         User seller = (room.getListingType() == ListingType.SELL) ? poster : counterparty;
         User buyer = (room.getListingType() == ListingType.SELL) ? counterparty : poster;
 
@@ -300,21 +371,21 @@ public class ChatService {
                 .statKeySnapshot(statKeySnapshot)
                 .confirmedAt(LocalDateTime.now())
                 .build();
-        tradeConfirmedRepository.save(confirmed);
+        tradeConfirmedRepository.saveAndFlush(confirmed);
 
-        // 일별 시세 통계 upsert (거래 확정 이벤트 기반 집계)
         tradeStatService.upsertDailyStat(statKeySnapshot, confirmedPrice, 1L, LocalDate.now());
 
-        // EXP 지급 및 등급 갱신
+        // stat upsert(@Modifying) 이후에도 managed User를 사용하기 위해 재조회
+        poster = loadManagedUser(posterId);
+        counterparty = loadManagedUser(counterpartyId);
+
         long expDelta = calculateTradeExp(confirmedPrice);
         applyExpAndGrade(poster, expDelta);
         applyExpAndGrade(counterparty, expDelta);
 
-        // 거래 횟수 증가
         poster.incrementTradeCount();
         counterparty.incrementTradeCount();
 
-        // 블라인드 거래 평가 생성 (revealAt = 3일 후)
         LocalDateTime revealAt = LocalDateTime.now().plusDays(3);
         tradeReviewRepository.save(TradeReview.builder()
                 .tradeConfirmed(confirmed)
@@ -329,13 +400,11 @@ public class ChatService {
                 .revealAt(revealAt)
                 .build());
 
-        // 게시물 상태 SOLD / PURCHASED 전환
         completeListingStatus(room);
-
-        // 동일 게시물의 다른 OPEN/POSTER_CONFIRMED 채팅방 종료
         closeOtherRooms(room);
 
-        // 양측 알림 저장
+        saveSystemMessage(room, "거래가 확정되었습니다.");
+
         String tradeCompleteMsg = "거래가 완료됐어요. 상대방을 3일 이내에 평가해보세요.";
         saveNotification(poster, NotificationType.TRADE_COMPLETED, chatRoomId, tradeCompleteMsg);
         saveNotification(counterparty, NotificationType.TRADE_COMPLETED, chatRoomId, tradeCompleteMsg);
@@ -343,16 +412,34 @@ public class ChatService {
                 counterparty.getNickname() + "님과의 거래를 평가해주세요.");
         saveNotification(counterparty, NotificationType.REVIEW_REQUESTED, chatRoomId,
                 poster.getNickname() + "님과의 거래를 평가해주세요.");
+    }
 
-        // 어뷰징 탐지: 7일 이내 동일 두 유저 간 3건 이상 거래 → TODO 관리자 알림
-        // checkAbuse(poster, counterparty);
-
-        return ChatRoomSummaryResponse.of(room, userId, resolveListingDisplayName(room));
+    /** 채팅방 읽음 처리 — 패널 열람 중 실시간 메시지 수신 시 호출 */
+    @Transactional
+    public void markChatRoomRead(Long userId, Long chatRoomId) {
+        ChatRoom room = loadChatRoom(chatRoomId);
+        validateParticipant(room, userId);
+        room.markReadBy(userId);
     }
 
     // ──────────────────────────────────────────────────────────────────────
     // private 헬퍼
     // ──────────────────────────────────────────────────────────────────────
+
+    /** 채팅방 목록 DTO 변환 (미읽음 여부 포함) */
+    private ChatRoomSummaryResponse toSummary(ChatRoom room, Long viewerId) {
+        boolean hasUnread = hasUnreadMessages(room, viewerId);
+        return ChatRoomSummaryResponse.of(room, viewerId, resolveListingDisplayName(room), hasUnread);
+    }
+
+    /** 상대방 TEXT 메시지 미읽음 여부 */
+    private boolean hasUnreadMessages(ChatRoom room, Long viewerId) {
+        return chatMessageRepository.existsUnreadFromOthers(
+                room.getId(),
+                viewerId,
+                room.lastReadAtFor(viewerId),
+                ChatMessageType.TEXT);
+    }
 
     /** 활성 상태 사용자 조회 */
     private User loadActiveUser(Long userId) {
@@ -362,6 +449,12 @@ public class ChatService {
             throw new IllegalStateException("차단된 계정은 채팅을 이용할 수 없습니다.");
         }
         return user;
+    }
+
+    /** finalizeTrade 등에서 managed User 엔티티를 조회한다 */
+    private User loadManagedUser(Long userId) {
+        return userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalStateException("존재하지 않는 사용자입니다."));
     }
 
     /** 게시물 종류에 따라 게시자를 반환한다 */
@@ -390,6 +483,84 @@ public class ChatService {
         if (!isPoster && !isCounterparty) {
             throw new IllegalStateException("해당 채팅방의 참여자가 아닙니다.");
         }
+    }
+
+    /** 새 채팅 개설 가능한 게시물 상태인지 검증한다 */
+    private void validateListingOpenForNewChat(ListingType listingType, Long listingId) {
+        if (listingType == ListingType.SELL) {
+            TradeListing listing = tradeListingRepository.findById(listingId)
+                    .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 판매 게시물입니다."));
+            if (listing.getStatus() == ListingStatus.SOLD) {
+                throw new IllegalStateException("이미 거래가 완료된 판매 게시물입니다.");
+            }
+            if (listing.getStatus() == ListingStatus.CANCELLED) {
+                throw new IllegalStateException("취소된 판매 게시물입니다.");
+            }
+        } else {
+            WantedListing listing = wantedListingRepository.findById(listingId)
+                    .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 구매 게시물입니다."));
+            if (listing.getStatus() == WantedStatus.PURCHASED) {
+                throw new IllegalStateException("이미 거래가 완료된 구매 희망입니다.");
+            }
+            if (listing.getStatus() == WantedStatus.CANCELLED) {
+                throw new IllegalStateException("취소된 구매 희망입니다.");
+            }
+        }
+    }
+
+    /** stale 채팅방 종료 사유 — 게시물 종료 또는 (비완료 요청 시) 다른 COMPLETED 채팅방 존재 */
+    private Optional<String> findStaleRoomReason(ChatRoom room, boolean willCompleteOnThisRequest) {
+        Optional<String> listingReason = findListingClosedReason(room);
+        if (listingReason.isPresent()) {
+            return listingReason;
+        }
+
+        // 이번 요청으로 정상 완료될 예정이고 게시물이 아직 열려 있으면 진행 (다른 COMPLETED 방 검사 생략)
+        if (willCompleteOnThisRequest) {
+            return Optional.empty();
+        }
+
+        if (chatRoomRepository.countOtherCompletedRoom(
+                room.getListingType().name(),
+                room.getListingId(),
+                room.getCounterparty().getId(),
+                room.getId()) > 0) {
+            return Optional.of("해당 게시물은 이미 다른 채팅방에서 거래가 완료되었습니다.");
+        }
+        return Optional.empty();
+    }
+
+    /** 거래완료 확인 시 게시물이 이미 종료됐는지 조회한다 */
+    private Optional<String> findListingClosedReason(ChatRoom room) {
+        if (room.getListingType() == ListingType.SELL) {
+            TradeListing listing = tradeListingRepository.findById(room.getListingId())
+                    .orElseThrow(() -> new IllegalStateException("게시물을 조회할 수 없습니다."));
+            if (listing.getStatus() == ListingStatus.SOLD) {
+                return Optional.of("해당 판매 게시물은 이미 다른 거래로 완료되었습니다.");
+            }
+            if (listing.getStatus() == ListingStatus.CANCELLED) {
+                return Optional.of("해당 판매 게시물은 취소되어 더 이상 거래할 수 없습니다.");
+            }
+            return Optional.empty();
+        }
+
+        WantedListing listing = wantedListingRepository.findById(room.getListingId())
+                .orElseThrow(() -> new IllegalStateException("게시물을 조회할 수 없습니다."));
+        if (listing.getStatus() == WantedStatus.PURCHASED) {
+            return Optional.of("해당 구매 희망은 이미 다른 거래로 완료되었습니다.");
+        }
+        if (listing.getStatus() == WantedStatus.CANCELLED) {
+            return Optional.of("해당 구매 희망은 취소되어 더 이상 거래할 수 없습니다.");
+        }
+        return Optional.empty();
+    }
+
+    /** 이미 종료된 게시물에 연결된 채팅방을 닫고 안내 메시지를 남긴다 */
+    private void closeRoomAsStale(ChatRoom room, String message) {
+        room.close();
+        chatRoomRepository.saveAndFlush(room);
+        saveSystemMessage(room, message);
+        pushRoomStatus(room);
     }
 
     /** 거래 확정 가격 결정 (finalPrice 없으면 게시물 원래 가격) */
@@ -523,29 +694,33 @@ public class ChatService {
     /** 거래 완료 시 게시물 상태를 SOLD 또는 PURCHASED로 전환한다 */
     private void completeListingStatus(ChatRoom room) {
         if (room.getListingType() == ListingType.SELL) {
-            tradeListingRepository.findById(room.getListingId())
-                    .ifPresent(TradeListing::completeTrade);
+            tradeListingRepository.findById(room.getListingId()).ifPresent(listing -> {
+                listing.completeTrade();
+                tradeListingRepository.save(listing);
+            });
         } else {
-            wantedListingRepository.findById(room.getListingId())
-                    .ifPresent(WantedListing::completePurchase);
+            wantedListingRepository.findById(room.getListingId()).ifPresent(listing -> {
+                listing.completePurchase();
+                wantedListingRepository.save(listing);
+            });
         }
     }
 
-    /** 동일 게시물의 다른 OPEN/POSTER_CONFIRMED 채팅방을 모두 종료한다 */
+    /** 동일 게시물의 다른 OPEN/AWAITING_PARTNER 채팅방을 모두 종료한다 */
     private void closeOtherRooms(ChatRoom completedRoom) {
         chatRoomRepository
                 .findByListingTypeAndListingId(completedRoom.getListingType(), completedRoom.getListingId())
                 .stream()
                 .filter(r -> !r.getId().equals(completedRoom.getId()))
                 .filter(r -> r.getStatus() == ChatRoomStatus.OPEN
-                          || r.getStatus() == ChatRoomStatus.POSTER_CONFIRMED)
+                          || r.getStatus() == ChatRoomStatus.AWAITING_PARTNER)
                 .forEach(r -> {
                     r.close();
                     saveSystemMessage(r, "해당 게시물의 거래가 다른 채팅방에서 완료되어 채팅방이 종료되었습니다.");
                 });
     }
 
-    /** 시스템 메시지를 저장한다 */
+    /** 시스템 메시지를 저장하고 양쪽 참여자에게 WebSocket push */
     private void saveSystemMessage(ChatRoom room, String content) {
         ChatMessage sysMsg = ChatMessage.builder()
                 .chatRoom(room)
@@ -556,6 +731,16 @@ public class ChatService {
                 .flagReason(null)
                 .build();
         chatMessageRepository.save(sysMsg);
+        pushChatMessageToUser(room.getPoster(), room.getId(), sysMsg);
+        pushChatMessageToUser(room.getCounterparty(), room.getId(), sysMsg);
+    }
+
+    /** 특정 사용자에게 채팅 메시지 WebSocket push */
+    private void pushChatMessageToUser(User recipient, Long chatRoomId, ChatMessage msg) {
+        messagingTemplate.convertAndSendToUser(
+                recipient.getId().toString(),
+                "/queue/chat-message",
+                new ChatMessageSseEvent(chatRoomId, ChatMessageResponse.of(msg)));
     }
 
     /** 알림을 저장하고 SSE push한다 */

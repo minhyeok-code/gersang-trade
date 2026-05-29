@@ -232,7 +232,11 @@ class UserServiceTest {
 
             MyGradeResponse response = userService.getMyGrade(1L);
 
-            assertThat(response.grade()).isEqualTo(activeUser.getGrade());
+            assertThat(response.grade()).isEqualTo(activeUser.getGrade().getDisplayName());
+            assertThat(response.gradeStep()).isEqualTo(activeUser.getGradeStep());
+            assertThat(response.stepUnit()).isEqualTo("패");
+            assertThat(response.expPerStep()).isEqualTo(50);
+            assertThat(response.stepProgressExp()).isEqualTo(0);
             assertThat(response.totalExp()).isEqualTo(activeUser.getTotalExp());
         }
     }

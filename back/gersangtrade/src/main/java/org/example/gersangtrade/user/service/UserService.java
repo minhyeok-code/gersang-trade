@@ -5,15 +5,23 @@ import org.example.gersangtrade.catalog.repository.MonsterRepository;
 import org.example.gersangtrade.catalog.repository.ServerRepository;
 import org.example.gersangtrade.domain.catalog.Monster;
 import org.example.gersangtrade.domain.catalog.Server;
+import org.example.gersangtrade.domain.chat.enums.ListingType;
+import org.example.gersangtrade.domain.listing.BundleLine;
+import org.example.gersangtrade.domain.listing.ListingBundle;
 import org.example.gersangtrade.domain.listing.TradeListing;
+import org.example.gersangtrade.domain.trade.TradeConfirmed;
 import org.example.gersangtrade.domain.user.User;
 import org.example.gersangtrade.domain.user.UserClearTime;
 import org.example.gersangtrade.domain.user.UserClearTimeRepository;
 import org.example.gersangtrade.domain.user.UserRepository;
 import org.example.gersangtrade.domain.user.enums.UserStatus;
+import org.example.gersangtrade.domain.wanted.WantedItem;
 import org.example.gersangtrade.listing.dto.response.ListingSummaryResponse;
+import org.example.gersangtrade.listing.repository.BundleLineRepository;
 import org.example.gersangtrade.listing.repository.ListingBundleRepository;
 import org.example.gersangtrade.listing.repository.TradeListingRepository;
+import org.example.gersangtrade.trade.dto.response.TradeHistoryResponse;
+import org.example.gersangtrade.trade.repository.TradeConfirmedRepository;
 import org.example.gersangtrade.user.dto.request.ClearTimeRequest;
 import org.example.gersangtrade.user.dto.request.UserProfileUpdateRequest;
 import org.example.gersangtrade.user.dto.request.UserServerUpdateRequest;
@@ -22,11 +30,14 @@ import org.example.gersangtrade.user.dto.response.MyGradeResponse;
 import org.example.gersangtrade.user.dto.response.PublicUserProfileResponse;
 import org.example.gersangtrade.user.dto.response.UserProfileResponse;
 import org.example.gersangtrade.user.util.ExpGradeCalculator;
+import org.example.gersangtrade.wanted.repository.WantedItemRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.stream.Collectors;
 
 /**
  * 사용자 프로필·등급 관련 서비스.
@@ -41,6 +52,9 @@ public class UserService {
     private final UserRepository userRepository;
     private final TradeListingRepository tradeListingRepository;
     private final ListingBundleRepository listingBundleRepository;
+    private final BundleLineRepository bundleLineRepository;
+    private final WantedItemRepository wantedItemRepository;
+    private final TradeConfirmedRepository tradeConfirmedRepository;
     private final ServerRepository serverRepository;
     private final MonsterRepository monsterRepository;
     private final UserClearTimeRepository clearTimeRepository;
@@ -68,12 +82,89 @@ public class UserService {
     @Transactional(readOnly = true)
     public List<ListingSummaryResponse> getMyListings(Long userId) {
         List<TradeListing> listings = tradeListingRepository.findActivesBySellerId(userId);
+        if (listings.isEmpty()) return List.of();
+
+        List<Long> listingIds = listings.stream().map(TradeListing::getId).toList();
+
+        List<ListingBundle> allBundles = listingBundleRepository.findByListingIdIn(listingIds);
+        Map<Long, List<ListingBundle>> bundlesByListingId = allBundles.stream()
+                .collect(Collectors.groupingBy(b -> b.getListing().getId()));
+
+        List<Long> bundleIds = allBundles.stream().map(ListingBundle::getId).toList();
+        Map<Long, List<BundleLine>> linesByBundleId = bundleLineRepository.findByBundleIdIn(bundleIds)
+                .stream()
+                .collect(Collectors.groupingBy(l -> l.getBundle().getId()));
+
         return listings.stream()
-                .map(listing -> {
-                    var bundles = listingBundleRepository.findByListingIdOrderByIdAsc(listing.getId());
-                    return ListingSummaryResponse.from(listing, bundles);
+                .map(listing -> ListingSummaryResponse.from(
+                        listing,
+                        bundlesByListingId.getOrDefault(listing.getId(), List.of()),
+                        linesByBundleId))
+                .toList();
+    }
+
+    /**
+     * 내 거래 확정 내역 조회 (판매자·구매자 양쪽 포함).
+     * TradeConfirmed 기준으로 조회하므로 상대방(구매자)도 자신의 거래내역을 볼 수 있다.
+     *
+     * @param userId 조회 사용자 ID
+     * @return 거래 확정 내역 목록 (최신순)
+     */
+    @Transactional(readOnly = true)
+    public List<TradeHistoryResponse> getMyTradeHistory(Long userId) {
+        List<TradeConfirmed> trades = tradeConfirmedRepository.findByUserId(userId);
+        return trades.stream()
+                .map(tc -> {
+                    String role = tc.getSeller() != null && tc.getSeller().getId().equals(userId)
+                            ? "판매" : "구매";
+                    String displayName = resolveTradeDisplayName(tc);
+                    return new TradeHistoryResponse(
+                            tc.getId(),
+                            role,
+                            tc.getListingType(),
+                            displayName,
+                            tc.getConfirmedPrice(),
+                            tc.getServerSnapshot(),
+                            tc.getConfirmedAt()
+                    );
                 })
                 .toList();
+    }
+
+    /**
+     * 거래 확정 레코드에서 물품 표시명을 조회한다.
+     * chatRoom → listing → bundle → line 순서로 탐색하며, 실패 시 listingType으로 폴백한다.
+     */
+    private String resolveTradeDisplayName(TradeConfirmed tc) {
+        if (tc.getChatRoom() == null) {
+            return tc.getListingType().name();
+        }
+        Long listingId = tc.getChatRoom().getListingId();
+        try {
+            if (tc.getListingType() == ListingType.SELL) {
+                List<ListingBundle> bundles = listingBundleRepository.findByListingIdOrderByIdAsc(listingId);
+                if (!bundles.isEmpty()) {
+                    ListingBundle first = bundles.get(0);
+                    if (first.getTitleOverride() != null && !first.getTitleOverride().isBlank()) {
+                        return first.getTitleOverride();
+                    }
+                    List<BundleLine> lines = bundleLineRepository.findByBundleIdOrderBySortOrderAsc(first.getId());
+                    if (!lines.isEmpty()) {
+                        String name = lines.get(0).getItem().getName();
+                        return lines.size() > 1 ? name + " 외 " + (lines.size() - 1) + "개" : name;
+                    }
+                }
+            } else {
+                List<WantedItem> items = wantedItemRepository.findByWantedListingIdOrderBySortOrderAsc(listingId);
+                if (!items.isEmpty()) {
+                    String name = items.get(0).getItem().getName();
+                    return items.size() > 1 ? name + " 외 " + (items.size() - 1) + "개 구매희망" : name + " 구매희망";
+                }
+            }
+        } catch (Exception ignored) {
+            // 게시물 삭제 등으로 조회 실패 시 폴백
+        }
+        return tc.getListingType().name() + " #" + listingId;
     }
 
     /**

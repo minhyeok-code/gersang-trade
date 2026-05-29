@@ -1,5 +1,6 @@
 package org.example.gersangtrade.listing.dto.response;
 
+import org.example.gersangtrade.domain.listing.BundleLine;
 import org.example.gersangtrade.domain.listing.ListingBundle;
 import org.example.gersangtrade.domain.listing.TradeListing;
 import org.example.gersangtrade.domain.listing.enums.BundleType;
@@ -7,6 +8,7 @@ import org.example.gersangtrade.domain.listing.enums.ListingStatus;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 거래 등록글 목록 조회용 요약 응답 DTO.
@@ -41,16 +43,23 @@ public record ListingSummaryResponse(
             BundleType bundleType,
             String displayTitle
     ) {
-        public static BundleSummary from(ListingBundle bundle) {
-            // titleOverride가 있으면 판매자 직접 입력 제목, 없으면 유형명으로 임시 표시
-            String title = bundle.getTitleOverride() != null
-                    ? bundle.getTitleOverride()
-                    : bundle.getBundleType().name();
+        public static BundleSummary from(ListingBundle bundle, List<BundleLine> lines) {
+            String title;
+            if (bundle.getTitleOverride() != null) {
+                title = bundle.getTitleOverride();
+            } else if (!lines.isEmpty()) {
+                // titleOverride 없으면 첫 번째 아이템명으로 표시
+                String firstName = lines.get(0).getItem().getName();
+                title = lines.size() > 1 ? firstName + " 외 " + (lines.size() - 1) + "개" : firstName;
+            } else {
+                title = bundle.getBundleType().name();
+            }
             return new BundleSummary(bundle.getBundleType(), title);
         }
     }
 
-    public static ListingSummaryResponse from(TradeListing listing, List<ListingBundle> bundles) {
+    public static ListingSummaryResponse from(TradeListing listing, List<ListingBundle> bundles,
+                                              Map<Long, List<BundleLine>> linesByBundleId) {
         return new ListingSummaryResponse(
                 listing.getId(),
                 listing.getSeller().getNickname(),
@@ -59,7 +68,9 @@ public record ListingSummaryResponse(
                 listing.getServer(),
                 listing.getStatus(),
                 listing.getPrice(),
-                bundles.stream().map(BundleSummary::from).toList(),
+                bundles.stream()
+                        .map(b -> BundleSummary.from(b, linesByBundleId.getOrDefault(b.getId(), List.of())))
+                        .toList(),
                 listing.getCreatedAt()
         );
     }

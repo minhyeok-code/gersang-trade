@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { api, type UserDto, type GradeDto } from '@/lib/api';
+import { api, setServer, type UserDto, type GradeDto, type ServerDto } from '@/lib/api';
 import Link from 'next/link';
 import { Edit2, Save, X, ChevronRight } from 'lucide-react';
 
@@ -19,22 +19,22 @@ function relativeTime(dateStr: string): string {
   return `${d}일 전`;
 }
 
-const GRADE_LABELS: Record<string, string> = {
-  BRONZE: '브론즈',
-  SILVER: '실버',
-  GOLD: '골드',
-  PLATINUM: '플래티넘',
-  DIAMOND: '다이아',
-};
+/** 등급·호봉 표시 — 예: "행상 1 패" */
+function formatGradeStep(grade: GradeDto): string {
+  if (!grade.gradeStep || !grade.stepUnit) return grade.grade;
+  return `${grade.grade} ${grade.gradeStep} ${grade.stepUnit}`;
+}
 
 export default function ProfilePage() {
   const [user, setUser] = useState<UserDto | null>(null);
   const [grade, setGrade] = useState<GradeDto | null>(null);
   const [listings, setListings] = useState<unknown[]>([]);
+  const [listingsPage, setListingsPage] = useState(0);
   const [reviews, setReviews] = useState<unknown[]>([]);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState({ nickname: '', gameNickname: '', gameAccessTime: '' });
+  const [servers, setServers] = useState<ServerDto[]>([]);
+  const [form, setForm] = useState({ nickname: '', gameNickname: '', gameAccessTime: '', serverId: null as number | null });
   const [saving, setSaving] = useState(false);
 
   // 리뷰 제출 모달
@@ -45,20 +45,32 @@ export default function ProfilePage() {
     api.getMe()
       .then((u) => {
         setUser(u);
-        setForm({ nickname: u.nickname, gameNickname: u.gameNickname ?? '', gameAccessTime: u.gameAccessTime ?? '' });
+        setForm({
+          nickname: u.nickname,
+          gameNickname: u.gameNickname ?? '',
+          gameAccessTime: u.gameAccessTime ?? '',
+          serverId: u.serverId ?? null,
+        });
       })
       .catch((e: unknown) => setError(String(e)));
 
+    api.getServers().then(setServers).catch(() => {});
     api.getMyGrade().then(setGrade).catch(() => {});
-    api.getMyListings().then(setListings).catch(() => {});
+    api.getMyTrades().then(setListings).catch(() => {});
     api.getReceivedReviews().then(setReviews).catch(() => {});
   }, []);
 
   async function handleSave() {
     setSaving(true);
     try {
-      const updated = await api.updateMe(form);
-      setUser(updated);
+      const { serverId, ...profileFields } = form;
+      const updated = await api.updateMe(profileFields);
+      if (serverId != null) {
+        await api.updateMyServer(serverId);
+        setServer(String(serverId));
+      }
+      const serverName = servers.find((s) => s.serverId === serverId)?.name;
+      setUser({ ...updated, serverId: serverId ?? undefined, serverName });
       setEditing(false);
     } catch {
       alert('저장 중 오류가 발생했습니다.');
@@ -66,6 +78,23 @@ export default function ProfilePage() {
       setSaving(false);
     }
   }
+
+  function handleCancelEdit() {
+    if (!user) return;
+    setForm({
+      nickname: user.nickname,
+      gameNickname: user.gameNickname ?? '',
+      gameAccessTime: user.gameAccessTime ?? '',
+      serverId: user.serverId ?? null,
+    });
+    setEditing(false);
+  }
+
+  const selectedServerName =
+    servers.find((s) => s.serverId === form.serverId)?.name
+    ?? user?.serverName
+    ?? user?.server
+    ?? null;
 
   async function handleSubmitReview() {
     if (!reviewTarget) return;
@@ -105,8 +134,12 @@ export default function ProfilePage() {
     );
   }
 
-  const gradeLabel = GRADE_LABELS[user.grade ?? ''] ?? (user.grade ?? '-');
+  const gradeDisplayName = grade?.grade ?? user.grade ?? '-';
   const initials = user.nickname?.slice(0, 2).toUpperCase() ?? '?';
+  const hasStepProgress = grade != null && grade.expPerStep > 0 && grade.gradeStep != null;
+  const stepProgressPercent = hasStepProgress
+    ? Math.min(100, Math.round((grade.stepProgressExp / grade.expPerStep) * 100))
+    : 0;
 
   return (
     <div className="max-w-[1200px] mx-auto px-4 py-8">
@@ -121,12 +154,12 @@ export default function ProfilePage() {
               {initials}
             </div>
             <h1 className="font-semibold text-xl" style={{ color: 'var(--text)' }}>{user.nickname}</h1>
-            {user.grade && (
+            {gradeDisplayName !== '-' && (
               <span
                 style={{ background: 'var(--beige)', color: 'var(--brown)', border: '1px solid var(--brown)' }}
                 className="text-xs font-medium px-2 py-0.5 rounded-full mt-2 inline-block"
               >
-                {gradeLabel}
+                {gradeDisplayName}
               </span>
             )}
           </div>
@@ -135,20 +168,32 @@ export default function ProfilePage() {
           {grade && (
             <div style={{ background: 'var(--bg)', borderRadius: 8, padding: '12px 14px' }}>
               <div className="flex justify-between text-xs mb-2" style={{ color: 'var(--text-muted)' }}>
-                <span>{gradeLabel} {grade.gradeStep}단계</span>
-                <span>{grade.totalExp} / {grade.nextLevelExp} EXP</span>
+                <span>{formatGradeStep(grade)}</span>
+                {hasStepProgress ? (
+                  <span>{grade.stepProgressExp} / {grade.expPerStep}</span>
+                ) : (
+                  <span>{grade.totalExp.toLocaleString()} EXP</span>
+                )}
               </div>
-              <div style={{ background: 'var(--border)', borderRadius: 4, height: 6 }}>
+              {hasStepProgress && (
                 <div
-                  style={{
-                    background: 'var(--brown)',
-                    borderRadius: 4,
-                    height: 6,
-                    width: `${Math.min(100, Math.round(grade.totalExp / grade.nextLevelExp * 100))}%`,
-                    transition: 'width 0.5s',
-                  }}
-                />
-              </div>
+                  style={{ background: 'var(--border)', borderRadius: 999, height: 8, overflow: 'hidden' }}
+                  role="progressbar"
+                  aria-valuenow={grade.stepProgressExp}
+                  aria-valuemin={0}
+                  aria-valuemax={grade.expPerStep}
+                >
+                  <div
+                    style={{
+                      background: 'var(--brown)',
+                      borderRadius: 999,
+                      height: '100%',
+                      width: `${stepProgressPercent}%`,
+                      transition: 'width 0.4s ease',
+                    }}
+                  />
+                </div>
+              )}
             </div>
           )}
 
@@ -187,7 +232,7 @@ export default function ProfilePage() {
                 </button>
               ) : (
                 <div className="flex gap-2">
-                  <button onClick={() => setEditing(false)}
+                  <button onClick={handleCancelEdit}
                     style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}
                     className="flex items-center gap-1 text-xs px-3 py-1.5 rounded hover:text-[var(--danger)] transition-colors">
                     <X style={{ width: 12, height: 12 }} /> 취소
@@ -203,16 +248,15 @@ export default function ProfilePage() {
 
             <div className="grid sm:grid-cols-2 gap-4 text-sm">
               {[
-                { label: '닉네임', key: 'nickname', value: form.nickname, placeholder: '닉네임 입력' },
-                { label: '이메일', key: null, value: user.email, placeholder: '' },
-                { label: '게임 닉네임', key: 'gameNickname', value: form.gameNickname, placeholder: '게임 내 닉네임' },
-                { label: '접속 가능 시간', key: 'gameAccessTime', value: form.gameAccessTime, placeholder: '예: 21시~24시' },
+                { label: '닉네임', key: 'nickname' as const, value: form.nickname, placeholder: '닉네임 입력' },
+                { label: '게임 닉네임', key: 'gameNickname' as const, value: form.gameNickname, placeholder: '게임 내 닉네임' },
+                { label: '접속 가능 시간', key: 'gameAccessTime' as const, value: form.gameAccessTime, placeholder: '예: 21시~24시' },
               ].map(({ label, key, value, placeholder }) => (
                 <div key={label}>
                   <label style={{ color: 'var(--text-muted)' }} className="text-xs font-medium block mb-1">{label}</label>
                   {editing && key ? (
                     <input
-                      value={form[key as keyof typeof form]}
+                      value={form[key]}
                       onChange={(e) => setForm((prev) => ({ ...prev, [key]: e.target.value }))}
                       placeholder={placeholder}
                       style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
@@ -225,6 +269,40 @@ export default function ProfilePage() {
                   )}
                 </div>
               ))}
+
+              <div>
+                <label style={{ color: 'var(--text-muted)' }} className="text-xs font-medium block mb-1">서버</label>
+                {editing ? (
+                  servers.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {servers.map((s) => {
+                        const selected = form.serverId === s.serverId;
+                        return (
+                          <button
+                            key={s.serverId}
+                            type="button"
+                            onClick={() => setForm((prev) => ({ ...prev, serverId: s.serverId }))}
+                            className="px-3 py-1.5 rounded text-xs transition-colors"
+                            style={{
+                              background: selected ? 'var(--brown)' : 'var(--bg)',
+                              border: `1px solid ${selected ? 'var(--brown)' : 'var(--border)'}`,
+                              color: selected ? 'var(--beige)' : 'var(--text-muted)',
+                            }}
+                          >
+                            {s.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p style={{ color: 'var(--text-disabled)' }}>서버 목록을 불러오는 중...</p>
+                  )
+                ) : (
+                  <p style={{ color: selectedServerName ? 'var(--text)' : 'var(--text-disabled)' }}>
+                    {selectedServerName || '미설정'}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
 
@@ -236,43 +314,76 @@ export default function ProfilePage() {
             </h2>
             {listings.length === 0 ? (
               <p style={{ color: 'var(--text-disabled)' }} className="text-sm text-center py-6">등록된 거래가 없습니다</p>
-            ) : (
-              <div className="space-y-2">
-                {listings.slice(0, 8).map((item: unknown) => {
-                  const r = item as Record<string, unknown>;
-                  const isSell = String(r.listingType ?? r.type ?? 'SELL') !== 'BUY';
-                  return (
-                    <div key={String(r.id)}
-                      style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}
-                      className="flex items-center justify-between px-4 py-3 rounded-lg">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span
-                          style={{
-                            background: isSell ? 'var(--sell-bg)' : 'var(--buy-bg)',
-                            color: isSell ? 'var(--sell-text)' : 'var(--buy-text)',
-                            border: `1px solid ${isSell ? 'var(--sell-border)' : 'var(--buy-border)'}`,
-                          }}
-                          className="text-xs px-1.5 py-0.5 rounded font-medium shrink-0"
-                        >
-                          {isSell ? '판매' : '구매'}
-                        </span>
-                        <span className="text-sm font-medium truncate" style={{ color: 'var(--text)' }}>
-                          {String(r.displayName ?? r.title ?? '-')}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-3 shrink-0">
-                        <span className="font-serif text-sm font-bold" style={{ color: 'var(--brown)' }}>
-                          {r.price ? formatPrice(Number(r.price)) : '-'}
-                        </span>
-                        <span style={{ color: 'var(--text-disabled)' }} className="text-xs">
-                          {r.createdAt ? relativeTime(String(r.createdAt)) : ''}
-                        </span>
-                      </div>
+            ) : (() => {
+              const PAGE_SIZE = 5;
+              const totalPages = Math.ceil(listings.length / PAGE_SIZE);
+              const page = Math.min(listingsPage, totalPages - 1);
+              const pageItems = listings.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+              return (
+                <>
+                  <div className="space-y-2">
+                    {pageItems.map((item: unknown) => {
+                      const r = item as Record<string, unknown>;
+                      const displayName = String(r.displayName ?? '-');
+                      const role = String(r.role ?? '판매');
+                      const isSell = role === '판매';
+                      return (
+                        <div key={String(r.tradeId)}
+                          style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}
+                          className="flex items-center justify-between px-4 py-3 rounded-lg">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span
+                              style={{
+                                background: isSell ? 'var(--sell-bg)' : 'var(--buy-bg)',
+                                color: isSell ? 'var(--sell-text)' : 'var(--buy-text)',
+                                border: `1px solid ${isSell ? 'var(--sell-border)' : 'var(--buy-border)'}`,
+                              }}
+                              className="text-xs px-1.5 py-0.5 rounded font-medium shrink-0"
+                            >
+                              {role}
+                            </span>
+                            <span className="text-sm font-medium truncate" style={{ color: 'var(--text)' }}>
+                              {displayName}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3 shrink-0">
+                            <span className="font-serif text-sm font-bold" style={{ color: 'var(--brown)' }}>
+                              {r.confirmedPrice ? formatPrice(Number(r.confirmedPrice)) : '-'}
+                            </span>
+                            <span style={{ color: 'var(--text-disabled)' }} className="text-xs">
+                              {r.confirmedAt ? relativeTime(String(r.confirmedAt)) : ''}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {totalPages > 1 && (
+                    <div className="flex items-center justify-center gap-2 mt-4">
+                      <button
+                        onClick={() => setListingsPage((p) => Math.max(0, p - 1))}
+                        disabled={page === 0}
+                        className="px-3 py-1 rounded text-xs disabled:opacity-30"
+                        style={{ background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)' }}
+                      >
+                        이전
+                      </button>
+                      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                        {page + 1} / {totalPages}
+                      </span>
+                      <button
+                        onClick={() => setListingsPage((p) => Math.min(totalPages - 1, p + 1))}
+                        disabled={page === totalPages - 1}
+                        className="px-3 py-1 rounded text-xs disabled:opacity-30"
+                        style={{ background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)' }}
+                      >
+                        다음
+                      </button>
                     </div>
-                  );
-                })}
-              </div>
-            )}
+                  )}
+                </>
+              );
+            })()}
           </div>
 
           {/* 받은 리뷰 */}

@@ -11,6 +11,7 @@ import org.example.gersangtrade.catalog.repository.MercenaryCharacteristicLevelR
 import org.example.gersangtrade.catalog.repository.MercenaryStatRepository;
 import org.example.gersangtrade.catalog.repository.MonsterRepository;
 import org.example.gersangtrade.catalog.repository.RitualSetEffectRepository;
+import org.example.gersangtrade.catalog.repository.RitualStatRepository;
 import org.example.gersangtrade.catalog.repository.SkillCoefficientRepository;
 import org.example.gersangtrade.deck.repository.UserDeckMemberCharacteristicRepository;
 import org.example.gersangtrade.deck.repository.UserDeckMemberRepository;
@@ -94,6 +95,7 @@ class DpsCalculatorServiceTest {
     @Mock private EquipmentSetEffectRepository setEffectRepository;
     @Mock private EquipmentSetSkillEffectRepository setSkillEffectRepository;
     @Mock private RitualSetEffectRepository ritualSetEffectRepository;
+    @Mock private RitualStatRepository ritualStatRepository;
     @Mock private SkillCoefficientRepository skillCoefficientRepository;
     @Mock private MonsterRepository monsterRepository;
     @Mock private LegendGeneralLoadService legendGeneralLoadService;
@@ -186,6 +188,7 @@ class DpsCalculatorServiceTest {
 
         when(myungwangStatTransferCalculator.computeReceivedTransfers(any(), any(), any(), any()))
                 .thenReturn(new MyungwangStatTransferCalculator.ComputedTransfers(Map.of(), Map.of()));
+        when(ritualStatRepository.findByRitualIdIn(anyList())).thenReturn(List.of());
     }
 
     private DpsRequest req() {

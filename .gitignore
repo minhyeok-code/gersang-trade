@@ -1,0 +1,16 @@
+# Frontend
+front/node_modules/
+front/.next/
+front/tsconfig.tsbuildinfo
+
+# Backend
+back/gersangtrade/build/
+back/gersangtrade/.gradle/
+
+# IDE
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db

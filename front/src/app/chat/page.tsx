@@ -74,7 +74,9 @@ export default function ChatPage() {
                 <div className="flex items-center gap-4">
                   <span className="font-semibold text-white">방 #{String(r.id)}</span>
                   <span className="text-xs text-gray-400">상태: {String(r.status ?? '-')}</span>
-                  <span className="text-xs text-gray-400">등록글: {String(r.listingId ?? '-')}</span>
+                  <span className="text-xs text-gray-400">
+                    {r.listingDisplayName ? String(r.listingDisplayName) : `등록글 #${String(r.listingId ?? '-')}`}
+                  </span>
                 </div>
               </Link>
             );

@@ -19,6 +19,7 @@ import java.time.LocalDateTime;
  * @param tradeCount       거래 완료 횟수
  * @param serverId         기본 서버 ID (미설정 시 null)
  * @param serverName       기본 서버명 (미설정 시 null)
+ * @param role             권한 (USER / ADMIN) — 마이페이지·헤더 UI용
  * @param createdAt        가입 일시
  */
 public record UserProfileResponse(
@@ -34,6 +35,7 @@ public record UserProfileResponse(
         Integer tradeCount,
         Integer serverId,
         String serverName,
+        String role,
         LocalDateTime createdAt
 ) {
     public static UserProfileResponse from(User user) {
@@ -51,6 +53,7 @@ public record UserProfileResponse(
                 user.getTradeCount(),
                 server != null ? server.getServerId() : null,
                 server != null ? server.getName() : null,
+                user.getRole().name(),
                 user.getCreatedAt()
         );
     }

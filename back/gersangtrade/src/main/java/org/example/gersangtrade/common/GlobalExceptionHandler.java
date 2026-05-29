@@ -1,5 +1,7 @@
 package org.example.gersangtrade.common;
 
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -8,6 +10,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.stream.Collectors;
 
 /**
@@ -24,7 +27,19 @@ import java.util.stream.Collectors;
  * 추후 도메인 전용 예외(NotFoundException 등)로 분리하면 더 정확한 코드 반환이 가능하다.
  */
 @RestControllerAdvice
+@Slf4j
 public class GlobalExceptionHandler {
+
+    /**
+     * 리소스 미존재 — 404 Not Found.
+     * userRepository.findById(...).orElseThrow(NoSuchElementException) 패턴에서 발생.
+     */
+    @ExceptionHandler(NoSuchElementException.class)
+    public ResponseEntity<Map<String, String>> handleNoSuchElement(NoSuchElementException e) {
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(Map.of("error", "not_found", "message", e.getMessage()));
+    }
 
     /**
      * 잘못된 입력값 또는 정책 위반 — 400 Bad Request.
@@ -46,6 +61,18 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.CONFLICT)
                 .body(Map.of("error", "conflict", "message", e.getMessage()));
+    }
+
+    /**
+     * DB 제약 위반 — 409 Conflict.
+     * 채팅방 상태 전환·중복 확정 등 데이터 정합성 충돌 시 반환한다.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<Map<String, String>> handleDataIntegrity(DataIntegrityViolationException e) {
+        log.warn("DataIntegrityViolation: {}", e.getMostSpecificCause().getMessage(), e);
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(Map.of("error", "conflict", "message", "데이터 저장 중 충돌이 발생했습니다. 잠시 후 다시 시도해 주세요."));
     }
 
     /**

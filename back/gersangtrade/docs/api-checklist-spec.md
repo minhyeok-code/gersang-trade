@@ -538,10 +538,11 @@ DPS 계산기가 완성된 이후에 의미 있는 기능이다.
 | `GET` | `/admin/sets` | 세트 목록 조회 | ✅ |
 | `GET` | `/admin/sets/{id}` | 세트 단건 조회 | ✅ |
 | `PATCH` | `/admin/sets/{id}` | 세트 수정 (isTradeable·enhancement 포함) | ✅ |
+| `POST` | `/admin/sets/{id}/restrictions` | 세트 전체 피스에 착용 제한 일괄 적용 (중복 건너뜀) | ✅ |
 | `GET` | `/admin/items` | 아이템 목록 조회 | ✅ |
 | `GET` | `/admin/items/{itemId}` | 아이템 상세 조회 | ✅ |
 | `PUT` | `/admin/items/{itemId}` | 아이템 기본정보 수정 | ✅ |
-| `PUT` | `/admin/items/{itemId}/equipment-detail` | 장비 상세 수정 (slot·kind·ritual·hasSlot·set·equipSlot·**mercenary·enhancement** 포함) | ✅ |
+| `PUT` | `/admin/items/{itemId}/equipment-detail` | 장비 상세 수정 (slot·kind·ritual·hasSlot·set·equipSlot·enhancement 포함) | ✅ |
 | `PUT` | `/admin/items/{itemId}/stats` | 아이템 스탯 전체 교체 | ✅ |
 | `PUT` | `/admin/items/{itemId}/skills` | 아이템 스킬 전체 교체 (**skillBehaviorType·replacesBaseSkill·triggerEveryN·triggerBaseSkillKey·note** 포함) | ✅ |
 | `GET` | `/admin/items/{itemId}/restrictions` | 아이템 착용 제한 목록 조회 | ✅ |

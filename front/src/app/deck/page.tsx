@@ -13,15 +13,22 @@ import {
   type MemberCharacteristicDto,
   type DeckEffectCatalogDto,
   type DeckEffectUpdateBody,
+  type RitualDto,
+  type SlotRitualDto,
 } from '@/lib/api';
-import { Plus, Trash2, Sword, Shield, Search, X, ChevronDown, ChevronUp, Zap } from 'lucide-react';
+import { equipmentItemKey, equipmentItemToSearchResult } from '@/lib/equipment';
+import { DeckEffectPanel } from '@/components/deck/DeckEffectPanel';
+import { Plus, Trash2, Sword, Shield, Search, X, ChevronDown, ChevronUp, Zap, Sparkles } from 'lucide-react';
 
 // ══════════ 상수 ══════════
 
+const RITUAL_SLOT = 'RITUAL';
 const NORMAL_SLOTS = ['CHARM', 'HELMET', 'GLOVES', 'ARMOR', 'BELT', 'WEAPON', 'SHOES', 'RING_1', 'RING_2'];
 const APP_SLOTS = ['APP_SPIRIT', 'APP_EARRING', 'APP_HELMET', 'APP_NECKLACE', 'APP_ARMOR', 'APP_GREAVES', 'APP_WEAPON', 'APP_BRACELET'];
-const NORMAL_SLOT_ROWS = [
-  ['CHARM', null],
+const ALL_EQUIP_SLOTS = [...NORMAL_SLOTS, ...APP_SLOTS];
+const DPS_CALC_DEBOUNCE_MS = 400;
+const NORMAL_SLOT_ROWS: (string | null)[][] = [
+  ['CHARM', RITUAL_SLOT],
   ['HELMET', 'GLOVES'],
   ['ARMOR', 'BELT'],
   ['WEAPON', 'SHOES'],
@@ -37,6 +44,7 @@ const APP_SLOT_ROWS = [
 const SLOT_LABEL: Record<string, string> = {
   HELMET: '투구', ARMOR: '갑옷', WEAPON: '무기', SHOES: '신발', GLOVES: '장갑',
   BELT: '요대', CHARM: '신수부', RING_1: '반지', RING_2: '반지',
+  [RITUAL_SLOT]: '주술',
   APP_SPIRIT: '기운', APP_HELMET: '외투구', APP_ARMOR: '외갑옷', APP_WEAPON: '외무기',
   APP_WAR_GOD: '전신', APP_EARRING: '귀걸이', APP_NECKLACE: '목걸이',
   APP_BRACELET: '팔찌', APP_GREAVES: '각반',
@@ -58,6 +66,22 @@ const ELEMENT_COLORS: Record<string, string> = {
 
 type DeckMember = NonNullable<DeckDetailDto['members']>[number];
 type MemberStats = Awaited<ReturnType<typeof api.getDeckMemberStats>>;
+
+/** 장비·특성 등 설정이 있으면 제거 전 확인 */
+async function memberNeedsRemovalConfirm(deckId: number, member: DeckMember) {
+  if (member.slots.length > 0) return true;
+  try {
+    const chars = await api.getDeckMemberCharacteristics(deckId, member.id);
+    return chars.characteristics.some((c) => (c.selectedLevel ?? 0) > 0);
+  } catch {
+    return false;
+  }
+}
+
+async function confirmMemberRemoval(deckId: number, member: DeckMember, mercenaryName: string) {
+  if (!(await memberNeedsRemovalConfirm(deckId, member))) return true;
+  return confirm(`${mercenaryName}을(를) 정말 삭제하시겠습니까?`);
+}
 
 const STAT_LABEL: Record<string, string> = {
   STRENGTH: '힘',
@@ -104,9 +128,111 @@ function isMyeongwangMercenary(merc?: Pick<MercenaryDto, 'category'> | null) {
   return category.includes('명왕') || category === 'MYEONG_KING' || category === 'MYEONG_KING_AWAKENING';
 }
 
+/** 부동명왕(EARTH)은 명왕 2명 제한에서 제외 */
+function isNonEarthMyeongwangMercenary(merc?: Pick<MercenaryDto, 'category' | 'element'> | null) {
+  return isMyeongwangMercenary(merc) && merc?.element !== 'EARTH';
+}
+
+function isAwakenedMyeongwangMercenary(merc?: Pick<MercenaryDto, 'category'> | null) {
+  const category = mercenaryCategory(merc);
+  return category.includes('각성명왕') || category === 'MYEONG_KING_AWAKENING';
+}
+
+function isMyeongwangPickerCategory(category: string) {
+  return category.includes('명왕');
+}
+
+function myeongwangVariantLabel(merc: MercenaryDto): '일반' | '각성' | null {
+  if (!isMyeongwangMercenary(merc)) return null;
+  return isAwakenedMyeongwangMercenary(merc) ? '각성' : '일반';
+}
+
+function findMyeongwangSameNatureConflict(merc: MercenaryDto, deck: MercenaryDto[]) {
+  if (!isMyeongwangMercenary(merc) || !merc.element || merc.element === 'NONE') return undefined;
+  return deck.find(
+    (m) => m.id !== merc.id && isMyeongwangMercenary(m) && m.element === merc.element
+  );
+}
+
+const MYEONGWANG_RULES_LINES = [
+  '같은 속성 계열은 일반 / 각성 중 1명만 선택',
+  '부동명왕(토) 제외, 명왕·각성명왕 합산 최대 2명',
+];
+
+/** 명왕 편성 규칙 — ! 아이콘 + 호버/포커스 툴팁 */
+function MyeongwangRulesHint() {
+  return (
+    <div className="relative inline-flex group">
+      <button
+        type="button"
+        aria-label="명왕 편성 규칙"
+        className="w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold leading-none shrink-0"
+        style={{
+          border: '1.5px solid var(--brown)',
+          color: 'var(--brown)',
+          background: 'var(--card)',
+        }}
+      >
+        !
+      </button>
+      <div
+        role="tooltip"
+        className="pointer-events-none absolute right-0 top-full z-20 mt-2 w-max max-w-[260px] rounded-lg px-3 py-2 text-xs leading-relaxed opacity-0 invisible translate-y-1 transition-all group-hover:opacity-100 group-hover:visible group-hover:translate-y-0 group-focus-within:opacity-100 group-focus-within:visible group-focus-within:translate-y-0"
+        style={{
+          background: 'var(--text)',
+          color: 'var(--beige)',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+        }}
+      >
+        <p className="font-semibold mb-1">명왕 편성 규칙</p>
+        <ul className="list-disc list-inside space-y-0.5 text-[11px] opacity-90">
+          {MYEONGWANG_RULES_LINES.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 function isLegendaryMercenary(merc?: Pick<MercenaryDto, 'category'> | null) {
   const category = mercenaryCategory(merc);
   return category.includes('전설장수') || category === 'LEGENDARY_GENERAL';
+}
+
+const ELEMENT_SORT_ORDER = ['FIRE', 'WATER', 'THUNDER', 'WIND', 'EARTH'] as const;
+
+/** 덱 용병 선택 탭 표시 순서 */
+const DECK_MERCENARY_CATEGORY_ORDER = ['주인공', '각성사천왕', '사천왕', '각성명왕', '명왕', '전설장수'];
+
+/** 헤더(76px) 아래 sticky 여백 */
+const DECK_STICKY_TOP = 88;
+
+function sortDeckMercenaryCategories(categories: string[]) {
+  return [...categories].sort((a, b) => {
+    const aOrder = DECK_MERCENARY_CATEGORY_ORDER.indexOf(a);
+    const bOrder = DECK_MERCENARY_CATEGORY_ORDER.indexOf(b);
+    return (aOrder === -1 ? 999 : aOrder) - (bOrder === -1 ? 999 : bOrder);
+  });
+}
+
+function elementSortIndex(element?: string | null) {
+  if (!element) return ELEMENT_SORT_ORDER.length;
+  const idx = ELEMENT_SORT_ORDER.indexOf(element as (typeof ELEMENT_SORT_ORDER)[number]);
+  return idx >= 0 ? idx : ELEMENT_SORT_ORDER.length + 1;
+}
+
+/** 전설장수 — 속성(화→수→뇌→풍→토) 순, 동일 속성은 이름순 */
+function sortMercenariesByElement(mercenaries: MercenaryDto[]) {
+  return [...mercenaries].sort((a, b) => {
+    const byElement = elementSortIndex(a.element) - elementSortIndex(b.element);
+    if (byElement !== 0) return byElement;
+    return a.name.localeCompare(b.name, 'ko');
+  });
+}
+
+function isLegendaryPickerCategory(category: string) {
+  return category.includes('전설');
 }
 
 function isDeckSelectableMercenary(merc: MercenaryDto) {
@@ -126,7 +252,7 @@ function formatStatType(statType: string) {
 
 function statValue(
   stats: MemberStats | null,
-  section: 'baseStats' | 'equipStats' | 'setEffectStats' | 'characteristicStats' | 'partyCharacteristicStats' | 'enemyDebuffStats' | 'ritualStats' | 'deckBuffStats' | 'levelBonusStats' | 'bonusStats' | 'myungwangTransferStats' | 'totalStats',
+  section: 'baseStats' | 'equipStats' | 'setEffectStats' | 'characteristicStats' | 'partyCharacteristicStats' | 'enemyDebuffStats' | 'ritualStats' | 'ritualSetEffectStats' | 'deckBuffStats' | 'levelBonusStats' | 'bonusStats' | 'protagonistBuffStats' | 'awakenedMyeongwangBuffStats' | 'myungwangTransferStats' | 'totalStats',
   statType: string
 ) {
   return stats?.[section]?.find((s) => s.statType === statType)?.value ?? 0;
@@ -141,30 +267,24 @@ function displayStatTypes(stats: MemberStats | null) {
   stats?.partyCharacteristicStats?.forEach((s) => keys.add(s.statType));
   stats?.enemyDebuffStats?.forEach((s) => keys.add(s.statType));
   stats?.ritualStats?.forEach((s) => keys.add(s.statType));
+  stats?.ritualSetEffectStats?.forEach((s) => keys.add(s.statType));
   stats?.deckBuffStats?.forEach((s) => keys.add(s.statType));
   stats?.levelBonusStats?.forEach((s) => keys.add(s.statType));
   stats?.bonusStats?.forEach((s) => keys.add(s.statType));
+  stats?.protagonistBuffStats?.forEach((s) => keys.add(s.statType));
+  stats?.awakenedMyeongwangBuffStats?.forEach((s) => keys.add(s.statType));
   stats?.myungwangTransferStats?.forEach((s) => keys.add(s.statType));
+  stats?.ritualSetEffects?.forEach((s) => keys.add(s.statType));
   stats?.totalStats?.forEach((s) => keys.add(s.statType));
   return Array.from(keys);
 }
 
 function equipmentItemId(item: EquipmentItemDto) {
-  return item.itemId ?? item.id ?? 0;
+  return equipmentItemKey(item);
 }
 
-function equipmentItemToSearchResult(item: EquipmentItemDto, selectedSlot: string): ItemSearchResult {
-  return {
-    id: equipmentItemId(item),
-    name: item.name,
-    type: 'EQUIPMENT',
-    equipmentKind: item.equipmentKind,
-    slot: item.slot,
-    setId: item.setId,
-    setName: item.setName,
-    imageUrl: item.imageUrl,
-    equipSlot: selectedSlot,
-  };
+function toSearchResult(item: EquipmentItemDto, selectedSlot: string): ItemSearchResult {
+  return equipmentItemToSearchResult(item, selectedSlot);
 }
 
 function characteristicUsedPoints(characteristics: MemberCharacteristicDto | null) {
@@ -191,7 +311,25 @@ const BONUS_TARGET_LABEL: Record<'MAIN_STAT' | 'VITALITY', string> = {
   VITALITY: '생명력',
 };
 
+function formatStatValue(statType: string, value: number, statUnit?: 'FLAT' | 'PERCENT') {
+  if (statUnit === 'PERCENT' || statType === 'DAMAGE_PERCENT' || statType === 'SKILL_DAMAGE_PERCENT') {
+    return `+${value}%`;
+  }
+  return `+${value}`;
+}
+
+function equipmentTabStatTotal(stats: MemberStats | null, statType: string) {
+  if (!stats) return 0;
+  return (
+    statValue(stats, 'equipStats', statType)
+    + statValue(stats, 'setEffectStats', statType)
+    + statValue(stats, 'ritualStats', statType)
+    + statValue(stats, 'ritualSetEffectStats', statType)
+  );
+}
+
 function formatEquipAttackPower(stats: MemberStats | null) {
+  if (!stats) return '—';
   const min = statValue(stats, 'equipStats', 'MIN_POWER');
   const max = statValue(stats, 'equipStats', 'MAX_POWER');
   if (min === 0 && max === 0) return '—';
@@ -248,14 +386,26 @@ function buildStatContributions(stats: MemberStats | null, statType: string): St
   const rows: StatContribution[] = [
     { label: '기본', value: statValue(stats, 'baseStats', statType) },
     { label: '장비', value: statValue(stats, 'equipStats', statType) },
+    { label: '세트 효과', value: statValue(stats, 'setEffectStats', statType) },
     { label: '특성(자신)', value: statValue(stats, 'characteristicStats', statType) },
     { label: '특성(아군)', value: statValue(stats, 'partyCharacteristicStats', statType) },
     { label: '특성(적군)', value: statValue(stats, 'enemyDebuffStats', statType) },
     { label: '주술', value: statValue(stats, 'ritualStats', statType) },
+    { label: '주술 세트', value: statValue(stats, 'ritualSetEffectStats', statType) },
     { label: '덱 효과', value: statValue(stats, 'deckBuffStats', statType) },
     { label: '레벨 스탯', value: statValue(stats, 'levelBonusStats', statType) },
     { label: '보너스 스탯', value: statValue(stats, 'bonusStats', statType) },
+    { label: '주인공 국가 버프', value: statValue(stats, 'protagonistBuffStats', statType) },
+    { label: '각성 명왕 버프', value: statValue(stats, 'awakenedMyeongwangBuffStats', statType) },
   ];
+  stats.ritualSetEffects?.forEach((eff) => {
+    if (eff.statType === statType && eff.statValue !== 0) {
+      rows.push({
+        label: `주술 세트 상세 (${eff.outcome} ${eff.setName})`,
+        value: eff.statValue,
+      });
+    }
+  });
   stats.myungwangTransferDetails?.forEach((detail) => {
     if (detail.statType === statType && detail.value !== 0) {
       rows.push({
@@ -321,11 +471,11 @@ function EquipSetEffectsPanel({ stats, loading, compact = false }: { stats: Memb
                 className={`rounded ${compact ? 'px-2 py-1.5' : 'px-2.5 py-2'}`}
               >
                 <div className={`flex items-center justify-between gap-2 ${compact ? 'text-[10px]' : 'text-xs'}`}>
-                  <span style={{ color: 'var(--text)' }}>{effect.ritualName} / {effect.setName}</span>
+                  <span style={{ color: 'var(--text)' }}>{effect.outcome} / {effect.setName}</span>
                   <span style={{ color: 'var(--brown)' }}>{effect.appliedPieces}/{effect.requiredPieces}</span>
                 </div>
                 <p className={compact ? 'text-[9px] mt-0.5' : 'text-[10px] mt-0.5'} style={{ color: 'var(--text-muted)' }}>
-                  {effect.outcome} · {formatStatType(effect.statType)} +{effect.statValue}
+                  {formatStatType(effect.statType)} {formatStatValue(effect.statType, effect.statValue, effect.statUnit)}
                 </p>
               </div>
             ))}
@@ -363,8 +513,17 @@ function EquipStatTable({ stats, loading, compact = false }: { stats: MemberStat
         {EQUIP_TAB_STATS.map((statType) => {
           const equipValue = statValue(stats, 'equipStats', statType);
           const setValue = statValue(stats, 'setEffectStats', statType);
-          const totalValue = equipValue + setValue;
+          const ritualValue = statValue(stats, 'ritualStats', statType);
+          const ritualSetValue = statValue(stats, 'ritualSetEffectStats', statType);
+          const totalValue = equipValue + setValue + ritualValue + ritualSetValue;
           if (totalValue === 0) return null;
+          const isPercent = statType === 'DAMAGE_PERCENT';
+          const formatPart = (value: number) => (isPercent ? `${value}%` : String(value));
+          const detail = [equipValue, setValue, ritualValue, ritualSetValue]
+            .map((value, index) => ({ value, label: ['장비', '세트', '주술', '주술세트'][index] }))
+            .filter((part) => part.value > 0)
+            .map((part) => `${part.label} ${formatPart(part.value)}`)
+            .join(' · ');
           return (
           <div
             key={statType}
@@ -372,8 +531,8 @@ function EquipStatTable({ stats, loading, compact = false }: { stats: MemberStat
             style={{ borderTop: '1px solid var(--border)', color: 'var(--text)' }}
           >
             <span className={compact ? 'text-[11px] truncate' : ''}>{formatStatType(statType)}</span>
-            <span className={`text-right font-medium ${compact ? 'text-[11px]' : ''}`}>
-              {setValue > 0 ? `${equipValue}+${setValue}` : equipValue}
+            <span className={`text-right font-medium ${compact ? 'text-[11px]' : ''}`} title={detail || undefined}>
+              {formatPart(totalValue)}
             </span>
           </div>
           );
@@ -576,9 +735,9 @@ function StatContributionPopover({
   );
 }
 
-// ══════════ 덱 목록 카드 ══════════
+// ══════════ 덱 탭 / 추가 모달 ══════════
 
-function DeckCard({ deck, isSelected, onSelect, onDelete, onRename }: {
+function DeckTab({ deck, isSelected, onSelect, onDelete, onRename }: {
   deck: { id: number; name: string; isActive: boolean };
   isSelected: boolean;
   onSelect: () => void;
@@ -588,45 +747,136 @@ function DeckCard({ deck, isSelected, onSelect, onDelete, onRename }: {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(deck.name);
 
-  function submit() {
+  useEffect(() => {
+    setName(deck.name);
+  }, [deck.name]);
+
+  function submitRename() {
     setEditing(false);
     if (name.trim() && name !== deck.name) onRename(name.trim());
+    else setName(deck.name);
+  }
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onBlur={submitRename}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') submitRename();
+          if (e.key === 'Escape') {
+            setName(deck.name);
+            setEditing(false);
+          }
+        }}
+        style={{ background: 'var(--bg)', border: '1px solid var(--brown)', color: 'var(--text)' }}
+        className="rounded-lg px-3 py-1.5 text-sm focus:outline-none w-28"
+      />
+    );
   }
 
   return (
-    <div
-      onClick={onSelect}
-      style={{
-        background: isSelected ? 'var(--beige)' : 'var(--card)',
-        border: `1px solid ${isSelected ? 'var(--brown)' : 'var(--border)'}`,
-        cursor: 'pointer',
-      }}
-      className="rounded-lg px-4 py-3 flex items-center justify-between hover:border-[var(--brown)] transition-all"
-    >
-      {editing ? (
-        <input
-          autoFocus
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onBlur={submit}
-          onKeyDown={(e) => e.key === 'Enter' && submit()}
-          onClick={(e) => e.stopPropagation()}
-          style={{ background: 'var(--bg)', border: '1px solid var(--brown)', color: 'var(--text)' }}
-          className="flex-1 rounded px-2 py-0.5 text-sm focus:outline-none mr-2"
-        />
-      ) : (
-        <span className="font-medium text-sm" style={{ color: 'var(--text)' }}>
-          {deck.name}
-          {deck.isActive && (
-            <span style={{ background: 'var(--brown)', color: 'var(--beige)' }} className="text-[10px] ml-2 px-1.5 py-0.5 rounded">활성</span>
-          )}
-        </span>
+    <div className="flex items-center gap-0.5">
+      <button
+        type="button"
+        onClick={onSelect}
+        style={{
+          background: isSelected ? 'var(--brown)' : 'var(--card)',
+          color: isSelected ? 'var(--beige)' : 'var(--text)',
+          border: `1px solid ${isSelected ? 'var(--brown)' : 'var(--border)'}`,
+        }}
+        className="rounded-lg px-3 py-1.5 text-sm font-medium hover:border-[var(--brown)] transition-colors whitespace-nowrap"
+      >
+        {deck.name}
+        {deck.isActive && !isSelected && (
+          <span style={{ color: 'var(--text-muted)' }} className="text-[10px] ml-1">(활성)</span>
+        )}
+      </button>
+      {isSelected && (
+        <div className="flex items-center">
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            style={{ color: 'var(--text-muted)' }}
+            className="p-1 hover:text-[var(--brown)] transition-colors text-xs"
+            title="이름 수정"
+          >
+            ✏️
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            style={{ color: 'var(--text-muted)' }}
+            className="p-1 hover:text-[var(--danger)] transition-colors"
+            title="덱 삭제"
+          >
+            <Trash2 style={{ width: 13, height: 13 }} />
+          </button>
+        </div>
       )}
-      <div className="flex gap-1 ml-2" onClick={(e) => e.stopPropagation()}>
-        <button onClick={() => setEditing(true)} style={{ color: 'var(--text-muted)' }} className="p-1 hover:text-[var(--brown)] transition-colors text-xs">✏️</button>
-        <button onClick={onDelete} style={{ color: 'var(--text-muted)' }} className="p-1 hover:text-[var(--danger)] transition-colors">
-          <Trash2 style={{ width: 13, height: 13 }} />
-        </button>
+    </div>
+  );
+}
+
+function AddDeckModal({
+  name,
+  creating,
+  onChange,
+  onConfirm,
+  onClose,
+}: {
+  name: string;
+  creating: boolean;
+  onChange: (value: string) => void;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 flex items-center justify-center z-[500] p-4"
+      style={{ background: 'rgba(0,0,0,0.65)' }}
+      onClick={onClose}
+    >
+      <div
+        style={{ background: 'var(--card)', border: '1px solid var(--border)', width: 360 }}
+        className="rounded-xl p-5 space-y-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="font-semibold" style={{ color: 'var(--text)' }}>새 덱 추가</h2>
+        <div>
+          <label className="text-xs block mb-1.5 font-medium" style={{ color: 'var(--text-muted)' }}>덱 이름</label>
+          <input
+            autoFocus
+            value={name}
+            onChange={(e) => onChange(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && onConfirm()}
+            placeholder="덱 이름을 입력하세요"
+            style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
+            className="w-full rounded px-3 py-2 text-sm focus:outline-none focus:border-[var(--brown)]"
+          />
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={creating}
+            style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}
+            className="flex-1 py-2 rounded text-sm disabled:opacity-50"
+          >
+            취소
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={creating}
+            style={{ background: 'var(--brown)', color: 'var(--beige)' }}
+            className="flex-1 py-2 rounded text-sm font-semibold hover:bg-[var(--brown-dark)] disabled:opacity-50"
+          >
+            {creating ? '추가 중...' : '확인'}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -832,24 +1082,276 @@ function MercenaryModal({ onSelect, onClose }: {
   );
 }
 
+function monsterHittingResist(monster: MonsterDto) {
+  return monster.hittingResistance ?? monster.resistance;
+}
+
+function StatWithDebuff({ label, base, debuffed }: {
+  label: string;
+  base?: number | null;
+  debuffed?: number | null;
+}) {
+  if (base == null && debuffed == null) return null;
+  const showDebuff = debuffed != null && debuffed !== base;
+  return (
+    <p className="text-[10px] leading-snug" style={{ color: 'var(--text-muted)' }}>
+      {label}:{' '}
+      <span style={{ color: 'var(--text)' }}>{base ?? '-'}</span>
+      {showDebuff && (
+        <>
+          {' → '}
+          <span style={{ color: 'var(--brown)' }}>{debuffed}</span>
+        </>
+      )}
+    </p>
+  );
+}
+
+function MonsterDpsSidebar({
+  selectedDeckId,
+  monster,
+  monsterQuery,
+  setMonsterQuery,
+  showMonsterSuggest,
+  setShowMonsterSuggest,
+  monsterSuggestions,
+  onSelectMonster,
+  onClearMonster,
+  failedMonsterImageIds,
+  setFailedMonsterImageIds,
+  dpsResult,
+  calcLoading,
+  sticky = true,
+}: {
+  selectedDeckId: number | null;
+  monster: MonsterDto | null;
+  monsterQuery: string;
+  setMonsterQuery: (v: string) => void;
+  showMonsterSuggest: boolean;
+  setShowMonsterSuggest: (v: boolean) => void;
+  monsterSuggestions: MonsterDto[];
+  onSelectMonster: (m: MonsterDto) => void;
+  onClearMonster: () => void;
+  failedMonsterImageIds: Set<number>;
+  setFailedMonsterImageIds: (value: Set<number> | ((prev: Set<number>) => Set<number>)) => void;
+  dpsResult: DpsResultDto | null;
+  calcLoading: boolean;
+  sticky?: boolean;
+}) {
+  const outerClass = sticky ? 'hidden lg:block min-w-0' : 'lg:hidden min-w-0 mt-4';
+  const innerClass = sticky
+    ? 'sticky space-y-3 max-h-[calc(100vh-112px)] overflow-y-auto pr-0.5'
+    : 'space-y-3';
+
+  return (
+    <aside className={outerClass}>
+      <div
+        className={innerClass}
+        style={sticky ? { top: DECK_STICKY_TOP, scrollbarGutter: 'stable' } : undefined}
+      >
+        {/* 대상 몬스터 */}
+        <div style={{ background: 'var(--card)', border: '1px solid var(--border)' }} className="rounded-xl p-3">
+          <h2 className="font-semibold text-sm mb-2" style={{ color: 'var(--text)' }}>대상 몬스터</h2>
+
+          <div className="relative mb-2">
+            <Search style={{ position: 'absolute', left: 8, top: 9, width: 13, height: 13, color: 'var(--text-muted)' }} />
+            <input
+              value={monsterQuery}
+              onFocus={() => setShowMonsterSuggest(true)}
+              onChange={(e) => {
+                setMonsterQuery(e.target.value);
+                setShowMonsterSuggest(true);
+              }}
+              onBlur={() => setTimeout(() => setShowMonsterSuggest(false), 120)}
+              placeholder="몬스터 검색..."
+              style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', paddingLeft: 28 }}
+              className="w-full rounded px-2.5 py-1.5 text-xs focus:outline-none focus:border-[var(--brown)]"
+            />
+            {showMonsterSuggest && (
+              <div
+                style={{ background: 'var(--card)', border: '1px solid var(--border)', boxShadow: '0 6px 16px rgba(0,0,0,0.12)' }}
+                className="absolute z-20 left-0 right-0 mt-1 rounded-lg max-h-44 overflow-y-auto"
+              >
+                {monsterSuggestions.length === 0 ? (
+                  <p style={{ color: 'var(--text-disabled)' }} className="text-[11px] px-2.5 py-2">검색 결과 없음</p>
+                ) : (
+                  monsterSuggestions.map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => onSelectMonster(m)}
+                      style={{ borderBottom: '1px solid var(--border)', width: '100%', textAlign: 'left' }}
+                      className="px-2.5 py-1.5 hover:bg-[var(--bg)] transition-colors"
+                    >
+                      <p className="text-xs font-medium truncate" style={{ color: 'var(--text)' }}>{m.name}</p>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+
+          {monster ? (
+            <div className="flex gap-2.5">
+              <div
+                className="w-[72px] h-[72px] shrink-0 rounded-md overflow-hidden"
+                style={{ background: 'var(--border)' }}
+              >
+                {monster.imageUrl && !failedMonsterImageIds.has(monster.id) ? (
+                  <img
+                    src={monster.imageUrl}
+                    alt={monster.name}
+                    className="w-full h-full object-cover"
+                    onError={() => {
+                      setFailedMonsterImageIds((prev) => new Set(prev).add(monster.id));
+                    }}
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <span className="font-serif text-2xl font-bold" style={{ color: 'var(--text-muted)' }}>
+                      {monster.name.charAt(0)}
+                    </span>
+                  </div>
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-start justify-between gap-1 mb-0.5">
+                  <p className="font-semibold text-xs leading-tight truncate" style={{ color: 'var(--text)' }}>
+                    {monster.name}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={onClearMonster}
+                    style={{ color: 'var(--text-muted)' }}
+                    className="hover:text-[var(--danger)] shrink-0"
+                  >
+                    <X style={{ width: 12, height: 12 }} />
+                  </button>
+                </div>
+                <p className="text-[10px] mb-0.5" style={{ color: 'var(--text-muted)' }}>
+                  속성: {monster.element ? (ELEMENT_LABELS[monster.element] ?? monster.element) : '-'}
+                </p>
+                <StatWithDebuff
+                  label="타격저항"
+                  base={monsterHittingResist(monster)}
+                  debuffed={dpsResult?.resistAfterDebuff}
+                />
+                {monster.magicResistance != null && (
+                  <p className="text-[10px] leading-snug" style={{ color: 'var(--text-muted)' }}>
+                    마법저항: <span style={{ color: 'var(--text)' }}>{monster.magicResistance}</span>
+                  </p>
+                )}
+                <StatWithDebuff
+                  label="속성값"
+                  base={monster.elementValue}
+                  debuffed={dpsResult?.effectiveMonsterElement}
+                />
+                {dpsResult && (
+                  <p className="text-[10px] leading-snug mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                    저항통과: <span style={{ color: 'var(--brown)' }}>{dpsResult.resistPassRate.toFixed(1)}%</span>
+                  </p>
+                )}
+              </div>
+            </div>
+          ) : (
+            <p className="text-[11px] text-center py-4" style={{ color: 'var(--text-disabled)' }}>
+              몬스터를 검색해 선택하세요
+            </p>
+          )}
+        </div>
+
+        {/* DPS 분석 */}
+        {selectedDeckId && monster && calcLoading && (
+          <div
+            style={{ background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}
+            className="flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs"
+          >
+            <Zap style={{ width: 12, height: 12 }} />
+            DPS 계산 중...
+          </div>
+        )}
+
+        {dpsResult && (
+          <div style={{ background: 'var(--card)', border: '1px solid var(--brown)' }} className="rounded-xl p-3">
+            <h3 className="font-semibold text-sm mb-2 flex items-center gap-1.5" style={{ color: 'var(--brown)' }}>
+              <Zap style={{ width: 14, height: 14 }} /> DPS 분석
+            </h3>
+
+            <div className="grid grid-cols-2 gap-1.5 mb-2">
+              <div style={{ background: 'var(--beige)', borderRadius: 6 }} className="p-2 text-center">
+                <p style={{ color: 'var(--text-muted)' }} className="text-[9px] mb-0.5">저항깎</p>
+                <p className="font-semibold text-xs" style={{ color: 'var(--brown)' }}>
+                  {(dpsResult.totalResistPierce ?? 0).toLocaleString()}
+                </p>
+              </div>
+              <div style={{ background: 'var(--beige)', borderRadius: 6 }} className="p-2 text-center">
+                <p style={{ color: 'var(--text-muted)' }} className="text-[9px] mb-0.5">속성깎</p>
+                <p className="font-semibold text-xs" style={{ color: 'var(--brown)' }}>
+                  {(dpsResult.totalElementPierce ?? 0).toLocaleString()}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-1.5 mb-2">
+              <div style={{ background: 'var(--beige)', borderRadius: 6 }} className="p-2 text-center">
+                <p style={{ color: 'var(--text-muted)' }} className="text-[9px] mb-0.5">Raw DPS</p>
+                <p className="font-serif text-base font-bold leading-none" style={{ color: 'var(--brown)' }}>
+                  {(dpsResult.rawTotalDps ?? 0).toLocaleString()}
+                </p>
+              </div>
+              <div style={{ background: 'var(--beige)', borderRadius: 6 }} className="p-2 text-center">
+                <p style={{ color: 'var(--text-muted)' }} className="text-[9px] mb-0.5">Adjust DPS</p>
+                <p className="font-serif text-base font-bold leading-none" style={{ color: 'var(--brown)' }}>
+                  {(dpsResult.adjustTotalDps ?? dpsResult.totalDps ?? 0).toLocaleString()}
+                </p>
+              </div>
+              <div style={{ background: 'var(--beige)', borderRadius: 6 }} className="p-2 text-center">
+                <p style={{ color: 'var(--text-muted)' }} className="text-[9px] mb-0.5">Final DPS</p>
+                <p className="font-serif text-base font-bold leading-none" style={{ color: 'var(--brown)' }}>
+                  {(dpsResult.totalDps ?? 0).toLocaleString()}
+                </p>
+              </div>
+            </div>
+
+            {(dpsResult.memberResults ?? []).length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>용병별 비중</p>
+                {(dpsResult.memberResults ?? []).map((m) => {
+                  const pct = roundedDamageShare(m.damageShare) ?? 0;
+                  return (
+                    <div key={m.memberId}>
+                      <div className="flex justify-between text-[10px] mb-0.5 gap-1">
+                        <span style={{ color: 'var(--text)' }} className="truncate">{m.mercenaryName}</span>
+                        <span style={{ color: 'var(--text-muted)' }} className="shrink-0">{pct.toFixed(1)}%</span>
+                      </div>
+                      <div style={{ background: 'var(--border)', borderRadius: 2, height: 3 }}>
+                        <div style={{ background: 'var(--brown)', borderRadius: 2, height: 3, width: `${pct}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </aside>
+  );
+}
+
 // ══════════ 장비 선택 모달 ══════════
 
-function EquipModal({ slot, onSelect, onClose }: {
+function EquipModal({ slot, equipmentBySlot, equipmentLoading, onSelect, onClose }: {
   slot: string;
+  equipmentBySlot: Record<string, EquipmentItemDto[]>;
+  equipmentLoading: boolean;
   onSelect: (item: EquipmentItemDto) => void;
   onClose: () => void;
 }) {
-  const [items, setItems] = useState<EquipmentItemDto[]>([]);
-  const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
 
-  useEffect(() => {
-    api.getEquipmentBySlot(slot)
-      .then((res) => setItems(res as EquipmentItemDto[]))
-      .catch(() => setItems([]))
-      .finally(() => setLoading(false));
-  }, [slot]);
-
+  const items = equipmentBySlot[slot] ?? [];
   const filtered = items.filter((i) => !query || i.name.includes(query));
 
   return (
@@ -871,7 +1373,7 @@ function EquipModal({ slot, onSelect, onClose }: {
         </div>
 
         <div className="overflow-y-auto flex-1 p-3 space-y-1">
-          {loading ? (
+          {equipmentLoading ? (
             <div className="space-y-2">
               {[1, 2, 3].map((i) => (
                 <div key={i} style={{ background: 'var(--bg)' }} className="h-12 rounded animate-pulse" />
@@ -899,10 +1401,406 @@ function EquipModal({ slot, onSelect, onClose }: {
   );
 }
 
-function EquipmentSetupModal({ member, deckId, deckEffectSignature, initialTab = 'equipment', onClose, onRefresh }: {
+// ══════════ 주술 설정 패널 ══════════
+
+type EquippedSlotInfo = {
+  slot: string;
+  itemId: number;
+  itemName: string;
+  imageUrl?: string;
+  ritual?: SlotRitualDto | null;
+};
+
+type RitualOption = RitualDto & {
+  applicableSlots: EquippedSlotInfo[];
+};
+
+function ritualOutcomeMark(ritual: RitualDto, outcome: 'SUCCESS' | 'GREAT_SUCCESS') {
+  return outcome === 'GREAT_SUCCESS'
+    ? (ritual.greatSuccessMark ?? ritual.successMark ?? '—')
+    : (ritual.successMark ?? '—');
+}
+
+function resolveAppliedRitualMark(slotRitual: SlotRitualDto, ritualById: Map<number, RitualDto>) {
+  const ritual = ritualById.get(slotRitual.ritualId);
+  if (ritual) return ritualOutcomeMark(ritual, slotRitual.outcome);
+  if (slotRitual.outcome === 'GREAT_SUCCESS') return '<북두칠성>';
+  return slotRitual.displayName.startsWith('<') ? slotRitual.displayName : `<${slotRitual.displayName}>`;
+}
+
+function buildItemSetIdMap(equipmentBySlot: Record<string, EquipmentItemDto[]>) {
+  const map = new Map<number, number>();
+  Object.values(equipmentBySlot).forEach((items) => {
+    items.forEach((item) => {
+      if (item.setId) map.set(item.itemId, item.setId);
+    });
+  });
+  return map;
+}
+
+function countSetRitualPieces(
+  equippedSlots: EquippedSlotInfo[],
+  itemSetIdByItemId: Map<number, number>,
+  setId: number | undefined,
+  ritualId: number,
+  outcome: 'SUCCESS' | 'GREAT_SUCCESS',
+) {
+  if (!setId) return 0;
+  return equippedSlots.filter((slot) => {
+    if (itemSetIdByItemId.get(slot.itemId) !== setId) return false;
+    if (!slot.ritual) return false;
+    return slot.ritual.ritualId === ritualId && slot.ritual.outcome === outcome;
+  }).length;
+}
+
+function useEquippedRitualCatalog(equippedSlots: EquippedSlotInfo[]) {
+  const [ritualOptions, setRitualOptions] = useState<RitualOption[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+
+    (async () => {
+      const optionMap = new Map<number, RitualOption>();
+
+      await Promise.all(
+        equippedSlots.map(async (equipped) => {
+          const rituals = await api.getItemRituals(equipped.itemId).catch(() => [] as RitualDto[]);
+          rituals.forEach((ritual) => {
+            const existing = optionMap.get(ritual.id);
+            if (existing) {
+              existing.applicableSlots.push(equipped);
+              return;
+            }
+            optionMap.set(ritual.id, {
+              ...ritual,
+              applicableSlots: [equipped],
+            });
+          });
+        }),
+      );
+
+      if (cancelled) return;
+
+      setRitualOptions([...optionMap.values()].sort((a, b) => a.displayName.localeCompare(b.displayName, 'ko')));
+      setLoading(false);
+    })();
+
+    return () => { cancelled = true; };
+  }, [equippedSlots]);
+
+  const ritualById = useMemo(
+    () => new Map(ritualOptions.map((ritual) => [ritual.id, ritual])),
+    [ritualOptions],
+  );
+
+  return { ritualOptions, ritualById, loading };
+}
+
+function RitualSetupPanel({ equippedSlots, equipmentBySlot, deckId, memberId, ritualOptions, ritualById, loading, onApplied }: {
+  equippedSlots: EquippedSlotInfo[];
+  equipmentBySlot: Record<string, EquipmentItemDto[]>;
+  deckId: number;
+  memberId: number;
+  ritualOptions: RitualOption[];
+  ritualById: Map<number, RitualDto>;
+  loading: boolean;
+  onApplied: () => void | Promise<void>;
+}) {
+  const [selectedRitualId, setSelectedRitualId] = useState<number | null>(null);
+  const [selectedTargetSlots, setSelectedTargetSlots] = useState<string[]>([]);
+  const [selectedOutcome, setSelectedOutcome] = useState<'SUCCESS' | 'GREAT_SUCCESS'>('SUCCESS');
+  const [saving, setSaving] = useState(false);
+  const [removingSlot, setRemovingSlot] = useState<string | null>(null);
+
+  const appliedRituals = useMemo(
+    () => equippedSlots.filter((slot) => slot.ritual),
+    [equippedSlots],
+  );
+
+  useEffect(() => {
+    setSelectedRitualId(null);
+    setSelectedTargetSlots([]);
+    setSelectedOutcome('SUCCESS');
+  }, [equippedSlots]);
+
+  const selectedRitual = ritualOptions.find((ritual) => ritual.id === selectedRitualId) ?? null;
+  const targetSlots = selectedRitual?.applicableSlots ?? [];
+  const itemSetIdByItemId = useMemo(() => buildItemSetIdMap(equipmentBySlot), [equipmentBySlot]);
+  const canApplyGreatSuccess = Boolean(selectedRitual?.greatSuccessMark);
+
+  useEffect(() => {
+    if (!canApplyGreatSuccess && selectedOutcome === 'GREAT_SUCCESS') {
+      setSelectedOutcome('SUCCESS');
+    }
+  }, [canApplyGreatSuccess, selectedOutcome]);
+
+  function toggleTargetSlot(slot: string) {
+    setSelectedTargetSlots((prev) => (
+      prev.includes(slot) ? prev.filter((entry) => entry !== slot) : [...prev, slot]
+    ));
+  }
+
+  function selectAllTargetSlots() {
+    setSelectedTargetSlots(targetSlots.map((slot) => slot.slot));
+  }
+
+  async function applyRitual() {
+    if (!selectedRitual || selectedTargetSlots.length === 0) return;
+    setSaving(true);
+    try {
+      await Promise.all(
+        selectedTargetSlots.map((slot) => api.setSlotRitual(deckId, memberId, slot, {
+          ritualId: selectedRitual.id,
+          outcome: selectedOutcome,
+        })),
+      );
+      await onApplied();
+      setSelectedRitualId(null);
+      setSelectedTargetSlots([]);
+      setSelectedOutcome('SUCCESS');
+    } catch (error) {
+      console.error('주술 적용 실패', error);
+      alert('주술 적용 중 오류가 발생했습니다.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeRitual(slot: string) {
+    setRemovingSlot(slot);
+    try {
+      await api.removeSlotRitual(deckId, memberId, slot);
+      await onApplied();
+    } catch (error) {
+      console.error('주술 해제 실패', error);
+      alert('주술 해제 중 오류가 발생했습니다.');
+    } finally {
+      setRemovingSlot(null);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="space-y-3">
+        {[1, 2, 3].map((i) => (
+          <div key={i} style={{ background: 'var(--bg)', height: 72 }} className="rounded-lg animate-pulse" />
+        ))}
+      </div>
+    );
+  }
+
+  if (equippedSlots.length === 0) {
+    return (
+      <div style={{ background: 'var(--bg)', border: '1px dashed var(--border)' }} className="rounded-xl p-8 text-center">
+        <Sparkles size={28} className="mx-auto mb-2" style={{ color: 'var(--text-muted)' }} />
+        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>착용 중인 장비가 없습니다.</p>
+        <p className="text-xs mt-1" style={{ color: 'var(--text-disabled)' }}>장비를 먼저 착용한 뒤 주술을 적용할 수 있습니다.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {appliedRituals.length > 0 && (
+        <section>
+          <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-muted)' }}>적용된 주술</p>
+          <div className="space-y-2">
+            {appliedRituals.map((slot) => (
+              <div
+                key={slot.slot}
+                style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}
+                className="rounded-lg px-3 py-2.5 flex items-center gap-3"
+              >
+                <div className="w-9 h-9 rounded overflow-hidden shrink-0 flex items-center justify-center" style={{ background: 'var(--border)' }}>
+                  {slot.imageUrl ? (
+                    <img src={slot.imageUrl} alt={slot.itemName} className="w-full h-full object-cover" />
+                  ) : (
+                    <Sparkles size={16} style={{ color: 'var(--text-muted)' }} />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium truncate" style={{ color: 'var(--text)' }}>
+                    {SLOT_LABEL[slot.slot] ?? slot.slot} · {slot.itemName}
+                  </p>
+                  <p className="text-[11px] truncate font-medium" style={{ color: 'var(--brown)' }}>
+                    {resolveAppliedRitualMark(slot.ritual!, ritualById)}
+                  </p>
+                </div>
+                <button
+                  onClick={() => removeRitual(slot.slot)}
+                  disabled={removingSlot === slot.slot}
+                  style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}
+                  className="px-2.5 py-1 rounded text-[11px] hover:border-[var(--danger)] hover:text-[var(--danger)] transition-colors disabled:opacity-50"
+                >
+                  해제
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {ritualOptions.length === 0 ? (
+        <div style={{ background: 'var(--bg)', border: '1px dashed var(--border)' }} className="rounded-xl p-8 text-center">
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>착용 중인 장비에 적용 가능한 주술이 없습니다.</p>
+        </div>
+      ) : (
+        <>
+          <section>
+            <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-muted)' }}>1. 주술 선택</p>
+            <div className="grid sm:grid-cols-2 gap-2">
+              {ritualOptions.map((ritual) => {
+                const active = selectedRitualId === ritual.id;
+                return (
+                  <button
+                    key={ritual.id}
+                    onClick={() => {
+                      setSelectedRitualId(ritual.id);
+                      setSelectedTargetSlots([]);
+                      setSelectedOutcome('SUCCESS');
+                    }}
+                    style={{
+                      background: active ? 'var(--beige)' : 'var(--bg)',
+                      border: `1px solid ${active ? 'var(--brown)' : 'var(--border)'}`,
+                      color: active ? 'var(--brown)' : 'var(--text)',
+                      textAlign: 'left',
+                    }}
+                    className="rounded-lg px-3 py-2.5 hover:border-[var(--brown)] transition-colors"
+                  >
+                    <p className="text-sm font-medium">{ritual.displayName}</p>
+                    <p className="text-[11px] mt-0.5 font-medium" style={{ color: 'var(--brown)' }}>
+                      {ritual.successMark ?? '—'}
+                      {ritual.greatSuccessMark ? ` · ${ritual.greatSuccessMark}` : ''}
+                    </p>
+                    <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                      {ritual.applicableSlots.length}피스 적용 가능
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          {selectedRitual && (
+            <section>
+              <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-muted)' }}>2. 주술 결과</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setSelectedOutcome('SUCCESS')}
+                  style={{
+                    background: selectedOutcome === 'SUCCESS' ? 'var(--brown)' : 'var(--bg)',
+                    color: selectedOutcome === 'SUCCESS' ? 'var(--beige)' : 'var(--text-muted)',
+                    border: '1px solid var(--border)',
+                  }}
+                  className="flex-1 rounded-lg py-2 text-sm font-medium"
+                >
+                  {ritualOutcomeMark(selectedRitual, 'SUCCESS')}
+                </button>
+                {canApplyGreatSuccess && (
+                  <button
+                    onClick={() => setSelectedOutcome('GREAT_SUCCESS')}
+                    style={{
+                      background: selectedOutcome === 'GREAT_SUCCESS' ? 'var(--brown)' : 'var(--bg)',
+                      color: selectedOutcome === 'GREAT_SUCCESS' ? 'var(--beige)' : 'var(--text-muted)',
+                      border: '1px solid var(--border)',
+                    }}
+                    className="flex-1 rounded-lg py-2 text-sm font-medium"
+                  >
+                    {ritualOutcomeMark(selectedRitual, 'GREAT_SUCCESS')}
+                  </button>
+                )}
+              </div>
+            </section>
+          )}
+
+          {selectedRitual && (
+            <section>
+              <div className="flex items-center justify-between mb-2 gap-2">
+                <p className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>3. 피스 선택 (복수 가능)</p>
+                <button
+                  onClick={selectAllTargetSlots}
+                  style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}
+                  className="px-2 py-0.5 rounded text-[11px] hover:border-[var(--brown)] hover:text-[var(--brown)] transition-colors"
+                >
+                  전체 선택
+                </button>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-2">
+                {targetSlots.map((slot) => {
+                  const active = selectedTargetSlots.includes(slot.slot);
+                  const setId = itemSetIdByItemId.get(slot.itemId);
+                  const appliedRitual = slot.ritual ?? null;
+                  const ritualId = appliedRitual?.ritualId ?? selectedRitual?.id;
+                  const outcome = appliedRitual?.outcome ?? selectedOutcome;
+                  const pieceCount = ritualId
+                    ? countSetRitualPieces(equippedSlots, itemSetIdByItemId, setId, ritualId, outcome)
+                    : 0;
+                  const ritualName = appliedRitual
+                    ? resolveAppliedRitualMark(appliedRitual, ritualById)
+                    : selectedRitual
+                      ? ritualOutcomeMark(selectedRitual, selectedOutcome)
+                      : '—';
+                  const hasRitual = Boolean(appliedRitual);
+                  return (
+                    <button
+                      key={slot.slot}
+                      onClick={() => toggleTargetSlot(slot.slot)}
+                      style={{
+                        background: hasRitual ? 'var(--brown)' : active ? 'var(--beige)' : 'var(--bg)',
+                        border: `1px solid ${hasRitual || active ? 'var(--brown)' : 'var(--border)'}`,
+                        color: hasRitual ? 'var(--beige)' : active ? 'var(--brown)' : 'var(--text)',
+                        textAlign: 'left',
+                      }}
+                      className="rounded-lg px-3 py-2.5 hover:border-[var(--brown)] transition-colors"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold">{pieceCount}피스</p>
+                          <p className="text-[11px] mt-0.5 font-medium truncate">{ritualName}</p>
+                        </div>
+                        <span
+                          style={{
+                            background: active ? (hasRitual ? 'var(--beige)' : 'var(--brown)') : 'transparent',
+                            border: `1px solid ${active ? (hasRitual ? 'var(--beige)' : 'var(--brown)') : hasRitual ? 'rgba(232,220,203,0.45)' : 'var(--border)'}`,
+                            color: active ? (hasRitual ? 'var(--brown)' : 'var(--beige)') : hasRitual ? 'rgba(232,220,203,0.45)' : 'var(--text-disabled)',
+                          }}
+                          className="shrink-0 w-4 h-4 rounded text-[10px] leading-4 text-center"
+                        >
+                          {active ? '✓' : ''}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              {selectedTargetSlots.length > 0 && (
+                <button
+                  onClick={applyRitual}
+                  disabled={saving}
+                  style={{ background: 'var(--brown)', color: 'var(--beige)' }}
+                  className="w-full mt-3 rounded-lg py-2.5 text-sm font-semibold disabled:opacity-50"
+                >
+                  {saving
+                    ? '적용 중...'
+                    : `${ritualOutcomeMark(selectedRitual, selectedOutcome)} · ${selectedTargetSlots.length}피스 적용`}
+                </button>
+              )}
+            </section>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function EquipmentSetupModal({ member, deckId, deckEffectSignature, equipmentBySlot, equipmentLoading, initialTab = 'equipment', onClose, onRefresh }: {
   member: DeckMember;
   deckId: number;
   deckEffectSignature?: string;
+  equipmentBySlot: Record<string, EquipmentItemDto[]>;
+  equipmentLoading: boolean;
   initialTab?: SetupTab;
   onClose: () => void;
   onRefresh: () => void | Promise<void>;
@@ -910,8 +1808,6 @@ function EquipmentSetupModal({ member, deckId, deckEffectSignature, initialTab =
   const [activeTab, setActiveTab] = useState<SetupTab>(initialTab);
   const [selectedSlot, setSelectedSlot] = useState(NORMAL_SLOTS[0]);
   const [showAppSlots, setShowAppSlots] = useState(false);
-  const [slotItems, setSlotItems] = useState<ItemSearchResult[]>([]);
-  const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState('');
   const [level, setLevel] = useState<250 | 260>(250);
   const [bonusTarget, setBonusTarget] = useState<'MAIN_STAT' | 'VITALITY'>('MAIN_STAT');
@@ -927,6 +1823,7 @@ function EquipmentSetupModal({ member, deckId, deckEffectSignature, initialTab =
     if (stats?.slots && stats.slots.length > 0) return stats.slots;
     return member.slots;
   }, [stats?.slots, member.slots]);
+  const { ritualOptions, ritualById, loading: ritualCatalogLoading } = useEquippedRitualCatalog(equippedSlots);
   const slotMap = useMemo(() => new Map(equippedSlots.map((s) => [s.slot, s])), [equippedSlots]);
   const selectedEquipped = slotMap.get(selectedSlot);
   const slotRows = showAppSlots ? APP_SLOT_ROWS : NORMAL_SLOT_ROWS;
@@ -942,6 +1839,10 @@ function EquipmentSetupModal({ member, deckId, deckEffectSignature, initialTab =
   ), [characteristics]);
   const usedCharacteristicPoints = useMemo(() => characteristicUsedPoints(characteristics), [characteristics]);
   const maxCharacteristicPoints = useMemo(() => characteristicMaxPoints(characteristics), [characteristics]);
+  const slotItems = useMemo(
+    () => (equipmentBySlot[selectedSlot] ?? []).map((item) => toSearchResult(item, selectedSlot)),
+    [equipmentBySlot, selectedSlot],
+  );
   const displayedItems = useMemo(() => {
     const keyword = query.trim().toLowerCase();
     return slotItems
@@ -982,41 +1883,16 @@ function EquipmentSetupModal({ member, deckId, deckEffectSignature, initialTab =
   }, [deckId, member.id]);
 
   useEffect(() => {
-    setLoading(true);
-    api.getEquipmentBySlot(selectedSlot)
-      .then((items) => setSlotItems(items.map((item) => equipmentItemToSearchResult(item, selectedSlot))))
-      .catch(() => setSlotItems([]))
-      .finally(() => setLoading(false));
-  }, [selectedSlot]);
-
-  useEffect(() => {
     loadStats();
     loadCharacteristics();
   }, [loadStats, loadCharacteristics, deckEffectSignature]);
 
-  async function maybeApplyRitual(slot: string, item: ItemSearchResult) {
-    const rituals = await api.getItemRituals(item.id).catch(() => []) as { id: number; displayName?: string; successMark?: string; greatSuccessMark?: string }[];
-    if (rituals.length === 0) return;
-    if (!confirm('이 아이템은 주술 가능한 아이템입니다. 주술을 적용하시겠습니까?')) return;
-
-    const menu = rituals
-      .map((r, index) => `${index + 1}. ${r.displayName ?? `주술 ${r.id}`} (${r.successMark ?? '-'} / ${r.greatSuccessMark ?? '-'})`)
-      .join('\n');
-    const selected = Number(prompt(`적용할 주술 번호를 선택하세요.\n${menu}`));
-    const ritual = rituals[selected - 1];
-    if (!ritual) return;
-    const outcomeInput = prompt('주술 결과를 선택하세요. 성공=1, 대성공=2', '1');
-    const outcome = outcomeInput === '2' ? 'GREAT_SUCCESS' : 'SUCCESS';
-    await api.setSlotRitual(deckId, member.id, slot, { ritualId: ritual.id, outcome });
-  }
-
   async function equipPiece(item: ItemSearchResult) {
     const slot = selectedSlot;
+    if (slot === RITUAL_SLOT) return;
     try {
       await api.equipSlot(deckId, member.id, slot, { itemId: item.id });
-      await maybeApplyRitual(slot, item);
-      await onRefresh();
-      await loadStats();
+      await Promise.all([onRefresh(), loadStats()]);
     } catch (error) {
       console.error('장비 착용 실패', { item, slot, error });
       alert('장비 착용 중 오류가 발생했습니다.');
@@ -1030,8 +1906,7 @@ function EquipmentSetupModal({ member, deckId, deckEffectSignature, initialTab =
     }
     try {
       await api.equipSet(deckId, member.id, item.setId);
-      await onRefresh();
-      await loadStats();
+      await Promise.all([onRefresh(), loadStats()]);
     } catch (error) {
       console.error('세트 장착 실패', { item, error });
       alert('세트 장착 중 오류가 발생했습니다. 세트 피스 데이터가 등록되어 있는지 확인해 주세요.');
@@ -1046,9 +1921,7 @@ function EquipmentSetupModal({ member, deckId, deckEffectSignature, initialTab =
     setBuildSaving(true);
     try {
       await api.updateDeckMemberBuild(deckId, member.id, next);
-      loadStats();
-      loadCharacteristics();
-      await onRefresh();
+      await Promise.all([loadStats(), loadCharacteristics(), onRefresh()]);
     } catch (error) {
       console.error('빌드 설정 저장 실패', { next, error });
       setLevel(previous.level);
@@ -1118,8 +1991,7 @@ function EquipmentSetupModal({ member, deckId, deckEffectSignature, initialTab =
     characteristicSaveQueue.current = saveTask.catch(() => undefined);
     try {
       await saveTask;
-      loadStats();
-      loadCharacteristics();
+      await Promise.all([loadStats(), loadCharacteristics(), onRefresh()]);
     } catch (error) {
       console.error('특성 저장 실패', { characteristicId, selectedLevel, error });
       setCharacteristics(previousCharacteristics);
@@ -1131,14 +2003,19 @@ function EquipmentSetupModal({ member, deckId, deckEffectSignature, initialTab =
   }
 
   async function unequip() {
+    if (selectedSlot === RITUAL_SLOT) return;
     try {
       await api.unequipSlot(deckId, member.id, selectedSlot);
-      await onRefresh();
-      loadStats();
+      await Promise.all([onRefresh(), loadStats()]);
     } catch {
       alert('장비 해제 중 오류가 발생했습니다.');
     }
   }
+
+  const ritualAppliedCount = useMemo(
+    () => equippedSlots.filter((slot) => slot.ritual).length,
+    [equippedSlots],
+  );
 
   return (
     <div className="fixed inset-0 flex items-center justify-center z-[500] p-4" style={{ background: 'rgba(0,0,0,0.65)' }} onClick={onClose}>
@@ -1193,7 +2070,7 @@ function EquipmentSetupModal({ member, deckId, deckEffectSignature, initialTab =
                 <div className="p-3 overflow-y-auto min-w-0">
                 <div className="flex gap-1.5 mb-2">
                   <button
-                    onClick={() => { setShowAppSlots(false); setSelectedSlot(NORMAL_SLOTS[0]); }}
+                    onClick={() => { setShowAppSlots(false); setSelectedSlot((prev) => prev === RITUAL_SLOT ? RITUAL_SLOT : NORMAL_SLOTS[0]); }}
                     style={{
                       background: !showAppSlots ? 'var(--brown)' : 'var(--card)',
                       color: !showAppSlots ? 'var(--beige)' : 'var(--text-muted)',
@@ -1221,6 +2098,32 @@ function EquipmentSetupModal({ member, deckId, deckEffectSignature, initialTab =
                     <div key={rowIndex} className="grid grid-cols-2 gap-1.5">
                       {row.map((slot, colIndex) => {
                         if (!slot) return <div key={`empty-${rowIndex}-${colIndex}`} />;
+                        if (slot === RITUAL_SLOT) {
+                          const active = selectedSlot === RITUAL_SLOT;
+                          return (
+                            <button
+                              key={slot}
+                              onClick={() => setSelectedSlot(RITUAL_SLOT)}
+                              style={{
+                                background: active ? 'var(--beige)' : 'var(--card)',
+                                border: `1px ${ritualAppliedCount > 0 ? 'solid var(--brown)' : 'dashed var(--border)'}`,
+                                color: active || ritualAppliedCount > 0 ? 'var(--brown)' : 'var(--text-muted)',
+                              }}
+                              className="aspect-square w-full rounded p-1.5 flex flex-col text-left hover:border-[var(--brown)] transition-colors overflow-hidden"
+                            >
+                              <div
+                                className="flex-1 min-h-0 w-full rounded overflow-hidden flex items-center justify-center mb-0.5"
+                                style={{ background: 'var(--bg)' }}
+                              >
+                                <Sparkles size={22} style={{ color: active ? 'var(--brown)' : 'var(--text-muted)' }} />
+                              </div>
+                              <p className="text-[9px] font-medium truncate leading-tight">주술</p>
+                              <p className="text-[8px] truncate leading-tight" style={{ color: ritualAppliedCount > 0 ? 'var(--brown)' : 'var(--text-disabled)' }}>
+                                {ritualAppliedCount > 0 ? `${ritualAppliedCount}개 적용` : '미적용'}
+                              </p>
+                            </button>
+                          );
+                        }
                         const equipped = slotMap.get(slot);
                         const active = selectedSlot === slot;
                         return (
@@ -1252,6 +2155,11 @@ function EquipmentSetupModal({ member, deckId, deckEffectSignature, initialTab =
                             <p className="text-[8px] truncate leading-tight" style={{ color: equipped ? 'var(--brown)' : 'var(--text-disabled)' }}>
                               {equipped?.itemName ?? '미착용'}
                             </p>
+                            {equipped?.ritual && (
+                              <p className="text-[8px] truncate leading-tight font-medium" style={{ color: 'var(--brown)' }}>
+                                {resolveAppliedRitualMark(equipped.ritual, ritualById)}
+                              </p>
+                            )}
                           </button>
                         );
                       })}
@@ -1262,6 +2170,27 @@ function EquipmentSetupModal({ member, deckId, deckEffectSignature, initialTab =
               </div>
 
               <div className="p-3 overflow-y-auto min-w-0">
+                {selectedSlot === RITUAL_SLOT ? (
+                  <>
+                    <div className="mb-3">
+                      <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>주술 설정</p>
+                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                        착용 중인 장비에서 적용 가능한 주술을 선택하고 피스에 적용합니다
+                      </p>
+                    </div>
+                    <RitualSetupPanel
+                      equippedSlots={equippedSlots}
+                      equipmentBySlot={equipmentBySlot}
+                      deckId={deckId}
+                      memberId={member.id}
+                      ritualOptions={ritualOptions}
+                      ritualById={ritualById}
+                      loading={ritualCatalogLoading}
+                      onApplied={async () => { await Promise.all([onRefresh(), loadStats()]); }}
+                    />
+                  </>
+                ) : (
+                  <>
                 <div className="flex items-center justify-between mb-3 gap-2">
                   <div>
                     <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>아이템 검색</p>
@@ -1288,7 +2217,7 @@ function EquipmentSetupModal({ member, deckId, deckEffectSignature, initialTab =
                   className="w-full rounded px-3 py-2 text-sm focus:outline-none focus:border-[var(--brown)] mb-3"
                 />
 
-                {loading ? (
+                {equipmentLoading ? (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 10 }}>
                     {[1, 2, 3, 4, 5, 6].map((i) => <div key={i} style={{ background: 'var(--bg)', height: 145 }} className="rounded animate-pulse" />)}
                   </div>
@@ -1345,6 +2274,8 @@ function EquipmentSetupModal({ member, deckId, deckEffectSignature, initialTab =
                       </div>
                     ))}
                   </div>
+                )}
+                  </>
                 )}
               </div>
             </div>
@@ -1789,6 +2720,8 @@ function MemberCard({ member, deckId, onRemove, onRefresh }: {
       {equipModal && (
         <EquipModal
           slot={equipModal}
+          equipmentBySlot={{}}
+          equipmentLoading={false}
           onSelect={(item) => handleEquip(equipModal, item)}
           onClose={() => setEquipModal(null)}
         />
@@ -1806,6 +2739,7 @@ export default function DeckPage() {
   const [loading, setLoading] = useState(false);
   const [newDeckName, setNewDeckName] = useState('');
   const [creating, setCreating] = useState(false);
+  const [showAddDeckModal, setShowAddDeckModal] = useState(false);
 
   // 용병 카테고리 선택 + 몬스터 자동완성
   const [mercenaries, setMercenaries] = useState<MercenaryDto[]>([]);
@@ -1820,11 +2754,14 @@ export default function DeckPage() {
   const [failedMonsterImageIds, setFailedMonsterImageIds] = useState<Set<number>>(new Set());
   const [effectOptions, setEffectOptions] = useState<DeckEffectCatalogDto | null>(null);
   const [effectSaving, setEffectSaving] = useState(false);
+  const [equipmentBySlot, setEquipmentBySlot] = useState<Record<string, EquipmentItemDto[]>>({});
+  const [equipmentLoading, setEquipmentLoading] = useState(true);
 
   // DPS 계산
   const [monster, setMonster] = useState<MonsterDto | null>(null);
   const [dpsResult, setDpsResult] = useState<DpsResultDto | null>(null);
   const [calcLoading, setCalcLoading] = useState(false);
+  const [dpsRecalcTick, setDpsRecalcTick] = useState(0);
 
   const loadDecks = useCallback(async () => {
     try {
@@ -1846,6 +2783,7 @@ export default function DeckPage() {
         const updated = detail.members.find((m) => m.id === prev.id);
         return updated ?? prev;
       });
+      setDpsRecalcTick((t) => t + 1);
     } catch {
       setDeckDetail(null);
     } finally {
@@ -1853,18 +2791,46 @@ export default function DeckPage() {
     }
   }, []);
 
-  useEffect(() => { loadDecks(); }, [loadDecks]);
   useEffect(() => {
-    api.getMercenaries()
-      .then(setMercenaries)
-      .catch(() => setMercenaries([]))
-      .finally(() => setMercenaryLoading(false));
+    let cancelled = false;
+
+    (async () => {
+      setMercenaryLoading(true);
+      setEquipmentLoading(true);
+
+      try {
+        const [mercenariesRes, effectsRes, decksRes, equipmentRes] = await Promise.all([
+          api.getMercenaries().catch(() => [] as MercenaryDto[]),
+          api.getDeckEffectOptions().catch(() => null),
+          api.getDecks()
+            .then((list) => list as { id: number; name: string; isActive: boolean }[])
+            .catch(() => [] as { id: number; name: string; isActive: boolean }[]),
+          api.getEquipmentByAllSlots(ALL_EQUIP_SLOTS),
+        ]);
+
+        if (cancelled) return;
+
+        setMercenaries(mercenariesRes);
+        setEffectOptions(effectsRes);
+        setDecks(decksRes);
+        setEquipmentBySlot(equipmentRes);
+
+        const defaultDeck = decksRes.find((deck) => deck.isActive) ?? decksRes[0];
+        if (defaultDeck) {
+          setSelectedDeckId((prev) => prev ?? defaultDeck.id);
+        }
+      } finally {
+        if (!cancelled) {
+          setMercenaryLoading(false);
+          setEquipmentLoading(false);
+        }
+      }
+    })();
+
+    return () => { cancelled = true; };
   }, []);
   useEffect(() => {
     api.getMonsters().then(setMonsters).catch(() => setMonsters([]));
-  }, []);
-  useEffect(() => {
-    api.getDeckEffectOptions().then(setEffectOptions).catch(() => setEffectOptions(null));
   }, []);
   useEffect(() => {
     if (selectedDeckId) loadDeckDetail(selectedDeckId);
@@ -1874,18 +2840,85 @@ export default function DeckPage() {
     if (monster) setMonsterQuery(monster.name);
   }, [monster]);
 
+  const dpsTriggerSignature = useMemo(() => {
+    if (!selectedDeckId || !monster || !deckDetail) return '';
+    const effects = deckDetail.effects;
+    const spiritIds = (effects?.spirits ?? []).map((s) => s.id).join(',');
+    const effectSig = `${spiritIds}|${effects?.jinbeop?.id ?? ''}|${effects?.cheungjin?.id ?? ''}`;
+    const membersSig = deckDetail.members
+      .map((m) =>
+        `${m.id}:${m.level ?? 250}:${m.bonusTarget ?? 'MAIN_STAT'}:${m.bonusAmount ?? 0}:${
+          m.slots.map((s) => `${s.slot}:${s.itemId}`).join('|')
+        }`
+      )
+      .join(';');
+    return `${selectedDeckId}|${monster.id}|${effectSig}|${membersSig}|${dpsRecalcTick}`;
+  }, [selectedDeckId, monster, deckDetail, dpsRecalcTick]);
+
+  useEffect(() => {
+    if (!dpsTriggerSignature || !selectedDeckId || !monster || !deckDetail?.members.length) {
+      setDpsResult(null);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      setCalcLoading(true);
+      try {
+        const memberInputs = deckDetail.members.map((m) => ({
+          memberId: m.id,
+          level: m.level === 260 ? 260 : 250,
+          bonusTarget: m.bonusTarget ?? 'MAIN_STAT',
+          bonusAmount: m.bonusAmount ?? 0,
+        }));
+        const result = await api.calcDps({
+          deckId: selectedDeckId,
+          monsterId: monster.id,
+          memberInputs,
+        });
+        if (!cancelled) setDpsResult(result);
+      } catch {
+        if (!cancelled) setDpsResult(null);
+      } finally {
+        if (!cancelled) setCalcLoading(false);
+      }
+    }, DPS_CALC_DEBOUNCE_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [dpsTriggerSignature, selectedDeckId, monster, deckDetail]);
+
   async function handleCreateDeck() {
-    const name = newDeckName.trim() || `덱 ${decks.length + 1}`;
+    const name = newDeckName.trim();
+    if (!name) {
+      alert('덱 이름을 입력해 주세요.');
+      return;
+    }
     setCreating(true);
     try {
-      await api.createDeck({ name });
+      const created = await api.createDeck({ name }) as { id: number };
       setNewDeckName('');
+      setShowAddDeckModal(false);
       await loadDecks();
+      if (created?.id) setSelectedDeckId(created.id);
     } catch {
       alert('덱 생성 중 오류가 발생했습니다.');
     } finally {
       setCreating(false);
     }
+  }
+
+  function openAddDeckModal() {
+    setNewDeckName('');
+    setShowAddDeckModal(true);
+  }
+
+  function closeAddDeckModal() {
+    if (creating) return;
+    setShowAddDeckModal(false);
+    setNewDeckName('');
   }
 
   async function handleDeleteDeck(deckId: number) {
@@ -1908,6 +2941,8 @@ export default function DeckPage() {
     if (selectedMercenaryIds.has(merc.id)) {
       const selectedMember = selectedMembers.find((member) => member.mercenaryId === merc.id);
       if (!selectedMember) return;
+      const name = selectedMember.mercenaryName ?? merc.name;
+      if (!(await confirmMemberRemoval(selectedDeckId, selectedMember, name))) return;
       await api.removeDeckMember(selectedDeckId, selectedMember.id).catch(() => {});
       await loadDeckDetail(selectedDeckId);
       return;
@@ -1926,8 +2961,10 @@ export default function DeckPage() {
   }
 
   async function handleRemoveMember(memberId: number) {
-    if (!selectedDeckId) return;
-    if (!confirm('이 용병을 덱에서 제거하시겠습니까?')) return;
+    if (!selectedDeckId || !deckDetail) return;
+    const member = deckDetail.members.find((m) => m.id === memberId);
+    if (!member) return;
+    if (!(await confirmMemberRemoval(selectedDeckId, member, member.mercenaryName))) return;
     await api.removeDeckMember(selectedDeckId, memberId).catch(() => {});
     await loadDeckDetail(selectedDeckId);
   }
@@ -1952,33 +2989,11 @@ export default function DeckPage() {
     try {
       const effects = await api.updateDeckEffects(selectedDeckId, body);
       setDeckDetail({ ...deckDetail, effects });
+      setDpsRecalcTick((t) => t + 1);
     } catch {
       alert('덱 효과 저장 중 오류가 발생했습니다.');
     } finally {
       setEffectSaving(false);
-    }
-  }
-
-  async function handleCalcDps() {
-    if (!selectedDeckId || !monster) return;
-    setCalcLoading(true);
-    try {
-      const memberInputs = (deckDetail?.members ?? []).map((m) => ({
-        memberId: m.id,
-        level: m.level === 260 ? 260 : 250,
-        bonusTarget: m.bonusTarget ?? 'MAIN_STAT',
-        bonusAmount: m.bonusAmount ?? 0,
-      }));
-      const result = await api.calcDps({
-        deckId: selectedDeckId,
-        monsterId: monster.id,
-        memberInputs,
-      });
-      setDpsResult(result);
-    } catch {
-      alert('DPS 계산 중 오류가 발생했습니다.');
-    } finally {
-      setCalcLoading(false);
     }
   }
 
@@ -1994,13 +3009,18 @@ export default function DeckPage() {
   while (deckSlots.length < maxMembers) deckSlots.push(null);
   const visibleDeckSlots = deckSlots.slice(0, maxMembers);
   const selectableMercenaries = mercenaries.filter(isDeckSelectableMercenary);
-  const mercenaryCategories = Array.from(new Set(selectableMercenaries.map((m) => mercenaryCategory(m))));
+  const mercenaryCategories = sortDeckMercenaryCategories(
+    Array.from(new Set(selectableMercenaries.map((m) => mercenaryCategory(m))))
+  );
   const activeMercenaryCategory = mercenaryCategories.includes(selectedMercenaryCategory)
     ? selectedMercenaryCategory
     : mercenaryCategories[0] || '';
-  const displayedMercenaries = selectableMercenaries.filter((m) =>
+  const filteredMercenaries = selectableMercenaries.filter((m) =>
     activeMercenaryCategory ? mercenaryCategory(m) === activeMercenaryCategory : false
   );
+  const displayedMercenaries = isLegendaryPickerCategory(activeMercenaryCategory)
+    ? sortMercenariesByElement(filteredMercenaries)
+    : filteredMercenaries;
   const dpsShareByMemberId = new Map(
     (dpsResult?.memberResults ?? []).map((result) => [result.memberId, result.damageShare])
   );
@@ -2014,16 +3034,12 @@ export default function DeckPage() {
     return `${spiritIds}|${effects.jinbeop?.id ?? ''}|${effects.cheungjin?.id ?? ''}`;
   }, [deckDetail?.effects]);
 
-  function selectedCountByCategory(category: string) {
-    return selectedMemberMercenaries.filter((m) => mercenaryCategory(m) === category).length;
-  }
-
   function getMercenaryRestrictionMessage(merc: MercenaryDto) {
     if (selectedMercenaryIds.has(merc.id)) return '이미 선택된 용병입니다.';
 
     const heroCount = selectedMemberMercenaries.filter(isHeroMercenary).length;
     const fourKingCount = selectedMemberMercenaries.filter(isFourKingMercenary).length;
-    const myeongwangCount = selectedMemberMercenaries.filter(isMyeongwangMercenary).length;
+    const nonEarthMyeongwangCount = selectedMemberMercenaries.filter(isNonEarthMyeongwangMercenary).length;
     const normalSlotCount = selectedMembers.length - heroCount;
 
     if (isHeroMercenary(merc)) {
@@ -2034,8 +3050,104 @@ export default function DeckPage() {
 
     if (normalSlotCount >= maxMembers - 1) return '주인공 전용 칸을 제외한 용병 칸이 가득 찼습니다.';
     if (isFourKingMercenary(merc) && fourKingCount >= 1) return '사천왕/각성사천왕은 1명만 선택할 수 있습니다.';
-    if (isMyeongwangMercenary(merc) && myeongwangCount >= 2) return '명왕/각성명왕은 2명까지만 선택할 수 있습니다.';
+    if (isNonEarthMyeongwangMercenary(merc) && nonEarthMyeongwangCount >= 2) {
+      return '부동명왕을 제외한 명왕/각성명왕은 2명까지만 선택할 수 있습니다.';
+    }
+    const natureConflict = findMyeongwangSameNatureConflict(merc, selectedMemberMercenaries);
+    if (natureConflict) {
+      const elementLabel = merc.element ? (ELEMENT_LABELS[merc.element] ?? merc.element) : '';
+      return `${elementLabel} 계열은 ${natureConflict.name}과(와) 함께 선택할 수 없습니다. (일반/각성 중 택1)`;
+    }
     return null;
+  }
+
+  function renderMercenaryPickCard(merc: MercenaryDto) {
+    const selected = selectedMercenaryIds.has(merc.id);
+    const restrictionMessage = getMercenaryRestrictionMessage(merc);
+    const blocked = !selected && Boolean(restrictionMessage);
+    const variant = myeongwangVariantLabel(merc);
+    const natureConflict = findMyeongwangSameNatureConflict(merc, selectedMemberMercenaries);
+    const shortBlockReason = natureConflict
+      ? `${natureConflict.name} 선택됨`
+      : restrictionMessage;
+
+    return (
+      <button
+        key={merc.id}
+        onClick={() => handleAddMember(merc)}
+        disabled={blocked}
+        title={restrictionMessage ?? undefined}
+        style={{
+          background: selected ? 'var(--beige)' : 'var(--bg)',
+          border: `1px solid ${selected ? 'var(--brown)' : natureConflict ? 'var(--border)' : 'var(--border)'}`,
+          overflow: 'hidden',
+          opacity: !selected && blocked ? 0.45 : 1,
+          cursor: blocked ? 'not-allowed' : 'pointer',
+        }}
+        className="rounded-lg hover:border-[var(--brown)] transition-all group relative"
+      >
+        <div className="relative w-full" style={{ aspectRatio: '1 / 1', background: 'var(--border)' }}>
+          {merc.imageUrl && !failedMercenaryImageIds.has(merc.id) ? (
+            <img
+              src={merc.imageUrl}
+              alt={merc.name}
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+              onError={() => {
+                setFailedMercenaryImageIds((prev) => {
+                  const next = new Set(prev);
+                  next.add(merc.id);
+                  return next;
+                });
+              }}
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              <span className="font-serif text-2xl font-bold" style={{ color: 'var(--text-muted)' }}>
+                {merc.name.charAt(0)}
+              </span>
+            </div>
+          )}
+          {merc.element && merc.element !== 'NONE' && (
+            <span
+              style={{
+                background: ELEMENT_COLORS[merc.element] ?? 'var(--brown)',
+                color: '#fff',
+              }}
+              className="absolute top-1.5 right-1.5 text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center shadow"
+            >
+              {ELEMENT_LABELS[merc.element] ?? merc.element}
+            </span>
+          )}
+          {variant && (
+            <span
+              style={{ background: variant === '각성' ? '#7C3AED' : 'var(--brown)', color: '#fff' }}
+              className="absolute top-1.5 left-1.5 text-[10px] px-1.5 py-0.5 rounded font-medium"
+            >
+              {variant}
+            </span>
+          )}
+          {selected && (
+            <span
+              style={{ background: 'var(--brown)', color: 'var(--beige)' }}
+              className="absolute bottom-1.5 left-1.5 right-1.5 text-[10px] px-1.5 py-0.5 rounded text-center"
+            >
+              클릭 시 해제
+            </span>
+          )}
+          {!selected && blocked && shortBlockReason && (
+            <span
+              style={{ background: 'rgba(0,0,0,0.72)', color: '#fff' }}
+              className="absolute inset-0 flex items-center justify-center text-[10px] px-2 text-center leading-snug"
+            >
+              {shortBlockReason}
+            </span>
+          )}
+        </div>
+        <div className="px-2 py-1.5">
+          <p className="text-xs font-medium truncate text-center" style={{ color: 'var(--text)' }}>{merc.name}</p>
+        </div>
+      </button>
+    );
   }
 
   const normalizedMonsterQuery = monsterQuery.trim().toLowerCase();
@@ -2045,326 +3157,50 @@ export default function DeckPage() {
 
   return (
     <div className="py-6">
-      <div className="grid lg:grid-cols-[280px_minmax(0,1fr)] gap-6">
-        {/* 덱 목록 사이드바 */}
+      {/* 덱 설정 — 가로 탭 */}
+      <div
+        style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+        className="rounded-xl px-4 py-3 mb-4 flex items-center gap-3 flex-wrap"
+      >
+        <h2 className="font-semibold text-sm shrink-0" style={{ color: 'var(--text)' }}>덱설정</h2>
+        <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
+          {decks.length === 0 ? (
+            <span className="text-sm" style={{ color: 'var(--text-disabled)' }}>등록된 덱이 없습니다</span>
+          ) : (
+            decks.map((deck) => (
+              <DeckTab
+                key={deck.id}
+                deck={deck}
+                isSelected={deck.id === selectedDeckId}
+                onSelect={() => setSelectedDeckId(deck.id)}
+                onDelete={() => handleDeleteDeck(deck.id)}
+                onRename={(name) => handleRenameDeck(deck.id, name)}
+              />
+            ))
+          )}
+          <button
+            type="button"
+            onClick={openAddDeckModal}
+            style={{ border: '1px dashed var(--border)', color: 'var(--brown)' }}
+            className="rounded-lg px-3 py-1.5 text-sm font-medium hover:border-[var(--brown)] hover:bg-[var(--bg)] transition-colors whitespace-nowrap flex items-center gap-1"
+          >
+            <Plus style={{ width: 14, height: 14 }} />
+            덱추가
+          </button>
+        </div>
+      </div>
+
+      <div className="grid lg:grid-cols-[280px_minmax(0,1fr)_248px] gap-4 xl:gap-6">
+        {/* 덱 효과 사이드바 */}
         <div className="space-y-4">
-          <div style={{ background: 'var(--card)', border: '1px solid var(--border)' }} className="rounded-xl p-4">
-            <h2 className="font-semibold mb-3" style={{ color: 'var(--text)' }}>내 덱</h2>
-
-            {/* 덱 생성 */}
-            <div className="flex gap-2 mb-3">
-              <input
-                value={newDeckName}
-                onChange={(e) => setNewDeckName(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleCreateDeck()}
-                placeholder="새 덱 이름"
-                style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
-                className="flex-1 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-[var(--brown)]"
-              />
-              <button
-                onClick={handleCreateDeck}
-                disabled={creating}
-                style={{ background: 'var(--brown)', color: 'var(--beige)' }}
-                className="p-1.5 rounded hover:bg-[var(--brown-dark)] transition-colors disabled:opacity-50"
-              >
-                <Plus style={{ width: 16, height: 16 }} />
-              </button>
-            </div>
-
-            {/* 덱 목록 */}
-            <div className="space-y-2">
-              {decks.length === 0 ? (
-                <p style={{ color: 'var(--text-disabled)' }} className="text-sm text-center py-4">
-                  로그인 후 덱을 만들어보세요
-                </p>
-              ) : (
-                decks.map((deck) => (
-                  <DeckCard
-                    key={deck.id}
-                    deck={deck}
-                    isSelected={deck.id === selectedDeckId}
-                    onSelect={() => setSelectedDeckId(deck.id)}
-                    onDelete={() => handleDeleteDeck(deck.id)}
-                    onRename={(name) => handleRenameDeck(deck.id, name)}
-                  />
-                ))
-              )}
-            </div>
-          </div>
-
-          {/* 덱 효과 */}
-          <div style={{ background: 'var(--card)', border: '1px solid var(--border)' }} className="rounded-xl p-4">
-            <h2 className="font-semibold mb-3" style={{ color: 'var(--text)' }}>덱 효과</h2>
-            {!selectedDeckId ? (
-              <p className="text-sm text-center py-4" style={{ color: 'var(--text-disabled)' }}>덱을 먼저 선택해 주세요</p>
-            ) : !effectOptions ? (
-              <div className="space-y-2">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} style={{ background: 'var(--bg)' }} className="h-9 rounded animate-pulse" />
-                ))}
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-2">
-                  {[0, 1].map((index) => (
-                    <div key={index}>
-                      <label className="text-xs block mb-1" style={{ color: 'var(--text-muted)' }}>정령 {index + 1}</label>
-                      <select
-                        value={deckDetail?.effects?.spirits?.[index]?.id ?? ''}
-                        disabled={effectSaving}
-                        onChange={(e) => handleUpdateDeckEffects({
-                          [index === 0 ? 'spirit1Id' : 'spirit2Id']: e.target.value ? Number(e.target.value) : null,
-                        })}
-                        style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
-                        className="w-full rounded px-2 py-1.5 text-xs focus:outline-none focus:border-[var(--brown)] disabled:opacity-60"
-                      >
-                        <option value="">미적용</option>
-                        {effectOptions.spirits.map((spirit) => (
-                          <option key={spirit.id} value={spirit.id}>{spirit.displayLabel}</option>
-                        ))}
-                      </select>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-xs block mb-1" style={{ color: 'var(--text-muted)' }}>진법</label>
-                    <select
-                      value={deckDetail?.effects?.jinbeop?.id ?? ''}
-                      disabled={effectSaving}
-                      onChange={(e) => handleUpdateDeckEffects({ jinbeopSourceId: e.target.value ? Number(e.target.value) : null })}
-                      style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
-                      className="w-full rounded px-2 py-1.5 text-xs focus:outline-none focus:border-[var(--brown)] disabled:opacity-60"
-                    >
-                      <option value="">미적용</option>
-                      {effectOptions.jinbeops.map((source) => (
-                        <option key={source.id} value={source.id}>{source.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs block mb-1" style={{ color: 'var(--text-muted)' }}>층진</label>
-                    <select
-                      value={deckDetail?.effects?.cheungjin?.id ?? ''}
-                      disabled={effectSaving}
-                      onChange={(e) => handleUpdateDeckEffects({ cheungjinSourceId: e.target.value ? Number(e.target.value) : null })}
-                      style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
-                      className="w-full rounded px-2 py-1.5 text-xs focus:outline-none focus:border-[var(--brown)] disabled:opacity-60"
-                    >
-                      <option value="">미적용</option>
-                      {effectOptions.cheungjins.map((source) => (
-                        <option key={source.id} value={source.id}>{source.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {deckDetail?.effects?.stats && deckDetail.effects.stats.length > 0 ? (
-                  <div style={{ background: 'var(--bg)', border: '1px solid var(--border)' }} className="rounded-lg p-2">
-                    <p className="text-xs font-medium mb-1" style={{ color: 'var(--text)' }}>적용 스탯</p>
-                    <div className="flex flex-wrap gap-1">
-                      {deckDetail.effects.stats.map((stat) => (
-                        <span
-                          key={stat.statType}
-                          style={{ background: 'var(--card)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
-                          className="rounded px-1.5 py-0.5 text-[10px]"
-                        >
-                          {formatStatType(stat.statType)} {stat.value > 0 ? '+' : ''}{stat.value}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-xs" style={{ color: 'var(--text-disabled)' }}>적용된 덱 효과가 없습니다</p>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* 대상 몬스터 */}
-          <div style={{ background: 'var(--card)', border: '1px solid var(--border)' }} className="rounded-xl p-4">
-            <h2 className="font-semibold mb-3" style={{ color: 'var(--text)' }}>대상 몬스터</h2>
-
-            {/* 검색 + 자동완성 */}
-            <div className="relative mb-3">
-              <Search style={{ position: 'absolute', left: 10, top: 12, width: 14, height: 14, color: 'var(--text-muted)' }} />
-              <input
-                value={monsterQuery}
-                onFocus={() => setShowMonsterSuggest(true)}
-                onChange={(e) => {
-                  setMonsterQuery(e.target.value);
-                  setShowMonsterSuggest(true);
-                }}
-                onBlur={() => setTimeout(() => setShowMonsterSuggest(false), 120)}
-                placeholder="몬스터 이름 검색..."
-                style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', paddingLeft: 32 }}
-                className="w-full rounded px-3 py-2 text-sm focus:outline-none focus:border-[var(--brown)]"
-              />
-              {showMonsterSuggest && (
-                <div
-                  style={{ background: 'var(--card)', border: '1px solid var(--border)', boxShadow: '0 8px 20px rgba(0,0,0,0.15)' }}
-                  className="absolute z-20 left-0 right-0 mt-1 rounded-lg max-h-56 overflow-y-auto"
-                >
-                  {monsterSuggestions.length === 0 ? (
-                    <p style={{ color: 'var(--text-disabled)' }} className="text-xs px-3 py-2">검색 결과가 없습니다</p>
-                  ) : (
-                    monsterSuggestions.map((m) => (
-                      <button
-                        key={m.id}
-                        type="button"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => {
-                          setMonster(m);
-                          setMonsterQuery(m.name);
-                          setShowMonsterSuggest(false);
-                        }}
-                        style={{ borderBottom: '1px solid var(--border)', width: '100%', textAlign: 'left' }}
-                        className="px-3 py-2 hover:bg-[var(--bg)] transition-colors"
-                      >
-                        <p className="text-sm font-medium" style={{ color: 'var(--text)' }}>{m.name}</p>
-                        <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                          속성: {m.element ?? '-'} · 저항: {m.resistance ?? '-'} · 속성값: {m.elementValue ?? '-'}
-                        </p>
-                      </button>
-                    ))
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* 몬스터 표시 박스 (기존 대비 약 2배 확대) */}
-            <div
-              style={{
-                background: 'var(--bg)',
-                border: '1px solid var(--border)',
-                minHeight: 360,
-                display: 'grid',
-                gridTemplateRows: '2fr 1fr',
-              }}
-              className="rounded-lg overflow-hidden"
-            >
-              {monster ? (
-                <>
-                  <div style={{ background: 'var(--border)' }} className="relative overflow-hidden">
-                    {monster.imageUrl && !failedMonsterImageIds.has(monster.id) ? (
-                      <img
-                        src={monster.imageUrl}
-                        alt={monster.name}
-                        className="w-full h-full object-cover"
-                        onError={() => {
-                          setFailedMonsterImageIds((prev) => {
-                            const next = new Set(prev);
-                            next.add(monster.id);
-                            return next;
-                          });
-                        }}
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <span className="font-serif text-5xl font-bold" style={{ color: 'var(--text-muted)' }}>
-                          {monster.name.charAt(0)}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="px-3 py-2.5">
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="font-semibold text-sm" style={{ color: 'var(--text)' }}>{monster.name}</p>
-                      <button onClick={() => setMonster(null)} style={{ color: 'var(--text-muted)' }} className="hover:text-[var(--danger)] shrink-0">
-                        <X style={{ width: 14, height: 14 }} />
-                      </button>
-                    </div>
-                    <div className="text-xs mt-1.5 space-y-0.5" style={{ color: 'var(--text-muted)' }}>
-                      <p>속성: {monster.element ? (ELEMENT_LABELS[monster.element] ?? monster.element) : '-'}</p>
-                      <p>저항: {monster.resistance ?? '-'}</p>
-                      <p>속성값: {monster.elementValue ?? '-'}</p>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <div className="col-span-1 row-span-2 flex items-center justify-center">
-                  <p style={{ color: 'var(--text-disabled)' }} className="text-sm">몬스터를 검색해서 선택하세요</p>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* DPS 계산 버튼 */}
-          {selectedDeckId && monster && (
-            <button
-              onClick={handleCalcDps}
-              disabled={calcLoading}
-              style={{ background: 'var(--brown)', color: 'var(--beige)', width: '100%' }}
-              className="flex items-center justify-center gap-2 py-3 rounded-xl font-semibold text-sm hover:bg-[var(--brown-dark)] transition-colors disabled:opacity-50"
-            >
-              <Zap style={{ width: 16, height: 16 }} />
-              {calcLoading ? 'DPS 계산 중...' : 'DPS 계산'}
-            </button>
-          )}
-
-          {/* DPS 결과 */}
-          {dpsResult && (
-            <div style={{ background: 'var(--card)', border: '1px solid var(--brown)' }} className="rounded-xl p-4">
-              <h3 className="font-semibold mb-3 flex items-center gap-2" style={{ color: 'var(--brown)' }}>
-                <Zap style={{ width: 16, height: 16 }} /> DPS 분석
-              </h3>
-
-              <div className="grid grid-cols-2 gap-2 mb-3">
-                <div style={{ background: 'var(--beige)', borderRadius: 8 }} className="p-2.5 text-center">
-                  <p style={{ color: 'var(--text-muted)' }} className="text-[11px] mb-0.5">최종 저항깎</p>
-                  <p className="font-semibold text-sm" style={{ color: 'var(--brown)' }}>
-                    {(dpsResult.totalResistPierce ?? 0).toLocaleString()}
-                  </p>
-                </div>
-                <div style={{ background: 'var(--beige)', borderRadius: 8 }} className="p-2.5 text-center">
-                  <p style={{ color: 'var(--text-muted)' }} className="text-[11px] mb-0.5">최종 속성깎</p>
-                  <p className="font-semibold text-sm" style={{ color: 'var(--brown)' }}>
-                    {(dpsResult.totalElementPierce ?? 0).toLocaleString()}
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 mb-3">
-                <div style={{ background: 'var(--beige)', borderRadius: 8 }} className="p-2.5 text-center">
-                  <p style={{ color: 'var(--text-muted)' }} className="text-[11px] mb-0.5">Raw Total DPS</p>
-                  <p className="font-serif text-lg font-bold" style={{ color: 'var(--brown)' }}>
-                    {(dpsResult.rawTotalDps ?? dpsResult.totalDps ?? 0).toLocaleString()}
-                  </p>
-                  <p style={{ color: 'var(--text-muted)' }} className="text-[10px] mt-0.5">계수 기반 (보정 없음)</p>
-                </div>
-                <div style={{ background: 'var(--beige)', borderRadius: 8 }} className="p-2.5 text-center">
-                  <p style={{ color: 'var(--text-muted)' }} className="text-[11px] mb-0.5">Adjust Total DPS</p>
-                  <p className="font-serif text-lg font-bold" style={{ color: 'var(--brown)' }}>
-                    {(dpsResult.adjustTotalDps ?? dpsResult.totalDps ?? 0).toLocaleString()}
-                  </p>
-                  <p style={{ color: 'var(--text-muted)' }} className="text-[10px] mt-0.5">속성값 보정 적용</p>
-                </div>
-              </div>
-
-              {(dpsResult.memberResults ?? []).length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>용병별 속성값 · 데미지 비중</p>
-                  {(dpsResult.memberResults ?? []).map((m) => {
-                    const pct = roundedDamageShare(m.damageShare) ?? 0;
-                    return (
-                      <div key={m.memberId}>
-                        <div className="flex justify-between text-xs mb-0.5 gap-2">
-                          <span style={{ color: 'var(--text)' }} className="truncate">{m.mercenaryName}</span>
-                          <span style={{ color: 'var(--text-muted)' }} className="shrink-0">
-                            속성값 {m.elementValue.toLocaleString()} · {pct.toFixed(1)}%
-                          </span>
-                        </div>
-                        <div style={{ background: 'var(--border)', borderRadius: 3, height: 4 }}>
-                          <div style={{ background: 'var(--brown)', borderRadius: 3, height: 4, width: `${pct}%` }} />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
+          <DeckEffectPanel
+            selectedDeckId={selectedDeckId}
+            effects={deckDetail?.effects}
+            catalog={effectOptions}
+            loading={!effectOptions && !!selectedDeckId}
+            saving={effectSaving}
+            onSave={handleUpdateDeckEffects}
+          />
         </div>
 
         {/* 덱 멤버 구성 */}
@@ -2382,13 +3218,12 @@ export default function DeckPage() {
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
+                    gridTemplateColumns: `repeat(${mercenaryCategories.length}, minmax(0, 1fr))`,
                     gap: 8,
                   }}
                 >
                   {mercenaryCategories.map((category) => {
                     const active = activeMercenaryCategory === category;
-                    const selectedCount = selectedCountByCategory(category);
                     return (
                       <button
                         key={category}
@@ -2397,22 +3232,13 @@ export default function DeckPage() {
                           background: active ? 'var(--brown)' : 'var(--bg)',
                           color: active ? 'var(--beige)' : 'var(--text-muted)',
                           border: '1px solid var(--border)',
-                          minHeight: 40,
+                          padding: '2px 8px',
+                          fontSize: 14,
+                          lineHeight: 1.25,
                         }}
-                        className="rounded-lg px-3 py-2 font-medium hover:border-[var(--brown)] transition-colors"
+                        className="rounded-lg font-medium hover:border-[var(--brown)] transition-colors truncate"
                       >
-                        <span style={{ fontSize: 16 }}>{category}</span>
-                        {selectedCount > 0 && (
-                          <span
-                            style={{
-                              background: active ? 'rgba(255,255,255,0.25)' : 'var(--beige)',
-                              color: active ? 'var(--beige)' : 'var(--brown)',
-                            }}
-                            className="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px]"
-                          >
-                            선택됨 {selectedCount}
-                          </span>
-                        )}
+                        {category}
                       </button>
                     );
                   })}
@@ -2421,6 +3247,11 @@ export default function DeckPage() {
 
               {/* 선택한 카테고리의 용병 리스트 */}
               <section style={{ background: 'var(--card)', border: '1px solid var(--border)' }} className="rounded-xl p-4">
+                {isMyeongwangPickerCategory(activeMercenaryCategory) && (
+                  <div className="flex items-center justify-end mb-3">
+                    <MyeongwangRulesHint />
+                  </div>
+                )}
                 {mercenaryLoading ? (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(86px, 1fr))', gap: 10 }}>
                     {[1, 2, 3, 4, 5, 6].map((i) => (
@@ -2431,59 +3262,7 @@ export default function DeckPage() {
                   <p className="text-center py-8 text-sm" style={{ color: 'var(--text-disabled)' }}>해당 카테고리의 용병이 없습니다</p>
                 ) : (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(86px, 1fr))', gap: 10 }}>
-                    {displayedMercenaries.map((merc) => {
-                      const selected = selectedMercenaryIds.has(merc.id);
-                      const blocked = !selected && Boolean(getMercenaryRestrictionMessage(merc));
-                      return (
-                        <button
-                          key={merc.id}
-                          onClick={() => handleAddMember(merc)}
-                          disabled={blocked}
-                          style={{
-                            background: selected ? 'var(--beige)' : 'var(--bg)',
-                            border: `1px solid ${selected ? 'var(--brown)' : 'var(--border)'}`,
-                            overflow: 'hidden',
-                            opacity: !selected && blocked ? 0.45 : 1,
-                            cursor: blocked ? 'not-allowed' : 'pointer',
-                          }}
-                          className="rounded-lg hover:border-[var(--brown)] transition-all group"
-                        >
-                          <div className="relative w-full" style={{ aspectRatio: '1 / 1', background: 'var(--border)' }}>
-                            {merc.imageUrl && !failedMercenaryImageIds.has(merc.id) ? (
-                              <img
-                                src={merc.imageUrl}
-                                alt={merc.name}
-                                className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                                onError={() => {
-                                  setFailedMercenaryImageIds((prev) => {
-                                    const next = new Set(prev);
-                                    next.add(merc.id);
-                                    return next;
-                                  });
-                                }}
-                              />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center">
-                                <span className="font-serif text-2xl font-bold" style={{ color: 'var(--text-muted)' }}>
-                                  {merc.name.charAt(0)}
-                                </span>
-                              </div>
-                            )}
-                            {selected && (
-                              <span
-                                style={{ background: 'var(--brown)', color: 'var(--beige)' }}
-                                className="absolute top-1.5 left-1.5 text-[10px] px-1.5 py-0.5 rounded"
-                              >
-                                클릭 시 해제
-                              </span>
-                            )}
-                          </div>
-                          <div className="px-2 py-1.5">
-                            <p className="text-xs font-medium truncate text-center" style={{ color: 'var(--text)' }}>{merc.name}</p>
-                          </div>
-                        </button>
-                      );
-                    })}
+                    {displayedMercenaries.map((merc) => renderMercenaryPickCard(merc))}
                   </div>
                 )}
               </section>
@@ -2528,8 +3307,8 @@ export default function DeckPage() {
                           }}
                           className="rounded-xl overflow-hidden flex flex-col"
                         >
-                          <div className="px-2 py-1.5 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)', minHeight: 28 }}>
-                            <span className="text-[11px] font-semibold" style={{ color: damageShare != null ? 'var(--brown)' : 'var(--text-disabled)' }}>
+                          <div className="px-1.5 py-1 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)', minHeight: 22 }}>
+                            <span className="text-[10px] font-semibold" style={{ color: damageShare != null ? 'var(--brown)' : 'var(--text-disabled)' }}>
                               {damageShare != null ? `${damageShare.toFixed(1)}%` : ''}
                             </span>
                             {member && (
@@ -2538,7 +3317,7 @@ export default function DeckPage() {
                                 style={{ color: 'var(--text-muted)' }}
                                 className="hover:text-[var(--danger)] transition-colors"
                               >
-                                <X style={{ width: 13, height: 13 }} />
+                                <X style={{ width: 11, height: 11 }} />
                               </button>
                             )}
                           </div>
@@ -2556,24 +3335,30 @@ export default function DeckPage() {
                                   </div>
                                 )}
                               </div>
-                              <div className="p-2 flex-1 flex flex-col justify-between">
+                              <div className="p-1.5 flex-1 flex flex-col justify-between">
                                 <div>
-                                  <p className="font-medium text-sm truncate" style={{ color: 'var(--text)' }}>{member.mercenaryName}</p>
-                                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                                    {mercenaryCategory(merc)}
-                                    {elementValue != null && (
-                                      <span> · 속성값 {elementValue.toLocaleString()}</span>
-                                    )}
-                                  </p>
+                                  <div className="flex items-center justify-between gap-1 min-w-0">
+                                    <p className="font-medium text-[11px] leading-tight truncate text-left flex-1 min-w-0" style={{ color: 'var(--text)' }}>
+                                      {member.mercenaryName}
+                                    </p>
+                                    <span className="text-[10px] leading-tight shrink-0" style={{ color: 'var(--text-muted)' }}>
+                                      {mercenaryCategory(merc)}
+                                    </span>
+                                  </div>
+                                  {elementValue != null && (
+                                    <p className="text-[10px] leading-tight mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                                      속성값 {elementValue.toLocaleString()}
+                                    </p>
+                                  )}
                                 </div>
-                                <div className="grid grid-cols-2 gap-1.5 mt-2">
+                                <div className="grid grid-cols-2 gap-1 mt-1.5">
                                   <button
                                     onClick={() => {
                                       setSetupInitialTab('equipment');
                                       setEquipmentMember(member);
                                     }}
                                     style={{ background: 'var(--brown)', color: 'var(--beige)' }}
-                                    className="rounded py-1.5 text-[11px] font-semibold hover:bg-[var(--brown-dark)] transition-colors"
+                                    className="rounded py-1 text-[10px] font-semibold hover:bg-[var(--brown-dark)] transition-colors"
                                   >
                                     장비
                                   </button>
@@ -2583,7 +3368,7 @@ export default function DeckPage() {
                                       setEquipmentMember(member);
                                     }}
                                     style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}
-                                    className="rounded py-1.5 text-[11px] font-semibold hover:border-[var(--brown)] hover:text-[var(--brown)] transition-colors"
+                                    className="rounded py-1 text-[10px] font-semibold hover:border-[var(--brown)] hover:text-[var(--brown)] transition-colors"
                                   >
                                     특성
                                   </button>
@@ -2591,8 +3376,8 @@ export default function DeckPage() {
                               </div>
                             </>
                           ) : (
-                            <div className="flex-1 flex items-center justify-center text-center px-4">
-                              <p className="text-sm" style={{ color: 'var(--text-disabled)' }}>
+                            <div className="flex-1 flex items-center justify-center text-center px-3">
+                              <p className="text-xs leading-snug" style={{ color: 'var(--text-disabled)' }}>
                                 {isHeroSlot ? '주인공을 선택하세요' : '용병을 선택하세요'}
                               </p>
                             </div>
@@ -2610,17 +3395,70 @@ export default function DeckPage() {
               className="rounded-xl p-16 text-center"
             >
               <p style={{ color: 'var(--text-muted)' }} className="mb-2">덱을 선택하거나 새로 만드세요</p>
-              <p style={{ color: 'var(--text-disabled)' }} className="text-sm">왼쪽에서 덱을 생성하거나 선택하세요</p>
+              <p style={{ color: 'var(--text-disabled)' }} className="text-sm">상단에서 덱을 추가하거나 선택하세요</p>
             </div>
           )}
         </div>
+
+        <MonsterDpsSidebar
+          selectedDeckId={selectedDeckId}
+          monster={monster}
+          monsterQuery={monsterQuery}
+          setMonsterQuery={setMonsterQuery}
+          showMonsterSuggest={showMonsterSuggest}
+          setShowMonsterSuggest={setShowMonsterSuggest}
+          monsterSuggestions={monsterSuggestions}
+          onSelectMonster={(m) => {
+            setMonster(m);
+            setMonsterQuery(m.name);
+            setShowMonsterSuggest(false);
+          }}
+          onClearMonster={() => setMonster(null)}
+          failedMonsterImageIds={failedMonsterImageIds}
+          setFailedMonsterImageIds={setFailedMonsterImageIds}
+          dpsResult={dpsResult}
+          calcLoading={calcLoading}
+        />
       </div>
+
+      <MonsterDpsSidebar
+        sticky={false}
+        selectedDeckId={selectedDeckId}
+        monster={monster}
+        monsterQuery={monsterQuery}
+        setMonsterQuery={setMonsterQuery}
+        showMonsterSuggest={showMonsterSuggest}
+        setShowMonsterSuggest={setShowMonsterSuggest}
+        monsterSuggestions={monsterSuggestions}
+        onSelectMonster={(m) => {
+          setMonster(m);
+          setMonsterQuery(m.name);
+          setShowMonsterSuggest(false);
+        }}
+        onClearMonster={() => setMonster(null)}
+        failedMonsterImageIds={failedMonsterImageIds}
+        setFailedMonsterImageIds={setFailedMonsterImageIds}
+        dpsResult={dpsResult}
+        calcLoading={calcLoading}
+      />
+
+      {showAddDeckModal && (
+        <AddDeckModal
+          name={newDeckName}
+          creating={creating}
+          onChange={setNewDeckName}
+          onConfirm={handleCreateDeck}
+          onClose={closeAddDeckModal}
+        />
+      )}
 
       {equipmentMember && selectedDeckId && (
         <EquipmentSetupModal
           member={equipmentMember}
           deckId={selectedDeckId}
           deckEffectSignature={deckEffectSignature}
+          equipmentBySlot={equipmentBySlot}
+          equipmentLoading={equipmentLoading}
           initialTab={setupInitialTab}
           onClose={() => setEquipmentMember(null)}
           onRefresh={() => loadDeckDetail(selectedDeckId)}

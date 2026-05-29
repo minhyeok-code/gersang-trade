@@ -56,6 +56,10 @@ spring:
   # OAuth2ClientRegistrationConfig 빈에서 env var 유무를 확인해 동적으로 등록한다.
   # → env var 미설정 시 Spring Boot 시작 실패 방지.
 
+server:
+  # Next.js dev 프록시(X-Forwarded-*) 뒤에서 OAuth redirect_uri를 localhost:3000 기준으로 맞춤
+  forward-headers-strategy: framework
+
 # ── OAuth2 클라이언트 자격증명 (OAuth2ClientRegistrationConfig에서 주입) ─────
 oauth2:
   google:

@@ -2,6 +2,7 @@ package org.example.gersangtrade.deck.dto.response;
 
 import org.example.gersangtrade.calculator.dto.request.BonusStatTarget;
 import org.example.gersangtrade.domain.catalog.enums.StatType;
+import org.example.gersangtrade.domain.catalog.enums.StatUnit;
 import org.example.gersangtrade.domain.deck.UserDeckMember;
 import org.example.gersangtrade.domain.deck.UserDeckMemberSlot;
 
@@ -27,9 +28,15 @@ public record MemberStatResponse(
         List<StatEntry> partyCharacteristicStats,
         List<StatEntry> enemyDebuffStats,
         List<StatEntry> ritualStats,
+        /** 주술 세트효과 합산 — FLAT·PERCENT 모두 statType별로 집계 */
+        List<StatEntry> ritualSetEffectStats,
         List<StatEntry> deckBuffStats,
         List<StatEntry> levelBonusStats,
         List<StatEntry> bonusStats,
+        /** 주인공 국가 속성 버프 (동일 Nature 아군 ELEMENT_VALUE) */
+        List<StatEntry> protagonistBuffStats,
+        /** 각성 명왕 편성 수 × 아군 속성값 버프 (+5, 토 +2) */
+        List<StatEntry> awakenedMyeongwangBuffStats,
         StatType resolvedMainStat,
         List<StatEntry> myungwangTransferStats,
         List<MyungwangTransferDetail> myungwangTransferDetails,
@@ -52,7 +59,7 @@ public record MemberStatResponse(
             int statValue
     ) {}
 
-    /** 발동된 주술 세트효과 1건 — 동일 (주술, outcome, 세트, 임계값)이라도 statType별로 행이 분리됨 */
+    /** 발동된 주술 세트효과 1건 — outcome은 <천추>, <북두칠성> 등 표기 마크 */
     public record ActiveSetEffect(
             String ritualName,
             String setName,
@@ -60,7 +67,8 @@ public record MemberStatResponse(
             int appliedPieces,
             int requiredPieces,
             StatType statType,
-            int statValue
+            int statValue,
+            StatUnit statUnit
     ) {}
 
     public static MemberStatResponse of(
@@ -72,9 +80,12 @@ public record MemberStatResponse(
             Map<StatType, Integer> partyCharacteristicStatMap,
             Map<StatType, Integer> enemyDebuffStatMap,
             Map<StatType, Integer> ritualStatMap,
+            Map<StatType, Integer> ritualSetEffectStatMap,
             Map<StatType, Integer> deckBuffStatMap,
             Map<StatType, Integer> levelBonusStatMap,
             Map<StatType, Integer> bonusStatMap,
+            Map<StatType, Integer> protagonistBuffStatMap,
+            Map<StatType, Integer> awakenedMyeongwangBuffStatMap,
             StatType resolvedMainStat,
             Map<StatType, Integer> myungwangTransferStatMap,
             List<MyungwangTransferDetail> myungwangTransferDetails,
@@ -98,9 +109,12 @@ public record MemberStatResponse(
                 toEntries(partyCharacteristicStatMap),
                 toEntries(enemyDebuffStatMap),
                 toEntries(ritualStatMap),
+                toEntries(ritualSetEffectStatMap),
                 toEntries(deckBuffStatMap),
                 toEntries(levelBonusStatMap),
                 toEntries(bonusStatMap),
+                toEntries(protagonistBuffStatMap),
+                toEntries(awakenedMyeongwangBuffStatMap),
                 resolvedMainStat,
                 toEntries(myungwangTransferStatMap),
                 myungwangTransferDetails,

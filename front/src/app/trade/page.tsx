@@ -1,7 +1,11 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { api, type ListingDto, type WantedDto } from '@/lib/api';
+import { api, getSelectedServerName, sortChatMessages, type ChatMessageDto, type ChatRoomDetailDto, type ListingDto, type WantedDto, type ServerDto } from '@/lib/api';
+import { parseApiError } from '@/lib/parseApiError';
+import { isMyMessage, isSystemMessage } from '@/lib/chatUtils';
+import { useWs } from '@/lib/useWs';
+import type { ChatMessageWsEvent, RoomStatusWsEvent } from '@/lib/wsTypes';
 import { Search, BarChart2, Plus, X, ChevronDown, ChevronUp } from 'lucide-react';
 import CreateListingModal from '@/components/trade/CreateListingModal';
 
@@ -88,23 +92,31 @@ function mapListing(l: ListingDto): TradeItem {
 }
 
 function mapWanted(w: WantedDto): TradeItem {
+  const names = w.itemNames?.length
+    ? w.itemNames
+    : w.itemName
+      ? [w.itemName]
+      : [];
   const displayName = w.setName
     ? `${w.setName} 구매 희망`
-    : (w.itemName ?? `구매희망 #${w.id}`);
+    : names.length > 0
+      ? `${names.join(', ')} 구매 희망`
+      : `구매희망 #${w.id}`;
+  const buyerName = w.buyer?.nickname ?? w.buyerName ?? '알 수 없음';
   return {
     id: w.id,
     listingType: 'BUY',
     displayName,
-    nickname: w.buyer.nickname,
-    gameNickname: w.buyer.gameNickname,
-    accessTime: w.buyer.gameAccessTime,
+    nickname: buyerName,
+    gameNickname: w.buyer?.gameNickname,
+    accessTime: w.buyer?.gameAccessTime,
     server: w.server,
-    grade: w.buyer.grade,
-    price: w.price,
-    description: w.description,
+    grade: w.buyer?.grade,
+    price: w.offeredPrice ?? w.price ?? 0,
+    description: w.description ?? w.note,
     status: w.status,
     createdAt: w.createdAt,
-    sellerId: w.buyer.id,
+    sellerId: w.buyer?.id,
   };
 }
 
@@ -537,39 +549,167 @@ function DetailModal({ item, onClose, onChat }: {
 
 // ══════════ 채팅 모달 ══════════
 
-interface ChatMsg { id: number; sender: string | null; content: string; type: 'TEXT' | 'SYSTEM'; }
+interface ChatMsg { id: number; content: string; type: 'TEXT' | 'SYSTEM'; mine: boolean; }
+
+function mapApiMessage(message: ChatMessageDto, myNickname: string | null): ChatMsg {
+  const system = isSystemMessage(message);
+  return {
+    id: message.id,
+    content: message.content,
+    type: system ? 'SYSTEM' : 'TEXT',
+    mine: !system && isMyMessage(message, myNickname),
+  };
+}
 
 function ChatModal({ item, onClose }: { item: TradeItem; onClose: () => void }) {
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
+  const [detail, setDetail] = useState<ChatRoomDetailDto | null>(null);
   const [input, setInput] = useState('');
+  const [finalPrice, setFinalPrice] = useState('');
   const [started, setStarted] = useState(false);
   const [roomId, setRoomId] = useState<number | null>(null);
+  const [myNickname, setMyNickname] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
+  const prevCountRef = useRef(0);
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs]);
+  useEffect(() => {
+    api.getMe().then((u) => setMyNickname(u.nickname)).catch(() => {});
+  }, []);
+
+  const loadMessages = useCallback(async () => {
+    if (!roomId || roomId <= 0) return;
+    try {
+      const data = await api.getChatRoom(roomId);
+      setDetail(data);
+      setMsgs(sortChatMessages(data.messages ?? []).map((m) => mapApiMessage(m, myNickname)));
+    } catch {
+      // 초기 로드 실패는 UI 유지
+    }
+  }, [roomId, myNickname]);
+
+  useEffect(() => {
+    if (!started || !roomId || roomId <= 0 || myNickname == null) return;
+    loadMessages();
+  }, [started, roomId, myNickname, loadMessages]);
+
+  const myNicknameRef = useRef<string | null>(null);
+  myNicknameRef.current = myNickname;
+
+  const isCompleted = detail?.status === 'COMPLETED';
+  const isClosedOnly = detail?.status === 'CLOSED';
+  const isTerminated = isCompleted || isClosedOnly;
+  const canConfirm = detail && !isTerminated && !detail.myTradeConfirmed;
+  const waitingPartner = detail?.myTradeConfirmed && !detail?.partnerTradeConfirmed && !isTerminated;
+  const needsMyConfirm = detail?.partnerTradeConfirmed && !detail?.myTradeConfirmed && !isTerminated;
+  const bothConfirmed = detail?.myTradeConfirmed && detail?.partnerTradeConfirmed && !isTerminated;
+
+  useWs({
+    chat_message: (data) => {
+      const event = data as ChatMessageWsEvent;
+      if (!roomId || event.chatRoomId !== roomId) return;
+      const mapped = mapApiMessage(event.message, myNicknameRef.current);
+      setMsgs((prev) => (prev.some((m) => m.id === mapped.id) ? prev : [...prev, mapped]));
+    },
+    room_status: (data) => {
+      const event = data as RoomStatusWsEvent;
+      if (!roomId || event.chatRoomId !== roomId) return;
+      setDetail((prev) =>
+        prev
+          ? {
+              ...prev,
+              status: event.status,
+              myTradeConfirmed: event.myTradeConfirmed ?? prev.myTradeConfirmed,
+              partnerTradeConfirmed: event.partnerTradeConfirmed ?? prev.partnerTradeConfirmed,
+            }
+          : prev,
+      );
+    },
+  });
+
+  useEffect(() => {
+    if (!waitingPartner && !needsMyConfirm && !bothConfirmed) return;
+    const timer = setInterval(() => loadMessages(), 3000);
+    return () => clearInterval(timer);
+  }, [waitingPartner, needsMyConfirm, bothConfirmed, loadMessages]);
+
+  async function handleTradeConfirm() {
+    if (confirming || !roomId || roomId <= 0) return;
+    setError('');
+    setConfirming(true);
+    try {
+      const summary = await api.confirmTrade(roomId, finalPrice ? Number(finalPrice) : undefined);
+      await loadMessages();
+      setDetail((prev) =>
+        prev
+          ? {
+              ...prev,
+              status: (summary as ChatRoomDetailDto | undefined)?.status ?? prev.status,
+              myTradeConfirmed: (summary as ChatRoomDetailDto | undefined)?.myTradeConfirmed ?? prev.myTradeConfirmed,
+              partnerTradeConfirmed: (summary as ChatRoomDetailDto | undefined)?.partnerTradeConfirmed ?? prev.partnerTradeConfirmed,
+            }
+          : prev,
+      );
+      const status = (summary as ChatRoomDetailDto | undefined)?.status ?? detail?.status;
+      if (status === 'CLOSED') {
+        setError('이 채팅방에서는 거래가 확정되지 않았습니다. 게시물이 이미 처리되었거나 채팅방이 종료되었습니다.');
+      }
+    } catch (e: unknown) {
+      setError(parseApiError(e));
+    } finally {
+      setConfirming(false);
+    }
+  }
+
+  useEffect(() => {
+    if (msgs.length > prevCountRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+    prevCountRef.current = msgs.length;
+  }, [msgs]);
 
   async function handleStart(type: 'APPLY' | 'NEGOTIATE') {
     setLoading(true);
     try {
-      const res = await api.createChatRoom({ listingId: item.id, listingType: item.listingType, initiationType: type }) as Record<string, unknown>;
-      setRoomId(Number(res.id ?? res.chatRoomId ?? 0));
+      const res = await api.createChatRoom({
+        listingId: item.id,
+        listingType: item.listingType,
+        initiationType: type,
+      }) as { id?: number; chatRoomId?: number };
+      const id = Number(res.id ?? res.chatRoomId ?? 0);
+      setRoomId(id);
       setStarted(true);
-      setMsgs([{ id: Date.now(), sender: null, content: `[시스템] ${type === 'APPLY' ? '거래를 신청했습니다.' : '흥정을 요청했습니다.'}`, type: 'SYSTEM' }]);
+      if (id > 0) {
+        const data = await api.getChatRoom(id);
+        const me = await api.getMe().catch(() => null);
+        const nickname = me?.nickname ?? myNickname;
+        if (nickname) setMyNickname(nickname);
+        setDetail(data);
+        setMsgs(sortChatMessages(data.messages ?? []).map((m) => mapApiMessage(m, nickname ?? null)));
+      }
     } catch {
       setRoomId(-1);
       setStarted(true);
-      setMsgs([{ id: Date.now(), sender: null, content: `[시스템] ${type === 'APPLY' ? '거래를 신청했습니다.' : '흥정을 요청했습니다.'}`, type: 'SYSTEM' }]);
-    } finally { setLoading(false); }
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function handleSend() {
     const content = input.trim();
-    if (!content) return;
+    if (!content || !roomId || roomId <= 0) return;
     setInput('');
-    setMsgs((prev) => [...prev, { id: Date.now(), sender: '나', content, type: 'TEXT' }]);
-    if (roomId && roomId > 0) {
-      api.sendMessage(roomId, content).catch(() => {});
+    try {
+      const msg = await api.sendMessage(roomId, content);
+      setMsgs((prev) => {
+        const mapped = mapApiMessage(msg, myNickname);
+        if (prev.some((m) => m.id === mapped.id)) return prev;
+        return [...prev, mapped];
+      });
+    } catch {
+      setInput(content);
     }
   }
 
@@ -614,10 +754,10 @@ function ChatModal({ item, onClose }: { item: TradeItem; onClose: () => void }) 
           <>
             <div className="flex-1 overflow-y-auto p-4 space-y-2">
               {msgs.map((msg) => (
-                <div key={msg.id} className={msg.type === 'SYSTEM' ? 'flex justify-center' : msg.sender === '나' ? 'flex justify-end' : 'flex justify-start'}>
+                <div key={msg.id} className={msg.type === 'SYSTEM' ? 'flex justify-center' : msg.mine ? 'flex justify-end' : 'flex justify-start'}>
                   {msg.type === 'SYSTEM' ? (
                     <span style={{ background: 'var(--bg)', color: 'var(--text-muted)' }} className="text-xs px-3 py-1 rounded-full">{msg.content}</span>
-                  ) : msg.sender === '나' ? (
+                  ) : msg.mine ? (
                     <div style={{ background: 'var(--brown)', color: 'var(--beige)' }} className="text-sm px-3 py-2 rounded-2xl rounded-tr-sm max-w-[75%]">{msg.content}</div>
                   ) : (
                     <div style={{ background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)' }} className="text-sm px-3 py-2 rounded-2xl rounded-tl-sm max-w-[75%]">{msg.content}</div>
@@ -626,18 +766,67 @@ function ChatModal({ item, onClose }: { item: TradeItem; onClose: () => void }) 
               ))}
               <div ref={bottomRef} />
             </div>
-            <div style={{ borderTop: '1px solid var(--border)' }} className="flex gap-2 p-3 shrink-0">
-              <input value={input} onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                placeholder="메시지 입력..."
-                style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
-                className="flex-1 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--brown)]" />
-              <button onClick={handleSend} disabled={!input.trim()}
-                style={{ background: input.trim() ? 'var(--brown)' : 'var(--border)', color: input.trim() ? 'var(--beige)' : 'var(--text-disabled)' }}
-                className="px-4 py-2 rounded-lg text-sm font-semibold transition-colors">
-                전송
-              </button>
-            </div>
+            {error && (
+              <div className="px-4 py-2 text-xs shrink-0" style={{ color: 'var(--danger)', borderTop: '1px solid var(--border)' }}>
+                {error}
+              </div>
+            )}
+            {isTerminated ? (
+              <div style={{ borderTop: '1px solid var(--border)' }} className="px-4 py-3 shrink-0">
+                <p className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>
+                  {isCompleted ? '거래가 확정되었습니다.' : '채팅방이 종료되었습니다.'}
+                </p>
+              </div>
+            ) : (
+              <div style={{ borderTop: '1px solid var(--border)' }} className="p-3 space-y-2 shrink-0">
+                {detail && (
+                  <div className="flex flex-col gap-1.5">
+                    {needsMyConfirm && (
+                      <p className="text-xs px-1" style={{ color: 'var(--brown)' }}>
+                        상대방이 거래완료를 확인했습니다. 아래 버튼으로 확인해주세요.
+                      </p>
+                    )}
+                    <div className="flex gap-2 items-center">
+                      <input
+                        type="number"
+                        value={finalPrice}
+                        onChange={(e) => setFinalPrice(e.target.value)}
+                        placeholder="최종가 (선택)"
+                        className="w-28 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-[var(--brown)]"
+                        style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
+                      />
+                      {canConfirm && (
+                        <button
+                          onClick={handleTradeConfirm}
+                          disabled={confirming}
+                          className="flex-1 px-2.5 py-1.5 rounded text-xs font-semibold disabled:opacity-50"
+                          style={{ background: 'var(--brown)', color: 'var(--beige)' }}
+                        >
+                          {confirming ? '처리 중…' : needsMyConfirm ? '거래 완료 확인' : '거래 완료'}
+                        </button>
+                      )}
+                      {waitingPartner && (
+                        <p className="flex-1 text-xs text-right" style={{ color: 'var(--text-muted)' }}>
+                          상대방 확인 대기 중…
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <input value={input} onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                    placeholder="메시지 입력..."
+                    style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
+                    className="flex-1 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--brown)]" />
+                  <button onClick={handleSend} disabled={!input.trim()}
+                    style={{ background: input.trim() ? 'var(--brown)' : 'var(--border)', color: input.trim() ? 'var(--beige)' : 'var(--text-disabled)' }}
+                    className="px-4 py-2 rounded-lg text-sm font-semibold transition-colors">
+                    전송
+                  </button>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -774,6 +963,7 @@ export default function TradePage() {
   const [buySort, setBuySort] = useState<SortKey>('latest');
   const [sellItems, setSellItems] = useState<TradeItem[]>([]);
   const [buyItems, setBuyItems] = useState<TradeItem[]>([]);
+  const [servers, setServers] = useState<ServerDto[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [selectedItem, setSelectedItem] = useState<TradeItem | null>(null);
@@ -781,11 +971,22 @@ export default function TradePage() {
   const [showPrice, setShowPrice] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
 
+  useEffect(() => {
+    api.getServers().then(setServers).catch(() => {});
+  }, []);
+
   const loadListings = useCallback(async (itemId?: number | null) => {
+    const serverName = getSelectedServerName(servers);
+    if (!serverName) {
+      setSellItems([]);
+      setBuyItems([]);
+      return;
+    }
+
     setLoading(true);
     setError('');
     try {
-      const params: Record<string, string> = {};
+      const params: Record<string, string> = { server: serverName };
       if (itemId) params.itemId = String(itemId);
       const [listings, wanted] = await Promise.all([
         api.getListings(params).catch(() => [] as ListingDto[]),
@@ -798,16 +999,17 @@ export default function TradePage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [servers]);
 
-  useEffect(() => { loadListings(); }, [loadListings]);
-
-  // 아이템 선택 시 재조회
   useEffect(() => {
-    if (filters.selectedItemId !== null) {
-      loadListings(filters.selectedItemId);
-    }
-  }, [filters.selectedItemId, loadListings]);
+    loadListings(filters.selectedItemId);
+  }, [loadListings, filters.selectedItemId]);
+
+  useEffect(() => {
+    const onServerChanged = () => loadListings(filters.selectedItemId);
+    window.addEventListener('server-changed', onServerChanged);
+    return () => window.removeEventListener('server-changed', onServerChanged);
+  }, [loadListings, filters.selectedItemId]);
 
   function applyFilters(items: TradeItem[]): TradeItem[] {
     return items.filter((item) => {

@@ -15,6 +15,7 @@ import org.example.gersangtrade.catalog.repository.MercenaryCharacteristicLevelR
 import org.example.gersangtrade.catalog.repository.MercenaryStatRepository;
 import org.example.gersangtrade.catalog.repository.MonsterRepository;
 import org.example.gersangtrade.catalog.repository.RitualSetEffectRepository;
+import org.example.gersangtrade.catalog.repository.RitualStatRepository;
 import org.example.gersangtrade.catalog.repository.SkillCoefficientRepository;
 import org.example.gersangtrade.deck.repository.UserDeckMemberCharacteristicRepository;
 import org.example.gersangtrade.deck.repository.UserDeckMemberRepository;
@@ -38,6 +39,7 @@ import org.example.gersangtrade.domain.catalog.MercenaryCharacteristicLevel;
 import org.example.gersangtrade.domain.catalog.MercenaryStat;
 import org.example.gersangtrade.domain.catalog.Monster;
 import org.example.gersangtrade.domain.catalog.RitualSetEffect;
+import org.example.gersangtrade.domain.catalog.RitualStat;
 import org.example.gersangtrade.domain.catalog.SetGrantedSkill;
 import org.example.gersangtrade.domain.catalog.SkillCoefficient;
 import org.example.gersangtrade.domain.catalog.Spirit;
@@ -122,6 +124,7 @@ public class DpsCalculatorService {
     private final EquipmentSetEffectRepository setEffectRepository;
     private final EquipmentSetSkillEffectRepository setSkillEffectRepository;
     private final RitualSetEffectRepository ritualSetEffectRepository;
+    private final RitualStatRepository ritualStatRepository;
     private final SkillCoefficientRepository skillCoefficientRepository;
     private final MonsterRepository monsterRepository;
     private final LegendGeneralLoadService legendGeneralLoadService;
@@ -219,6 +222,9 @@ public class DpsCalculatorService {
                 .distinct().toList();
         Map<RitualSetKey, List<RitualSetEffect>> ritualSetEffectMap =
                 buildRitualSetEffectMap(equippedRitualIds, equippedSetIds);
+        Map<Long, List<RitualStat>> ritualStatsByRitualId = equippedRitualIds.isEmpty() ? Map.of() :
+                ritualStatRepository.findByRitualIdIn(equippedRitualIds).stream()
+                        .collect(Collectors.groupingBy(rs -> rs.getRitual().getId()));
 
         // ── 세트 부여 스킬 계수 배치 로드 ─────────────────────────────────────
         Map<Long, List<EquipmentSetSkillEffect>> setSkillEffectsBySetId = equippedSetIds.isEmpty() ? Map.of() :
@@ -332,6 +338,19 @@ public class DpsCalculatorService {
                     if (!isElementApplicable(stat.getElement(), nature)) continue;
                     accumulate(stat.getStatUnit() == StatUnit.PERCENT ? selfPercent : selfFlat,
                             stat.getStatType(), stat.getValue());
+                }
+            }
+
+            // SELF 주술 스탯 — 슬롯별 outcome(SUCCESS/GREAT_SUCCESS)에 따라 RitualStat 적용
+            for (UserDeckMemberSlot slot : memberSlots) {
+                if (slot.getRitual() == null) continue;
+                Long ritualId = slot.getRitual().getRitual().getId();
+                RitualOutcome outcome = slot.getRitual().getOutcome();
+                for (RitualStat stat : ritualStatsByRitualId.getOrDefault(ritualId, List.of())) {
+                    if (stat.getOutcome() != outcome) continue;
+                    if (!isElementApplicable(stat.getElement(), nature)) continue;
+                    accumulate(stat.getStatUnit() == StatUnit.PERCENT ? selfPercent : selfFlat,
+                            stat.getStatType(), stat.getStatValue());
                 }
             }
 

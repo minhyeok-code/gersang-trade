@@ -1,6 +1,7 @@
 package org.example.gersangtrade.chat.repository;
 
 import org.example.gersangtrade.domain.chat.ChatMessage;
+import org.example.gersangtrade.domain.chat.enums.ChatMessageType;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Slice;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -44,4 +45,23 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
      */
     @Query("SELECT m FROM ChatMessage m WHERE m.archivedAt IS NOT NULL AND m.archivedAt < :deleteBefore")
     List<ChatMessage> findExpiredArchived(@Param("deleteBefore") LocalDateTime deleteBefore);
+
+    /**
+     * 상대방 TEXT 메시지 중 lastReadAt 이후 발송된 미읽음 메시지 존재 여부.
+     * lastReadAt이 null이면 상대방 메시지가 1건이라도 있으면 미읽음으로 본다.
+     */
+    @Query("""
+            SELECT CASE WHEN COUNT(m) > 0 THEN true ELSE false END
+            FROM ChatMessage m
+            WHERE m.chatRoom.id = :chatRoomId
+              AND m.archivedAt IS NULL
+              AND m.sender IS NOT NULL
+              AND m.sender.id <> :viewerId
+              AND m.messageType = :messageType
+              AND (:lastReadAt IS NULL OR m.sentAt > :lastReadAt)
+            """)
+    boolean existsUnreadFromOthers(@Param("chatRoomId") Long chatRoomId,
+                                   @Param("viewerId") Long viewerId,
+                                   @Param("lastReadAt") LocalDateTime lastReadAt,
+                                   @Param("messageType") ChatMessageType messageType);
 }

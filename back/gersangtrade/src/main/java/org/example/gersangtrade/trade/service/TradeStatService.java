@@ -36,19 +36,7 @@ public class TradeStatService {
      */
     @Transactional
     public void upsertDailyStat(String statKey, long confirmedPrice, long quantity, LocalDate date) {
-        tradeStatDailyRepository.findByStatKeyAndStatDate(statKey, date)
-                .ifPresentOrElse(
-                        stat -> stat.accumulate(confirmedPrice, quantity),
-                        () -> tradeStatDailyRepository.save(TradeStatDaily.builder()
-                                .statKey(statKey)
-                                .statDate(date)
-                                .tradeCount(1)
-                                .quantitySum(quantity)
-                                .priceSum(confirmedPrice)
-                                .priceMin(confirmedPrice)
-                                .priceMax(confirmedPrice)
-                                .build())
-                );
+        tradeStatDailyRepository.upsertAccumulate(date, statKey, confirmedPrice, quantity);
     }
 
     // ──────────────────────────────────────────────────────────────────────

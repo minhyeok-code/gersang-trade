@@ -12,7 +12,9 @@ import org.example.gersangtrade.domain.chat.ChatRoom;
 import org.example.gersangtrade.domain.chat.enums.ChatRoomStatus;
 import org.example.gersangtrade.domain.chat.enums.InitiationType;
 import org.example.gersangtrade.domain.chat.enums.ListingType;
+import org.example.gersangtrade.domain.notification.enums.NotificationType;
 import org.example.gersangtrade.domain.listing.TradeListing;
+import org.example.gersangtrade.domain.listing.enums.ListingStatus;
 import org.example.gersangtrade.domain.trade.TradeConfirmed;
 import org.example.gersangtrade.domain.trade.TradeReview;
 import org.example.gersangtrade.domain.user.User;
@@ -20,6 +22,7 @@ import org.example.gersangtrade.domain.user.UserRepository;
 import org.example.gersangtrade.domain.user.enums.Role;
 import org.example.gersangtrade.domain.user.enums.UserStatus;
 import org.example.gersangtrade.domain.wanted.WantedListing;
+import org.example.gersangtrade.domain.wanted.enums.WantedStatus;
 import org.example.gersangtrade.listing.repository.BundleLineRepository;
 import org.example.gersangtrade.listing.repository.ListingBundleRepository;
 import org.example.gersangtrade.listing.repository.TradeListingRepository;
@@ -39,6 +42,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.SliceImpl;
 
@@ -49,6 +53,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 /**
@@ -73,6 +78,7 @@ class ChatServiceTest {
     @Mock private TradeStatService tradeStatService;
     @Mock private NotificationService notificationService;
     @Mock private KeywordDetectionService keywordDetectionService;
+    @Mock private SimpMessagingTemplate messagingTemplate;
 
     @InjectMocks
     private ChatService chatService;
@@ -122,6 +128,10 @@ class ChatServiceTest {
         when(tradeListing.getSeller()).thenReturn(poster);
         when(tradeListing.getPrice()).thenReturn(50_000_000L);
         when(tradeListing.getServer()).thenReturn("서버1");
+        when(tradeListing.getStatus()).thenReturn(ListingStatus.ACTIVE);
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(poster));
+        when(userRepository.findById(2L)).thenReturn(Optional.of(counterparty));
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -136,8 +146,8 @@ class ChatServiceTest {
 
         when(userRepository.findById(2L)).thenReturn(Optional.of(counterparty));
         when(tradeListingRepository.findById(1L)).thenReturn(Optional.of(tradeListing));
-        when(chatRoomRepository.existsByListingTypeAndListingIdAndCounterpartyIdAndStatus(
-                any(), any(), any(), any())).thenReturn(false);
+        when(chatRoomRepository.existsActiveByListingTypeAndListingIdAndCounterpartyId(
+                any(), any(), any())).thenReturn(false);
 
         ChatRoom savedRoom = mock(ChatRoom.class);
         when(savedRoom.getId()).thenReturn(100L);
@@ -169,8 +179,8 @@ class ChatServiceTest {
 
         when(userRepository.findById(2L)).thenReturn(Optional.of(counterparty));
         when(tradeListingRepository.findById(1L)).thenReturn(Optional.of(tradeListing));
-        when(chatRoomRepository.existsByListingTypeAndListingIdAndCounterpartyIdAndStatus(
-                any(), any(), any(), any())).thenReturn(true);
+        when(chatRoomRepository.existsActiveByListingTypeAndListingIdAndCounterpartyId(
+                any(), any(), any())).thenReturn(true);
 
         // 기존 채팅방 조회 시 반환할 Mock
         ChatRoom existingRoom = mock(ChatRoom.class);
@@ -209,6 +219,21 @@ class ChatServiceTest {
     }
 
     @Test
+    @DisplayName("createChatRoom_이미완료된판매게시물_예외발생")
+    void createChatRoom_이미완료된판매게시물_예외발생() {
+        ChatRoomCreateRequest request = new ChatRoomCreateRequest(
+                ListingType.SELL, 1L, InitiationType.NEGOTIATE);
+
+        when(userRepository.findById(2L)).thenReturn(Optional.of(counterparty));
+        when(tradeListingRepository.findById(1L)).thenReturn(Optional.of(tradeListing));
+        when(tradeListing.getStatus()).thenReturn(ListingStatus.SOLD);
+
+        assertThatThrownBy(() -> chatService.createChatRoom(2L, request))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("이미 거래가 완료된 판매 게시물");
+    }
+
+    @Test
     @DisplayName("createChatRoom_차단된사용자_예외발생")
     void createChatRoom_차단된사용자_예외발생() {
         ChatRoomCreateRequest request = new ChatRoomCreateRequest(
@@ -226,8 +251,8 @@ class ChatServiceTest {
     // ──────────────────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("sendMessage_정상_OPEN상태_메시지저장및알림")
-    void sendMessage_정상_OPEN상태_메시지저장및알림() {
+    @DisplayName("sendMessage_정상_OPEN상태_메시지저장및WebSocketPush")
+    void sendMessage_정상_OPEN상태_메시지저장및WebSocketPush() {
         ChatRoom room = mockOpenRoom();
         when(userRepository.findById(2L)).thenReturn(Optional.of(counterparty));
         when(chatRoomRepository.findById(100L)).thenReturn(Optional.of(room));
@@ -244,15 +269,16 @@ class ChatServiceTest {
 
         assertThat(response).isNotNull();
         verify(chatMessageRepository).save(any(ChatMessage.class));
-        verify(notificationService).send(any(), any(), any(), any()); // 상대방 알림
+        verify(messagingTemplate).convertAndSendToUser(anyString(), eq("/queue/chat-message"), any());
+        verify(notificationService, never()).send(any(), eq(NotificationType.CHAT_MESSAGE), any(), any());
     }
 
     @Test
-    @DisplayName("sendMessage_POSTER_CONFIRMED상태_메시지전송가능")
-    void sendMessage_POSTER_CONFIRMED상태_메시지전송가능() {
-        // POSTER_CONFIRMED 상태에서도 메시지 전송 허용
+    @DisplayName("sendMessage_AWAITING_PARTNER상태_메시지전송가능")
+    void sendMessage_AWAITING_PARTNER상태_메시지전송가능() {
+        // AWAITING_PARTNER 상태에서도 메시지 전송 허용
         ChatRoom room = mock(ChatRoom.class);
-        when(room.getStatus()).thenReturn(ChatRoomStatus.POSTER_CONFIRMED);
+        when(room.getStatus()).thenReturn(ChatRoomStatus.AWAITING_PARTNER);
         when(room.getPoster()).thenReturn(poster);
         when(room.getCounterparty()).thenReturn(counterparty);
 
@@ -310,139 +336,180 @@ class ChatServiceTest {
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // posterConfirm 테스트
+    // confirmTrade 테스트
     // ──────────────────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("posterConfirm_정상_OPEN에서POSTER_CONFIRMED전환")
-    void posterConfirm_정상_OPEN에서POSTER_CONFIRMED전환() {
-        ChatRoom room = mockOpenRoom();
-        when(chatRoomRepository.findById(100L)).thenReturn(Optional.of(room));
+    @DisplayName("confirmTrade_게시자_먼저확인_AWAITING_PARTNER_상대알림")
+    void confirmTrade_게시자_먼저확인_AWAITING_PARTNER_상대알림() {
+        ChatRoom room = realOpenRoom();
+        stubLockedRoom(room);
 
-        ChatRoomSummaryResponse response = chatService.posterConfirm(
+        ChatRoomSummaryResponse response = chatService.confirmTrade(
                 1L, 100L, new PosterConfirmRequest(45_000_000L));
 
-        // posterConfirm() 상태전이 메서드 호출 확인
-        verify(room).posterConfirm(45_000_000L);
-        verify(chatMessageRepository).save(any(ChatMessage.class)); // 시스템 메시지
-        verify(notificationService).send(any(), any(), any(), any()); // 상대방 알림
+        assertThat(room.getStatus()).isEqualTo(ChatRoomStatus.AWAITING_PARTNER);
+        assertThat(room.getPosterConfirmedAt()).isNotNull();
+        assertThat(room.getCounterpartyConfirmedAt()).isNull();
+        verify(chatMessageRepository).save(any(ChatMessage.class));
+        verify(notificationService).send(eq(counterparty), any(), any(), any());
         assertThat(response).isNotNull();
     }
 
     @Test
-    @DisplayName("posterConfirm_게시자아닌사용자_예외발생")
-    void posterConfirm_게시자아닌사용자_예외발생() {
-        ChatRoom room = mockOpenRoom();
-        when(chatRoomRepository.findById(100L)).thenReturn(Optional.of(room));
+    @DisplayName("confirmTrade_상대방_먼저확인_AWAITING_PARTNER_게시자알림")
+    void confirmTrade_상대방_먼저확인_AWAITING_PARTNER_게시자알림() {
+        ChatRoom room = realOpenRoom();
+        stubLockedRoom(room);
 
-        // counterparty(id=2)가 posterConfirm 호출 시도
-        assertThatThrownBy(() -> chatService.posterConfirm(
-                2L, 100L, new PosterConfirmRequest(null)))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("게시자만 거래완료를 먼저 요청할 수 있습니다");
+        chatService.confirmTrade(2L, 100L, new PosterConfirmRequest(null));
+
+        assertThat(room.getStatus()).isEqualTo(ChatRoomStatus.AWAITING_PARTNER);
+        assertThat(room.getCounterpartyConfirmedAt()).isNotNull();
+        assertThat(room.getPosterConfirmedAt()).isNull();
+        verify(notificationService).send(eq(poster), any(), any(), any());
     }
 
     @Test
-    @DisplayName("posterConfirm_POSTER_CONFIRMED상태재호출_예외발생")
-    void posterConfirm_POSTER_CONFIRMED상태재호출_예외발생() {
-        // 이미 POSTER_CONFIRMED 상태인 채팅방에 재호출
-        ChatRoom room = mock(ChatRoom.class);
-        when(room.getPoster()).thenReturn(poster);
-        when(room.getCounterparty()).thenReturn(counterparty);
-        when(room.getStatus()).thenReturn(ChatRoomStatus.POSTER_CONFIRMED);
-        when(chatRoomRepository.findById(100L)).thenReturn(Optional.of(room));
+    @DisplayName("confirmTrade_이미확인한사용자_재호출_예외발생")
+    void confirmTrade_이미확인한사용자_재호출_예외발생() {
+        ChatRoom room = realOpenRoom();
+        room.recordParticipantConfirm(true, 45_000_000L);
+        stubLockedRoom(room);
 
-        assertThatThrownBy(() -> chatService.posterConfirm(
+        assertThatThrownBy(() -> chatService.confirmTrade(
                 1L, 100L, new PosterConfirmRequest(null)))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("현재 상태에서는 거래완료를 요청할 수 없습니다");
+                .hasMessageContaining("이미 거래완료를 확인했습니다");
     }
 
-    // ──────────────────────────────────────────────────────────────────────
-    // counterpartyConfirm 테스트
-    // ──────────────────────────────────────────────────────────────────────
-
     @Test
-    @DisplayName("counterpartyConfirm_정상_COMPLETED전환_TradeConfirmed생성_평가2건_알림4건")
-    void counterpartyConfirm_정상_COMPLETED전환_TradeConfirmed생성_평가2건_알림4건() {
-        ChatRoom room = mockPosterConfirmedRoom();
-        when(chatRoomRepository.findById(100L)).thenReturn(Optional.of(room));
+    @DisplayName("confirmTrade_양측확인_COMPLETED_TradeConfirmed생성")
+    void confirmTrade_양측확인_COMPLETED_TradeConfirmed생성() {
+        ChatRoom room = realOpenRoom();
+        room.recordParticipantConfirm(true, 50_000_000L);
+        stubLockedRoom(room);
         when(tradeListingRepository.findById(1L)).thenReturn(Optional.of(tradeListing));
         when(chatRoomRepository.findByListingTypeAndListingId(ListingType.SELL, 1L))
-                .thenReturn(List.of(room)); // 다른 채팅방 없음
-
-        TradeConfirmed savedConfirmed = mock(TradeConfirmed.class);
-        when(tradeConfirmedRepository.save(any(TradeConfirmed.class))).thenReturn(savedConfirmed);
+                .thenReturn(List.of(room));
+        when(tradeConfirmedRepository.saveAndFlush(any(TradeConfirmed.class))).thenReturn(mock(TradeConfirmed.class));
         when(tradeReviewRepository.save(any(TradeReview.class))).thenReturn(mock(TradeReview.class));
 
-        ChatRoomSummaryResponse response = chatService.counterpartyConfirm(2L, 100L);
+        ChatRoomSummaryResponse response = chatService.confirmTrade(2L, 100L, new PosterConfirmRequest(null));
 
-        assertThat(response).isNotNull();
-        // 상태 전이
-        verify(room).counterpartyConfirm();
-        // TradeConfirmed 생성
-        verify(tradeConfirmedRepository).save(any(TradeConfirmed.class));
-        // 거래 평가 2건 생성 (poster→counterparty, counterparty→poster)
+        assertThat(room.getStatus()).isEqualTo(ChatRoomStatus.COMPLETED);
+        verify(tradeConfirmedRepository).saveAndFlush(any(TradeConfirmed.class));
         verify(tradeReviewRepository, times(2)).save(any(TradeReview.class));
-        // 알림 4건: poster TRADE_COMPLETED, counterparty TRADE_COMPLETED, poster REVIEW_REQUESTED, counterparty REVIEW_REQUESTED
         verify(notificationService, times(4)).send(any(), any(), any(), any());
-        // 거래 횟수 증가
         verify(poster).incrementTradeCount();
         verify(counterparty).incrementTradeCount();
+        assertThat(response).isNotNull();
     }
 
     @Test
-    @DisplayName("counterpartyConfirm_상대방아닌사용자_예외발생")
-    void counterpartyConfirm_상대방아닌사용자_예외발생() {
-        ChatRoom room = mockPosterConfirmedRoom();
-        when(chatRoomRepository.findById(100L)).thenReturn(Optional.of(room));
+    @DisplayName("confirmTrade_동일조합다른채팅방COMPLETED_채팅방CLOSED_거래확정없음")
+    void confirmTrade_동일조합다른채팅방COMPLETED_채팅방CLOSED_거래확정없음() {
+        ChatRoom room = realOpenRoom();
+        room.recordParticipantConfirm(false, null);
+        stubLockedRoom(room);
 
-        // poster(id=1)가 counterpartyConfirm 호출 시도
-        assertThatThrownBy(() -> chatService.counterpartyConfirm(1L, 100L))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("상대방만 거래완료를 최종 확인할 수 있습니다");
+        when(tradeListing.getStatus()).thenReturn(ListingStatus.SOLD);
+        when(chatRoomRepository.countOtherCompletedRoom(
+                eq("SELL"), eq(1L), eq(2L), eq(100L))).thenReturn(0L);
+
+        ChatRoomSummaryResponse response = chatService.confirmTrade(1L, 100L, new PosterConfirmRequest(null));
+
+        assertThat(room.getStatus()).isEqualTo(ChatRoomStatus.CLOSED);
+        assertThat(response.status()).isEqualTo(ChatRoomStatus.CLOSED);
+        verify(tradeConfirmedRepository, never()).saveAndFlush(any());
     }
 
     @Test
-    @DisplayName("counterpartyConfirm_OPEN상태에서호출_예외발생")
-    void counterpartyConfirm_OPEN상태에서호출_예외발생() {
-        // 게시자 확인 없이 상대방이 바로 counterpartyConfirm 호출
-        ChatRoom room = mockOpenRoom();
-        when(chatRoomRepository.findById(100L)).thenReturn(Optional.of(room));
+    @DisplayName("confirmTrade_이미완료된구매희망_채팅방CLOSED_거래확정없음")
+    void confirmTrade_이미완료된구매희망_채팅방CLOSED_거래확정없음() {
+        ChatRoom room = ChatRoom.builder()
+                .listingType(ListingType.BUY)
+                .listingId(5L)
+                .initiationType(InitiationType.APPLY)
+                .poster(poster)
+                .counterparty(counterparty)
+                .build();
+        room = spy(room);
+        doReturn(100L).when(room).getId();
+        doReturn(LocalDateTime.now()).when(room).getCreatedAt();
+        room.recordParticipantConfirm(false, null);
+        stubLockedRoom(room);
 
-        assertThatThrownBy(() -> chatService.counterpartyConfirm(2L, 100L))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("게시자가 먼저 거래완료를 요청해야 합니다");
+        WantedListing wanted = mock(WantedListing.class);
+        when(wanted.getStatus()).thenReturn(WantedStatus.PURCHASED);
+        when(wantedListingRepository.findById(5L)).thenReturn(Optional.of(wanted));
+
+        ChatRoomSummaryResponse response = chatService.confirmTrade(1L, 100L, new PosterConfirmRequest(null));
+
+        assertThat(room.getStatus()).isEqualTo(ChatRoomStatus.CLOSED);
+        assertThat(response.status()).isEqualTo(ChatRoomStatus.CLOSED);
+        verify(tradeConfirmedRepository, never()).saveAndFlush(any());
+        verify(chatMessageRepository).save(any(ChatMessage.class));
     }
 
     @Test
-    @DisplayName("counterpartyConfirm_동일게시물의다른OPEN채팅방_자동CLOSED처리")
-    void counterpartyConfirm_동일게시물의다른OPEN채팅방_자동CLOSED처리() {
-        ChatRoom room = mockPosterConfirmedRoom();
-        when(chatRoomRepository.findById(100L)).thenReturn(Optional.of(room));
+    @DisplayName("confirmTrade_동일게시물의다른OPEN채팅방_자동CLOSED처리")
+    void confirmTrade_동일게시물의다른OPEN채팅방_자동CLOSED처리() {
+        ChatRoom room = realOpenRoom();
+        room.recordParticipantConfirm(true, 50_000_000L);
+        stubLockedRoom(room);
         when(tradeListingRepository.findById(1L)).thenReturn(Optional.of(tradeListing));
-        when(tradeConfirmedRepository.save(any())).thenReturn(mock(TradeConfirmed.class));
+        when(tradeConfirmedRepository.saveAndFlush(any())).thenReturn(mock(TradeConfirmed.class));
         when(tradeReviewRepository.save(any())).thenReturn(mock(TradeReview.class));
 
-        // 동일 게시물에 다른 OPEN 채팅방이 존재
         ChatRoom otherRoom = mock(ChatRoom.class);
         when(otherRoom.getId()).thenReturn(200L);
         when(otherRoom.getStatus()).thenReturn(ChatRoomStatus.OPEN);
-
+        when(otherRoom.getPoster()).thenReturn(poster);
+        when(otherRoom.getCounterparty()).thenReturn(counterparty);
         when(chatRoomRepository.findByListingTypeAndListingId(ListingType.SELL, 1L))
-                .thenReturn(List.of(room, otherRoom)); // 완료된 방 + 다른 OPEN 방
+                .thenReturn(List.of(room, otherRoom));
 
-        chatService.counterpartyConfirm(2L, 100L);
+        chatService.confirmTrade(2L, 100L, new PosterConfirmRequest(null));
 
-        // 다른 OPEN 채팅방이 close() 처리되어야 함
         verify(otherRoom).close();
-        // 종료 시스템 메시지 저장 확인 (완료방 시스템메시지 없음 + 타방 1건)
         verify(chatMessageRepository, atLeastOnce()).save(any(ChatMessage.class));
     }
 
     // ──────────────────────────────────────────────────────────────────────
     // private 헬퍼 — 채팅방 Mock 빌더
     // ──────────────────────────────────────────────────────────────────────
+
+    /** confirmTrade용 채팅방 잠금 조회 stub */
+    private void stubLockedRoom(ChatRoom room) {
+        when(chatRoomRepository.findWithLockById(100L)).thenReturn(Optional.of(room));
+        when(chatRoomRepository.saveAndFlush(room)).thenReturn(room);
+        when(tradeConfirmedRepository.findByChatRoomId(100L)).thenReturn(Optional.empty());
+        ListingType listingType = room.getListingType();
+        Long listingId = room.getListingId();
+        Long counterpartyId = room.getCounterparty().getId();
+        Long roomId = room.getId();
+        if (listingType == ListingType.SELL) {
+            when(tradeListingRepository.findById(listingId)).thenReturn(Optional.of(tradeListing));
+        }
+        when(chatRoomRepository.countOtherCompletedRoom(
+                eq(listingType.name()), eq(listingId), eq(counterpartyId), eq(roomId))).thenReturn(0L);
+    }
+
+    /** OPEN 상태 실제 채팅방 (id=100) */
+    private ChatRoom realOpenRoom() {
+        ChatRoom room = ChatRoom.builder()
+                .listingType(ListingType.SELL)
+                .listingId(1L)
+                .initiationType(InitiationType.NEGOTIATE)
+                .poster(poster)
+                .counterparty(counterparty)
+                .build();
+        room = spy(room);
+        doReturn(100L).when(room).getId();
+        doReturn(LocalDateTime.now()).when(room).getCreatedAt();
+        return room;
+    }
 
     /** OPEN 상태 채팅방 Mock */
     private ChatRoom mockOpenRoom() {
@@ -459,14 +526,14 @@ class ChatServiceTest {
         return room;
     }
 
-    /** POSTER_CONFIRMED 상태 채팅방 Mock (finalPrice 있음) */
+    /** AWAITING_PARTNER 상태 채팅방 Mock (finalPrice 있음) */
     private ChatRoom mockPosterConfirmedRoom() {
         ChatRoom room = mock(ChatRoom.class);
         when(room.getId()).thenReturn(100L);
         when(room.getListingType()).thenReturn(ListingType.SELL);
         when(room.getListingId()).thenReturn(1L);
         when(room.getInitiationType()).thenReturn(InitiationType.NEGOTIATE);
-        when(room.getStatus()).thenReturn(ChatRoomStatus.POSTER_CONFIRMED);
+        when(room.getStatus()).thenReturn(ChatRoomStatus.AWAITING_PARTNER);
         when(room.getFinalPrice()).thenReturn(50_000_000L); // finalPrice 있으므로 DB 가격 조회 불필요
         when(room.getCreatedAt()).thenReturn(LocalDateTime.now());
         when(room.getPoster()).thenReturn(poster);

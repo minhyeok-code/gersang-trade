@@ -67,14 +67,6 @@ public class EquipmentItem {
     private EquipSlot equipSlot;
 
     /**
-     * 전설장수 고유 장비 소속 용병.
-     * 전설장수 전용 장비는 해당 용병 FK를 가진다. 일반 세트 장비는 null.
-     */
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "mercenary_id")
-    private Mercenary mercenary;
-
-    /**
      * 전설장수 장비 기본 강화 단계.
      * 전설장수 세트의 대표 강화 수치 (0강 / 5강 / 10강).
      * 일반 장비는 null. DB에는 실제 숫자(0/5/10)로 저장한다.
@@ -95,8 +87,7 @@ public class EquipmentItem {
     public EquipmentItem(Item item, EquipmentKind equipmentKind,
                          EquipmentSlot slot, EquipmentSet equipmentSet,
                          boolean ritualApplicable, boolean hasSlotOption,
-                         EquipSlot equipSlot, Mercenary mercenary,
-                         Enhancement enhancement) {
+                         EquipSlot equipSlot, Enhancement enhancement) {
         this.item = item;
         this.equipmentKind = equipmentKind;
         this.slot = slot;
@@ -104,7 +95,6 @@ public class EquipmentItem {
         this.ritualApplicable = ritualApplicable;
         this.hasSlotOption = hasSlotOption;
         this.equipSlot = equipSlot;
-        this.mercenary = mercenary;
         this.enhancement = enhancement;
     }
 
@@ -119,18 +109,17 @@ public class EquipmentItem {
         if (equipSlot != null) this.equipSlot = equipSlot;
     }
 
-    /** 관리자 수동 수정 — 슬롯, 장비 종류, 주술 가능 여부, 홈 옵션 여부, 세트 소속, 덱 슬롯, 용병 소속, 강화 단계 */
+    /** 관리자 수동 수정 — 슬롯, 장비 종류, 주술 가능 여부, 홈 옵션 여부, 세트 소속, 덱 슬롯, 강화 단계 */
     public void updateInfo(EquipmentSlot slot, EquipmentKind equipmentKind,
                            boolean ritualApplicable, boolean hasSlotOption,
                            EquipmentSet equipmentSet, EquipSlot equipSlot,
-                           Mercenary mercenary, Enhancement enhancement) {
+                           Enhancement enhancement) {
         if (slot != null) this.slot = slot;
         if (equipmentKind != null) this.equipmentKind = equipmentKind;
         this.ritualApplicable = ritualApplicable;
         this.hasSlotOption = hasSlotOption;
         this.equipmentSet = equipmentSet;
         this.equipSlot = equipSlot;
-        this.mercenary = mercenary;
         this.enhancement = enhancement;
     }
 }

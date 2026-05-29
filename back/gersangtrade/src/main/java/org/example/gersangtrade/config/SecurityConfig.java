@@ -18,8 +18,12 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.io.IOException;
+import java.util.List;
 
 /**
  * Spring Security 설정.
@@ -50,9 +54,13 @@ public class SecurityConfig {
                 // REST API는 CSRF 불필요 (stateless + Bearer 토큰 방식)
                 .csrf(AbstractHttpConfigurer::disable)
 
-                // JWT 기반 stateless 세션 — 서버에 세션 생성하지 않음
+                // CORS — WebSocket upgrade(ws://127.0.0.1:8080)는 cross-origin이므로 명시 필요
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+
+                // OAuth2 흐름(state 검증)에는 세션이 필요하므로 IF_REQUIRED 사용
+                // JWT로 인증하는 API 요청에서는 세션을 생성하지 않음
                 .sessionManagement(session ->
-                        session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                        session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
 
                 // TODO: 로컬 개발용 — 운영 전 권한 설정 복구 필요
                 .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
@@ -77,6 +85,22 @@ public class SecurityConfig {
                         ex.authenticationEntryPoint(unauthorizedEntryPoint()));
 
         return http.build();
+    }
+
+    /**
+     * CORS 설정 — REST API 및 WebSocket upgrade 요청 모두 허용.
+     * WebSocket은 ws://127.0.0.1:8080 으로 직접 연결하므로 cross-origin 처리 필수.
+     */
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration config = new CorsConfiguration();
+        config.setAllowedOriginPatterns(List.of("*"));
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"));
+        config.setAllowedHeaders(List.of("*"));
+        config.setAllowCredentials(true);
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", config);
+        return source;
     }
 
     /**

@@ -2,11 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
+import { connectWs, disconnectWs, onWsEvent } from '@/lib/wsClient';
 
 export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<unknown[]>([]);
   const [error, setError] = useState('');
-  const [sseLog, setSseLog] = useState<string[]>([]);
+  const [wsLog, setWsLog] = useState<string[]>([]);
 
   useEffect(() => {
     api.getNotifications()
@@ -23,22 +24,32 @@ export default function NotificationsPage() {
     }
   }
 
-  function connectSSE() {
+  function connectWebSocket() {
     const token = localStorage.getItem('accessToken');
     if (!token) { alert('로그인 필요'); return; }
 
-    const url = `http://localhost:8080/api/notifications/subscribe`;
-    setSseLog((prev) => [...prev, `[${new Date().toLocaleTimeString()}] SSE 연결 중...`]);
+    setWsLog((prev) => [...prev, `[${new Date().toLocaleTimeString()}] WebSocket 연결 중...`]);
 
-    const eventSource = new EventSource(url + `?token=${encodeURIComponent(token)}`);
-    eventSource.onopen = () => setSseLog((prev) => [...prev, `[${new Date().toLocaleTimeString()}] 연결됨`]);
-    eventSource.onmessage = (e) => setSseLog((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${e.data}`]);
-    eventSource.onerror = () => {
-      setSseLog((prev) => [...prev, `[${new Date().toLocaleTimeString()}] 연결 오류/종료`]);
-      eventSource.close();
-    };
+    const unsubs = [
+      onWsEvent('notification', (data) => {
+        setWsLog((prev) => [...prev, `[${new Date().toLocaleTimeString()}] notification: ${JSON.stringify(data)}`]);
+      }),
+      onWsEvent('chat_message', (data) => {
+        setWsLog((prev) => [...prev, `[${new Date().toLocaleTimeString()}] chat_message: ${JSON.stringify(data)}`]);
+      }),
+      onWsEvent('room_status', (data) => {
+        setWsLog((prev) => [...prev, `[${new Date().toLocaleTimeString()}] room_status: ${JSON.stringify(data)}`]);
+      }),
+    ];
 
-    setTimeout(() => { eventSource.close(); setSseLog((prev) => [...prev, '연결 닫힘 (30초)']); }, 30000);
+    connectWs();
+    setWsLog((prev) => [...prev, `[${new Date().toLocaleTimeString()}] STOMP 구독 시작 (/user/queue/*)`]);
+
+    setTimeout(() => {
+      unsubs.forEach((unsub) => unsub());
+      disconnectWs();
+      setWsLog((prev) => [...prev, `[${new Date().toLocaleTimeString()}] 연결 종료 (30초)`]);
+    }, 30000);
   }
 
   return (
@@ -51,16 +62,16 @@ export default function NotificationsPage() {
         <button onClick={markAllRead} className="bg-blue-700 hover:bg-blue-600 px-4 py-2 rounded text-sm">
           전체 읽음 (PATCH /api/notifications/read-all)
         </button>
-        <button onClick={connectSSE} className="bg-purple-700 hover:bg-purple-600 px-4 py-2 rounded text-sm">
-          SSE 구독 테스트 (GET /api/notifications/subscribe)
+        <button onClick={connectWebSocket} className="bg-purple-700 hover:bg-purple-600 px-4 py-2 rounded text-sm">
+          WebSocket 구독 테스트 (ws://…/ws)
         </button>
       </div>
 
-      {sseLog.length > 0 && (
+      {wsLog.length > 0 && (
         <div className="bg-gray-900 rounded p-4">
-          <h2 className="font-semibold mb-2 text-gray-300">SSE 로그</h2>
+          <h2 className="font-semibold mb-2 text-gray-300">WebSocket 로그</h2>
           <div className="space-y-1 text-xs text-gray-300 font-mono max-h-40 overflow-y-auto">
-            {sseLog.map((log, i) => <div key={i}>{log}</div>)}
+            {wsLog.map((log, i) => <div key={i}>{log}</div>)}
           </div>
         </div>
       )}

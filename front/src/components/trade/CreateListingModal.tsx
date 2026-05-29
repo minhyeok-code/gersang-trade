@@ -49,11 +49,11 @@ export default function CreateListingModal({ onClose, onCreated }: CreateListing
         setServers(list);
         const savedServerId = getServer();
         const profileServer = list.find((s) => (
-          (me?.serverId != null && s.id === me.serverId)
+          (me?.serverId != null && s.serverId === me.serverId)
           || (me?.serverName != null && s.name === me.serverName)
           || (me?.server != null && s.name === me.server)
         ));
-        const localServer = list.find((s) => String(s.id) === savedServerId);
+        const localServer = list.find((s) => String(s.serverId) === savedServerId);
         setServer(profileServer?.name ?? localServer?.name ?? list[0]?.name ?? '');
       } catch {
         setServers([]);
@@ -114,12 +114,16 @@ export default function CreateListingModal({ onClose, onCreated }: CreateListing
           note: note.trim() || null,
           bundles: [
             {
-              bundleType: 'MATERIAL_BUNDLE',
+              bundleType: selectedItem.type === 'EQUIPMENT' ? 'EQUIPMENT_SINGLE' : 'MATERIAL_BUNDLE',
               titleOverride: selectedItem.name,
               lines: [
                 {
                   itemId: selectedItem.id,
                   quantity: Number(quantity),
+                  sortOrder: 0,
+                  equipmentDetail: selectedItem.type === 'EQUIPMENT'
+                    ? { enhanceLevel: null, hasRitual: false, rituals: [] }
+                    : null,
                 },
               ],
             },
@@ -135,7 +139,9 @@ export default function CreateListingModal({ onClose, onCreated }: CreateListing
               itemId: selectedItem.id,
               quantity: Number(quantity),
               sortOrder: 0,
-              equipmentCondition: null,
+              equipmentCondition: selectedItem.type === 'EQUIPMENT'
+                ? { minEnhanceLevel: null, hasRitual: false, ritualConditions: [] }
+                : null,
             },
           ],
         });
@@ -210,7 +216,7 @@ export default function CreateListingModal({ onClose, onCreated }: CreateListing
                   const selected = server === s.name;
                   return (
                     <button
-                      key={s.id}
+                      key={s.serverId}
                       type="button"
                       onClick={() => setServer(s.name)}
                       className="px-3 py-1.5 rounded text-xs transition-colors"

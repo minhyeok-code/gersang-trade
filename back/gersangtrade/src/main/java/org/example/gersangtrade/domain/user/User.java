@@ -232,7 +232,7 @@ public class User extends BaseEntity {
      * TradeConfirmed 생성 트랜잭션에서 호출된다.
      */
     public void incrementTradeCount() {
-        this.tradeCount++;
+        this.tradeCount = (this.tradeCount == null ? 0 : this.tradeCount) + 1;
     }
 
     /**

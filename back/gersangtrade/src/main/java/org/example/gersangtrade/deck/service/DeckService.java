@@ -282,6 +282,8 @@ public class DeckService {
 
         // 전체 멤버 로드 (주인공·각성명왕 버프 계산에 필요)
         List<UserDeckMember> allMembers = memberRepository.findByDeckIdWithMercenary(deckId);
+        Map<StatType, Integer> protagonistBuffStatMap = new HashMap<>();
+        Map<StatType, Integer> awakenedMyeongwangBuffStatMap = new HashMap<>();
 
         // 주인공 국가 속성 버프 — 해당 속성 아군 ELEMENT_VALUE 가산
         allMembers.stream()
@@ -293,7 +295,9 @@ public class DeckService {
                     if (nationBuff.value() > 0 && nationBuff.element() != Element.NONE
                             && nationBuff.element().name().equals(
                                     member.getMercenary().getNature().name())) {
-                        totalMap.merge(StatType.ELEMENT_VALUE, Math.round(nationBuff.value()), Integer::sum);
+                        int value = Math.round(nationBuff.value());
+                        protagonistBuffStatMap.merge(StatType.ELEMENT_VALUE, value, Integer::sum);
+                        totalMap.merge(StatType.ELEMENT_VALUE, value, Integer::sum);
                     }
                 });
 
@@ -307,14 +311,17 @@ public class DeckService {
             if (member.getMercenary().getNature() == Nature.EARTH) {
                 bonus += (int) (Math.round(allyBuff.earthValue()) * awakenedMyeongwangCount);
             }
+            awakenedMyeongwangBuffStatMap.merge(StatType.ELEMENT_VALUE, bonus, Integer::sum);
             totalMap.merge(StatType.ELEMENT_VALUE, bonus, Integer::sum);
         }
 
         return MemberStatResponse.of(member, components.baseStatMap(), components.equipStatMap(),
                 components.setEffectStatMap(), components.characteristicStatMap(),
                 components.partyCharacteristicStatMap(), components.enemyDebuffStatMap(),
-                components.ritualStatMap(), components.deckBuffStatMap(),
-                components.levelBonusStatMap(), components.bonusStatMap(), components.resolvedMainStat(),
+                components.ritualStatMap(), components.ritualSetEffectStatMap(), components.deckBuffStatMap(),
+                components.levelBonusStatMap(), components.bonusStatMap(),
+                protagonistBuffStatMap, awakenedMyeongwangBuffStatMap,
+                components.resolvedMainStat(),
                 transferStatMap, transferDetails, components.activeEquipmentSetEffects(),
                 components.activeSetEffects(), totalMap, components.slots());
     }
@@ -331,16 +338,17 @@ public class DeckService {
         // 착용 슬롯 목록
         List<UserDeckMemberSlot> slots = slotRepository.findByDeckMemberIdWithDetails(memberId);
 
-        // SELF scope 장비 스탯 합산 (StatType별)
+        Nature memberNature = member.getMercenary().getNature();
+
+        // SELF scope 장비 스탯 합산 — element 속성이 지정된 경우 용병 속성과 일치할 때만 적용
         Map<StatType, Integer> equipStatMap = new HashMap<>();
         if (!slots.isEmpty()) {
             List<Long> itemIds = slots.stream().map(s -> s.getEquipmentItem().getItemId()).toList();
             itemStatRepository.findByItemIdIn(itemIds).stream()
                     .filter(ist -> ist.getScope() == BuffTarget.SELF)
+                    .filter(ist -> isDeckBuffElementApplicable(ist.getElement(), memberNature))
                     .forEach(ist -> equipStatMap.merge(ist.getStatType(), ist.getValue(), Integer::sum));
         }
-
-        Nature memberNature = member.getMercenary().getNature();
         Map<StatType, Integer> setEffectStatMap = new HashMap<>();
         List<MemberStatResponse.ActiveEquipmentSetEffect> activeEquipmentSetEffects = new ArrayList<>();
         accumulateEquipmentSetEffects(slots, memberNature, setEffectStatMap, activeEquipmentSetEffects);
@@ -398,6 +406,7 @@ public class DeckService {
         // 주술 스탯 합산 (슬롯별 주술 outcome에 따라 RitualStat 조회)
         Map<StatType, Integer> ritualStatMap = new HashMap<>();
         List<MemberStatResponse.ActiveSetEffect> activeSetEffects = new ArrayList<>();
+        Map<StatType, Integer> ritualSetEffectStatMap = new HashMap<>();
 
         List<UserDeckMemberSlot> slotsWithRitual = slots.stream()
                 .filter(s -> s.getRitual() != null)
@@ -417,6 +426,7 @@ public class DeckService {
                 RitualOutcome outcome = s.getRitual().getOutcome();
                 ritualStatsByRitualId.getOrDefault(ritualId, List.of()).stream()
                         .filter(rs -> rs.getOutcome() == outcome)
+                        .filter(rs -> isDeckBuffElementApplicable(rs.getElement(), memberNature))
                         .forEach(rs -> ritualStatMap.merge(rs.getStatType(), rs.getStatValue(), Integer::sum));
             }
 
@@ -436,6 +446,7 @@ public class DeckService {
                         .distinct().toList();
 
                 ritualSetEffectRepository.findByRitualIdInAndEquipmentSetIdIn(ritualIds, setIds).stream()
+                        .filter(eff -> isDeckBuffElementApplicable(eff.getElement(), memberNature))
                         .filter(eff -> {
                             String k = eff.getRitual().getId()
                                     + "_" + eff.getOutcome().name()
@@ -447,14 +458,16 @@ public class DeckService {
                             String k = eff.getRitual().getId()
                                     + "_" + eff.getOutcome().name()
                                     + "_" + eff.getEquipmentSet().getId();
+                            ritualSetEffectStatMap.merge(eff.getStatType(), eff.getStatValue(), Integer::sum);
                             activeSetEffects.add(new MemberStatResponse.ActiveSetEffect(
                                     eff.getRitual().getDisplayName(),
                                     eff.getEquipmentSet().getName(),
-                                    eff.getOutcome().name(),
+                                    resolveRitualOutcomeMark(eff.getRitual(), eff.getOutcome()),
                                     pieceCountMap.get(k),
                                     eff.getRequiredRitualPieces(),
                                     eff.getStatType(),
-                                    eff.getStatValue()
+                                    eff.getStatValue(),
+                                    eff.getStatUnit()
                             ));
                         });
             }
@@ -474,14 +487,14 @@ public class DeckService {
         setEffectStatMap.forEach((k, v) -> preTransferTotal.merge(k, v, Integer::sum));
         characteristicStatMap.forEach((k, v) -> preTransferTotal.merge(k, v, Integer::sum));
         ritualStatMap.forEach((k, v) -> preTransferTotal.merge(k, v, Integer::sum));
+        ritualSetEffectStatMap.forEach((k, v) -> preTransferTotal.merge(k, v, Integer::sum));
         deckBuffStatMap.forEach((k, v) -> preTransferTotal.merge(k, v, Integer::sum));
-        activeSetEffects.forEach(eff -> preTransferTotal.merge(eff.statType(), eff.statValue(), Integer::sum));
         levelBonusStatMap.forEach((k, v) -> preTransferTotal.merge(k, v, Integer::sum));
         bonusStatMap.forEach((k, v) -> preTransferTotal.merge(k, v, Integer::sum));
 
         return new MemberStatComponents(slots, baseStatMap, equipStatMap, setEffectStatMap,
                 characteristicStatMap, partyCharacteristicStatMap, enemyDebuffStatMap, ritualStatMap,
-                deckBuffStatMap, levelBonusStatMap, bonusStatMap, resolvedMainStat,
+                ritualSetEffectStatMap, deckBuffStatMap, levelBonusStatMap, bonusStatMap, resolvedMainStat,
                 activeEquipmentSetEffects, activeSetEffects, preTransferTotal);
     }
 
@@ -522,6 +535,7 @@ public class DeckService {
             Map<StatType, Integer> partyCharacteristicStatMap,
             Map<StatType, Integer> enemyDebuffStatMap,
             Map<StatType, Integer> ritualStatMap,
+            Map<StatType, Integer> ritualSetEffectStatMap,
             Map<StatType, Integer> deckBuffStatMap,
             Map<StatType, Integer> levelBonusStatMap,
             Map<StatType, Integer> bonusStatMap,
@@ -860,7 +874,7 @@ public class DeckService {
     private Map<StatType, Integer> calculateDeckBuffStatsForMember(UserDeck deck, Nature nature, boolean allyOnly) {
         Map<StatType, Integer> stats = new EnumMap<>(StatType.class);
 
-        accumulateSpiritBuffs(stats, selectedSpirits(deck), allyOnly);
+        accumulateSpiritBuffs(stats, selectedSpirits(deck), allyOnly, nature);
         accumulateDeckBuffSourceForMember(stats, deck.getJinbeopSource(), nature, allyOnly);
         accumulateDeckBuffSourceForMember(stats, deck.getCheungjinSource(), nature, allyOnly);
         return stats;
@@ -886,6 +900,14 @@ public class DeckService {
         };
     }
 
+    /** 주술 outcome에 해당하는 표기 마크(<천추>, <북두칠성> 등)를 반환한다. */
+    private String resolveRitualOutcomeMark(Ritual ritual, RitualOutcome outcome) {
+        if (outcome == RitualOutcome.GREAT_SUCCESS && ritual.getGreatSuccessMark() != null) {
+            return ritual.getGreatSuccessMark();
+        }
+        return ritual.getSuccessMark();
+    }
+
     private void accumulateDeckBuffSource(Map<StatType, Integer> stats,
                                           DeckBuffSource source,
                                           boolean allyOnly) {
@@ -899,6 +921,14 @@ public class DeckService {
     private void accumulateSpiritBuffs(Map<StatType, Integer> stats,
                                        List<Spirit> spirits,
                                        boolean allyOnly) {
+        accumulateSpiritBuffs(stats, spirits, allyOnly, null);
+    }
+
+    // memberNature가 null이면 element 필터 없이 전체 합산 (덱 효과 표시용)
+    private void accumulateSpiritBuffs(Map<StatType, Integer> stats,
+                                       List<Spirit> spirits,
+                                       boolean allyOnly,
+                                       Nature memberNature) {
         boolean hasEarthLegend = spirits.stream()
                 .anyMatch(spirit -> spirit.getNature() == Nature.EARTH
                         && spirit.getGrade() == SpiritGrade.LEGEND);
@@ -909,6 +939,7 @@ public class DeckService {
 
             for (SpiritBuff buff : spirit.getBuffs()) {
                 if (allyOnly && buff.getTarget() != BuffTarget.ALLY) continue;
+                if (memberNature != null && !isDeckBuffElementApplicable(buff.getElement(), memberNature)) continue;
 
                 float value = buff.getValue();
                 if (hasEarthLegend && !isEarthLegend

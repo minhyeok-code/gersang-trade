@@ -107,7 +107,7 @@ public class ItemAdminService {
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
                             "존재하지 않는 세트 ID입니다: " + req.setId()));
         }
-        eq.updateInfo(req.slot(), req.equipmentKind(), req.ritualApplicable(), req.hasSlotOption(), set, req.equipSlot(), null, null);
+        eq.updateInfo(req.slot(), req.equipmentKind(), req.ritualApplicable(), req.hasSlotOption(), set, req.equipSlot(), null);
 
         List<ItemStat> stats = itemStatRepository.findByItemId(itemId);
         List<ItemSkill> skills = itemSkillRepository.findByItemId(itemId);

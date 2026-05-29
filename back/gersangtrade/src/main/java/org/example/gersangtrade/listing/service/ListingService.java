@@ -322,15 +322,22 @@ public class ListingService {
         List<Long> listingIds = listings.stream().map(TradeListing::getId).toList();
 
         // 번들을 listingId별로 그룹화
-        Map<Long, List<ListingBundle>> bundlesByListingId = listingBundleRepository
-                .findByListingIdIn(listingIds)
-                .stream()
+        List<ListingBundle> allBundles = listingBundleRepository.findByListingIdIn(listingIds);
+        Map<Long, List<ListingBundle>> bundlesByListingId = allBundles.stream()
                 .collect(Collectors.groupingBy(b -> b.getListing().getId()));
+
+        // 번들 라인을 bundleId별로 그룹화 (아이템명 표시용)
+        List<Long> bundleIds = allBundles.stream().map(ListingBundle::getId).toList();
+        Map<Long, List<BundleLine>> linesByBundleId = bundleIds.isEmpty()
+                ? Map.of()
+                : bundleLineRepository.findByBundleIdIn(bundleIds).stream()
+                        .collect(Collectors.groupingBy(l -> l.getBundle().getId()));
 
         return listings.stream()
                 .map(listing -> ListingSummaryResponse.from(
                         listing,
-                        bundlesByListingId.getOrDefault(listing.getId(), List.of())
+                        bundlesByListingId.getOrDefault(listing.getId(), List.of()),
+                        linesByBundleId
                 ))
                 .toList();
     }

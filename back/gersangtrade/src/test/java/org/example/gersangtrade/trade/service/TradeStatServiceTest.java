@@ -40,72 +40,11 @@ class TradeStatServiceTest {
     // ── upsertDailyStat() 테스트 ──────────────────────────────────────────────
 
     @Test
-    @DisplayName("upsertDailyStat_신규레코드_없으면_insert")
-    void upsertDailyStat_신규레코드_없으면_insert() {
-        // 기존 레코드 없음
-        when(tradeStatDailyRepository.findByStatKeyAndStatDate(STAT_KEY, TODAY))
-                .thenReturn(Optional.empty());
-
+    @DisplayName("upsertDailyStat_nativeUpsert_호출")
+    void upsertDailyStat_nativeUpsert_호출() {
         tradeStatService.upsertDailyStat(STAT_KEY, 500_000_000L, 1L, TODAY);
 
-        // save() 호출 확인
-        ArgumentCaptor<TradeStatDaily> captor = ArgumentCaptor.forClass(TradeStatDaily.class);
-        verify(tradeStatDailyRepository).save(captor.capture());
-        TradeStatDaily saved = captor.getValue();
-        assertThat(saved.getStatKey()).isEqualTo(STAT_KEY);
-        assertThat(saved.getStatDate()).isEqualTo(TODAY);
-        assertThat(saved.getTradeCount()).isEqualTo(1);
-        assertThat(saved.getPriceSum()).isEqualTo(500_000_000L);
-        assertThat(saved.getPriceMin()).isEqualTo(500_000_000L);
-        assertThat(saved.getPriceMax()).isEqualTo(500_000_000L);
-    }
-
-    @Test
-    @DisplayName("upsertDailyStat_기존레코드_있으면_accumulate")
-    void upsertDailyStat_기존레코드_있으면_accumulate() {
-        // 기존 레코드: 1건, 가격 500만
-        TradeStatDaily existing = spy(TradeStatDaily.builder()
-                .statKey(STAT_KEY)
-                .statDate(TODAY)
-                .tradeCount(1)
-                .quantitySum(1L)
-                .priceSum(500_000_000L)
-                .priceMin(500_000_000L)
-                .priceMax(500_000_000L)
-                .build());
-        when(tradeStatDailyRepository.findByStatKeyAndStatDate(STAT_KEY, TODAY))
-                .thenReturn(Optional.of(existing));
-
-        // 새 거래: 가격 600만
-        tradeStatService.upsertDailyStat(STAT_KEY, 600_000_000L, 1L, TODAY);
-
-        // accumulate 호출됐는지 확인 (save는 호출되지 않아야 함)
-        verify(existing).accumulate(600_000_000L, 1L);
-        verify(tradeStatDailyRepository, never()).save(any());
-    }
-
-    @Test
-    @DisplayName("upsertDailyStat_accumulate_후_priceMin_갱신")
-    void upsertDailyStat_accumulate_후_priceMin_갱신() {
-        // 기존 레코드: 최솟값 500만
-        TradeStatDaily existing = TradeStatDaily.builder()
-                .statKey(STAT_KEY)
-                .statDate(TODAY)
-                .tradeCount(1)
-                .quantitySum(1L)
-                .priceSum(500_000_000L)
-                .priceMin(500_000_000L)
-                .priceMax(500_000_000L)
-                .build();
-        when(tradeStatDailyRepository.findByStatKeyAndStatDate(STAT_KEY, TODAY))
-                .thenReturn(Optional.of(existing));
-
-        // 더 낮은 가격으로 거래
-        tradeStatService.upsertDailyStat(STAT_KEY, 300_000_000L, 1L, TODAY);
-
-        assertThat(existing.getPriceMin()).isEqualTo(300_000_000L);
-        assertThat(existing.getPriceMax()).isEqualTo(500_000_000L);
-        assertThat(existing.getTradeCount()).isEqualTo(2);
+        verify(tradeStatDailyRepository).upsertAccumulate(TODAY, STAT_KEY, 500_000_000L, 1L);
     }
 
     // ── getDailyHistory() 테스트 ──────────────────────────────────────────────

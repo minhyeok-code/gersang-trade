@@ -18,6 +18,8 @@ public record ChatRoomDetailResponse(
         Long listingId,
         String listingDisplayName,
         InitiationType initiationType,
+        /** 내 기준 상대방 닉네임 */
+        String partnerNickname,
         String posterNickname,
         String counterpartyNickname,
         ChatRoomStatus status,
@@ -25,16 +27,38 @@ public record ChatRoomDetailResponse(
         LocalDateTime posterConfirmedAt,
         LocalDateTime counterpartyConfirmedAt,
         LocalDateTime completedAt,
+        /** 현재 사용자가 거래완료를 눌렀는지 */
+        boolean myTradeConfirmed,
+        /** 상대방이 거래완료를 눌렀는지 */
+        boolean partnerTradeConfirmed,
         LocalDateTime createdAt,
         List<ChatMessageResponse> messages
 ) {
-    public static ChatRoomDetailResponse of(ChatRoom room, String listingDisplayName, List<ChatMessageResponse> messages) {
+    public static ChatRoomDetailResponse of(
+            ChatRoom room,
+            Long viewerId,
+            String listingDisplayName,
+            List<ChatMessageResponse> messages
+    ) {
+        boolean isPoster = room.getPoster().getId().equals(viewerId);
+        boolean myTradeConfirmed = isPoster
+                ? room.getPosterConfirmedAt() != null
+                : room.getCounterpartyConfirmedAt() != null;
+        boolean partnerTradeConfirmed = isPoster
+                ? room.getCounterpartyConfirmedAt() != null
+                : room.getPosterConfirmedAt() != null;
+
+        String partnerNickname = isPoster
+                ? room.getCounterparty().getNickname()
+                : room.getPoster().getNickname();
+
         return new ChatRoomDetailResponse(
                 room.getId(),
                 room.getListingType(),
                 room.getListingId(),
                 listingDisplayName,
                 room.getInitiationType(),
+                partnerNickname,
                 room.getPoster().getNickname(),
                 room.getCounterparty().getNickname(),
                 room.getStatus(),
@@ -42,6 +66,8 @@ public record ChatRoomDetailResponse(
                 room.getPosterConfirmedAt(),
                 room.getCounterpartyConfirmedAt(),
                 room.getCompletedAt(),
+                myTradeConfirmed,
+                partnerTradeConfirmed,
                 room.getCreatedAt(),
                 messages
         );

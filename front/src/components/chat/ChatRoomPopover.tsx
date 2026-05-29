@@ -1,23 +1,41 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api, type ChatRoomSummaryDto } from '@/lib/api';
+import { useWs } from '@/lib/useWs';
 
 interface ChatRoomPopoverProps {
   onOpenRoom: (room: ChatRoomSummaryDto) => void;
+  onUnreadChange?: (hasUnread: boolean) => void;
 }
 
-export default function ChatRoomPopover({ onOpenRoom }: ChatRoomPopoverProps) {
+export default function ChatRoomPopover({ onOpenRoom, onUnreadChange }: ChatRoomPopoverProps) {
   const [rooms, setRooms] = useState<ChatRoomSummaryDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  useEffect(() => {
+  const loadRooms = useCallback(() => {
     api.getChatRooms()
-      .then(setRooms)
+      .then((list) => {
+        setRooms(list);
+        onUnreadChange?.(list.some((room) => room.hasUnread));
+      })
       .catch((e: unknown) => setError(String(e)))
       .finally(() => setLoading(false));
-  }, []);
+  }, [onUnreadChange]);
+
+  useEffect(() => {
+    loadRooms();
+  }, [loadRooms]);
+
+  useWs({
+    chat_message: () => loadRooms(),
+    room_status: () => loadRooms(),
+    notification: (data) => {
+      const n = data as { type?: string };
+      if (n.type === 'CHAT_OPENED') loadRooms();
+    },
+  });
 
   return (
     <div
@@ -44,13 +62,22 @@ export default function ChatRoomPopover({ onOpenRoom }: ChatRoomPopoverProps) {
               className="w-full text-left rounded-lg px-3 py-2.5 hover:bg-[var(--bg)] transition-colors"
             >
               <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium truncate" style={{ color: 'var(--text)' }}>
-                    {room.partnerNickname}
-                  </p>
-                  <p className="text-xs truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                    {room.listingDisplayName ?? `${room.listingType} #${room.listingId}`}
-                  </p>
+                <div className="min-w-0 flex items-center gap-2">
+                  {room.hasUnread && (
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ background: 'var(--danger)' }}
+                      aria-label="미읽음"
+                    />
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate" style={{ color: 'var(--text)' }}>
+                      {room.partnerNickname}
+                    </p>
+                    <p className="text-xs truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                      {room.listingDisplayName ?? `${room.listingType} #${room.listingId}`}
+                    </p>
+                  </div>
                 </div>
                 <span className="text-[11px] shrink-0" style={{ color: 'var(--text-disabled)' }}>
                   {room.status}

@@ -62,7 +62,14 @@
       "Bash(python3 *)",
       "Bash(grep -v \"//\")",
       "Read(//d/Java/gersangTrade/front/**)",
-      "Read(//d/Java/gersangTrade/**)"
+      "Read(//d/Java/gersangTrade/**)",
+      "Bash(curl -s \"http://localhost:8080/api/items/search?q=%EC%B2%9C%EC%99%95%EC%A3%BC&limit=1\")",
+      "Bash(curl -s \"http://localhost:8080/api/items/search?q=&limit=1\")",
+      "Bash(curl -s \"http://localhost:8080/api/items/1448\")",
+      "Bash(curl -s \"http://localhost:8080/api/items/search?q=%EC%95%84%EC%9D%B4%ED%85%9C&limit=5\")",
+      "Bash(curl -s \"http://localhost:8080/api/items/search?q=item&limit=3\")",
+      "Bash(mysql *)",
+      "Bash(npm list *)"
     ]
   }
 }

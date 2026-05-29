@@ -7,12 +7,16 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 거래 확정 레포지토리.
  * 통계 집계 및 어뷰징 탐지 쿼리에 사용된다.
  */
 public interface TradeConfirmedRepository extends JpaRepository<TradeConfirmed, Long> {
+
+    /** 채팅방 기준 확정 거래 조회 — 중복 finalize 방지용 */
+    Optional<TradeConfirmed> findByChatRoomId(Long chatRoomId);
 
     /**
      * 동일 두 사용자 간 특정 기간 내 거래 건수 조회 — 어뷰징 탐지용.

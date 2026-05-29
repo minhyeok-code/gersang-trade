@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState, useRef } from 'react';
 import { api, clearToken, getToken, getTokenRole, setServer, getServer, type ServerDto, type NotificationDto, type ChatRoomSummaryDto } from '@/lib/api';
+import { connectWs, disconnectWs, onWsEvent, reconnectWs } from '@/lib/wsClient';
 import { Bell, MessageCircle, ShieldCheck, User, ChevronDown } from 'lucide-react';
 import NotificationPopover from '@/components/notifications/NotificationPopover';
 import ChatRoomPopover from '@/components/chat/ChatRoomPopover';
@@ -23,15 +24,44 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [chatHasUnread, setChatHasUnread] = useState(false);
   const serverRef = useRef<HTMLDivElement>(null);
   const notificationRef = useRef<HTMLDivElement>(null);
   const chatRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setIsLoggedIn(!!getToken());
-    setIsAdmin(getTokenRole() === 'ADMIN');
+    function syncAuthState() {
+      const loggedIn = !!getToken();
+      setIsLoggedIn(loggedIn);
+      if (!loggedIn) {
+        setIsAdmin(false);
+        return;
+      }
+
+      // JWT 클레임으로 1차 판별 (즉시 반영)
+      setIsAdmin(getTokenRole() === 'ADMIN');
+      // DB 기준 role로 2차 확인 (재로그인·토큰 갱신 후에도 정확)
+      api.getMe()
+        .then((me) => setIsAdmin(me.role === 'ADMIN'))
+        .catch(() => {});
+    }
+
+    syncAuthState();
     const saved = getServer();
     if (saved) setSelectedServerState(saved);
+
+    window.addEventListener('auth-changed', syncAuthState);
+    return () => window.removeEventListener('auth-changed', syncAuthState);
+  }, [pathname]);
+
+  // 로그인·로그아웃·토큰 갱신 시 WebSocket 재연결
+  useEffect(() => {
+    function handleAuthWs() {
+      if (getToken()) reconnectWs();
+      else disconnectWs();
+    }
+    window.addEventListener('auth-changed', handleAuthWs);
+    return () => window.removeEventListener('auth-changed', handleAuthWs);
   }, []);
 
   useEffect(() => {
@@ -40,19 +70,67 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         setServers(list);
         const saved = getServer();
         if (!saved && list.length > 0) {
-          setSelectedServerState(String(list[0].id));
-          setServer(String(list[0].id));
+          setSelectedServerState(String(list[0].serverId));
+          setServer(String(list[0].serverId));
         }
       })
       .catch(() => {});
   }, []);
 
+  const unreadRefreshRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function refreshUnreadCount() {
+    if (unreadRefreshRef.current) clearTimeout(unreadRefreshRef.current);
+    unreadRefreshRef.current = setTimeout(() => {
+      api.getNotifications()
+        .then((list: NotificationDto[]) =>
+          setUnreadCount(
+            list.filter(
+              (n) =>
+                (n.isRead === false || n.read === false) && n.type !== 'CHAT_MESSAGE'
+            ).length
+          )
+        )
+        .catch(() => {});
+    }, 300);
+  }
+
+  const refreshChatUnreadRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function refreshChatUnread() {
+    if (refreshChatUnreadRef.current) clearTimeout(refreshChatUnreadRef.current);
+    refreshChatUnreadRef.current = setTimeout(() => {
+      api.getChatRooms()
+        .then((rooms) => setChatHasUnread(rooms.some((room) => room.hasUnread)))
+        .catch(() => {});
+    }, 300);
+  }
+
   useEffect(() => {
-    if (!isLoggedIn) return;
-    api.getNotifications()
-      .then((list: NotificationDto[]) => setUnreadCount(list.filter((n) => !n.isRead).length))
-      .catch(() => {});
+    if (!isLoggedIn) {
+      disconnectWs();
+      setUnreadCount(0);
+      setChatHasUnread(false);
+      return;
+    }
+
+    refreshUnreadCount();
+    refreshChatUnread();
+    connectWs();
+    const unsubNotification = onWsEvent('notification', () => refreshUnreadCount());
+    const unsubChat = onWsEvent('chat_message', () => refreshChatUnread());
+
+    return () => {
+      unsubNotification();
+      unsubChat();
+      if (unreadRefreshRef.current) clearTimeout(unreadRefreshRef.current);
+      if (refreshChatUnreadRef.current) clearTimeout(refreshChatUnreadRef.current);
+    };
   }, [isLoggedIn]);
+
+  useEffect(() => {
+    if (isLoggedIn) refreshChatUnread();
+  }, [activeChatRoom, isLoggedIn]);
 
   // 바깥 클릭 시 드롭다운 닫기
   useEffect(() => {
@@ -88,7 +166,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     router.push('/');
   }
 
-  const selectedServerName = servers.find((s) => String(s.id) === selectedServer)?.name ?? '서버 선택';
+  const selectedServerName = servers.find((s) => String(s.serverId) === selectedServer)?.name ?? '서버 선택';
 
   return (
     <html lang="ko">
@@ -122,11 +200,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 >
                   {servers.map((s) => (
                     <button
-                      key={s.id}
-                      onClick={() => handleServerSelect(String(s.id))}
+                      key={s.serverId}
+                      onClick={() => handleServerSelect(String(s.serverId))}
                       style={{
-                        color: String(s.id) === selectedServer ? 'var(--brown)' : 'var(--text-disabled)',
-                        fontWeight: String(s.id) === selectedServer ? 600 : 400,
+                        color: String(s.serverId) === selectedServer ? 'var(--brown)' : 'var(--text-disabled)',
+                        fontWeight: String(s.serverId) === selectedServer ? 600 : 400,
                       }}
                       className="block w-full text-left px-3 py-2 text-sm hover:bg-white/5"
                     >
@@ -169,13 +247,21 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               type="button"
               onClick={() => setChatOpen((open) => !open)}
               style={{ color: chatOpen ? 'var(--brown)' : 'var(--text-disabled)' }}
-              className="p-2.5 hover:text-[var(--beige)] transition-colors"
+              className="relative p-2.5 hover:text-[var(--beige)] transition-colors"
               title="채팅"
             >
               <MessageCircle style={{ width: 22, height: 22 }} />
+              {chatHasUnread && (
+                <span
+                  style={{ background: 'var(--danger)', top: 5, right: 5 }}
+                  className="absolute w-2 h-2 rounded-full"
+                  aria-label="미읽음 채팅"
+                />
+              )}
             </button>
             {chatOpen && isLoggedIn && (
               <ChatRoomPopover
+                onUnreadChange={setChatHasUnread}
                 onOpenRoom={(room) => {
                   setActiveChatRoom(room);
                   setChatOpen(false);

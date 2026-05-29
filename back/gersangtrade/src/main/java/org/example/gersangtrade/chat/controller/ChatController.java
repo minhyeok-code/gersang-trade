@@ -24,8 +24,9 @@ import java.util.List;
  *   GET    /api/chat-rooms                              — 내 채팅방 목록
  *   GET    /api/chat-rooms/{chatRoomId}                 — 채팅방 상세 + 메시지 목록
  *   POST   /api/chat-rooms/{chatRoomId}/messages        — 메시지 전송
- *   POST   /api/chat-rooms/{chatRoomId}/poster-confirm  — 게시자 거래완료 요청 (1단계)
- *   POST   /api/chat-rooms/{chatRoomId}/counterparty-confirm — 상대방 거래완료 확인 (2단계)
+ *   POST   /api/chat-rooms/{chatRoomId}/trade-confirm      — 거래완료 확인 (양측 공통)
+ *   POST   /api/chat-rooms/{chatRoomId}/poster-confirm     — (deprecated) trade-confirm 위임
+ *   POST   /api/chat-rooms/{chatRoomId}/counterparty-confirm — (deprecated) trade-confirm 위임
  */
 @RestController
 @RequestMapping("/api/chat-rooms")
@@ -70,6 +71,18 @@ public class ChatController {
     }
 
     /**
+     * 채팅방 읽음 처리 — 패널 열람 중 실시간 메시지 수신 시 호출.
+     */
+    @PostMapping("/{chatRoomId}/read")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Void> markChatRoomRead(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long chatRoomId) {
+        chatService.markChatRoomRead(userId, chatRoomId);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
      * 채팅 메시지를 전송한다.
      */
     @PostMapping("/{chatRoomId}/messages")
@@ -82,27 +95,37 @@ public class ChatController {
     }
 
     /**
-     * 게시자가 거래완료를 요청한다 (1단계).
-     * finalPrice가 없으면 게시물 원래 가격으로 처리된다.
+     * 거래완료 확인 — 게시자·상대방 모두 호출 가능.
+     * 한쪽만 확인 시 상대방에게 알림, 양측 확인 시 거래 확정.
      */
+    @PostMapping("/{chatRoomId}/trade-confirm")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ChatRoomSummaryResponse> confirmTrade(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long chatRoomId,
+            @Valid @RequestBody(required = false) PosterConfirmRequest request) {
+        PosterConfirmRequest body = request != null ? request : new PosterConfirmRequest(null);
+        return ResponseEntity.ok(chatService.confirmTrade(userId, chatRoomId, body));
+    }
+
+    /** @deprecated {@link #confirmTrade} 사용 */
+    @Deprecated
     @PostMapping("/{chatRoomId}/poster-confirm")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ChatRoomSummaryResponse> posterConfirm(
             @AuthenticationPrincipal Long userId,
             @PathVariable Long chatRoomId,
             @Valid @RequestBody PosterConfirmRequest request) {
-        return ResponseEntity.ok(chatService.posterConfirm(userId, chatRoomId, request));
+        return ResponseEntity.ok(chatService.confirmTrade(userId, chatRoomId, request));
     }
 
-    /**
-     * 상대방이 거래완료를 최종 확인한다 (2단계).
-     * 이 호출로 TradeConfirmed가 생성되고 EXP·거래평가가 처리된다.
-     */
+    /** @deprecated {@link #confirmTrade} 사용 */
+    @Deprecated
     @PostMapping("/{chatRoomId}/counterparty-confirm")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ChatRoomSummaryResponse> counterpartyConfirm(
             @AuthenticationPrincipal Long userId,
             @PathVariable Long chatRoomId) {
-        return ResponseEntity.ok(chatService.counterpartyConfirm(userId, chatRoomId));
+        return ResponseEntity.ok(chatService.confirmTrade(userId, chatRoomId, new PosterConfirmRequest(null)));
     }
 }

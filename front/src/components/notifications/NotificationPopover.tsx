@@ -2,13 +2,15 @@
 
 import { useEffect, useState } from 'react';
 import { api, type NotificationDto } from '@/lib/api';
+import { useWs } from '@/lib/useWs';
 
 interface NotificationPopoverProps {
   onUnreadChange?: (count: number) => void;
 }
 
 function isUnread(notification: NotificationDto) {
-  return notification.isRead === false || notification.read === false;
+  return (notification.isRead === false || notification.read === false)
+    && notification.type !== 'CHAT_MESSAGE';
 }
 
 function getTitle(notification: NotificationDto) {
@@ -25,13 +27,17 @@ export default function NotificationPopover({ onUnreadChange }: NotificationPopo
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  useEffect(() => {
+    onUnreadChange?.(notifications.filter(isUnread).length);
+  }, [notifications, onUnreadChange]);
+
   async function load() {
     setLoading(true);
     setError('');
     try {
       const list = await api.getNotifications();
-      setNotifications(list);
-      onUnreadChange?.(list.filter(isUnread).length);
+      const visible = list.filter((n) => n.type !== 'CHAT_MESSAGE');
+      setNotifications(visible);
     } catch (e: unknown) {
       setError(String(e));
     } finally {
@@ -41,16 +47,25 @@ export default function NotificationPopover({ onUnreadChange }: NotificationPopo
 
   useEffect(() => { load(); }, []);
 
+  useWs({
+    notification: (data) => {
+      const incoming = data as NotificationDto;
+      if (incoming.type === 'CHAT_MESSAGE') return;
+      setNotifications((prev) => {
+        if (prev.some((n) => n.id === incoming.id)) return prev;
+        return [incoming, ...prev];
+      });
+    },
+  });
+
   async function handleSelect(notification: NotificationDto) {
     setSelected(notification);
     if (isUnread(notification)) {
       api.markRead(notification.id)
         .then(() => {
-          setNotifications((prev) => {
-            const next = prev.map((n) => n.id === notification.id ? { ...n, isRead: true, read: true } : n);
-            onUnreadChange?.(next.filter(isUnread).length);
-            return next;
-          });
+          setNotifications((prev) =>
+            prev.map((n) => (n.id === notification.id ? { ...n, isRead: true, read: true } : n))
+          );
         })
         .catch(() => {});
     }
@@ -60,7 +75,6 @@ export default function NotificationPopover({ onUnreadChange }: NotificationPopo
     try {
       await api.markAllRead();
       setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true, read: true })));
-      onUnreadChange?.(0);
     } catch (e: unknown) {
       setError(String(e));
     }

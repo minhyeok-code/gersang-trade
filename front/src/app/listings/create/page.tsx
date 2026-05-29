@@ -32,6 +32,7 @@ export default function CreateListingPage() {
               {
                 itemId: Number(itemId),
                 quantity: Number(quantity),
+                sortOrder: 0,
               },
             ],
           },
