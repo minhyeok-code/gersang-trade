@@ -197,6 +197,33 @@ export default function ProfilePage() {
             </div>
           )}
 
+          {/* 매너점수 바 */}
+          {user.mannerScore != null && (
+            <div style={{ background: 'var(--bg)', borderRadius: 8, padding: '12px 14px' }}>
+              <div className="flex justify-between text-xs mb-2" style={{ color: 'var(--text-muted)' }}>
+                <span>매너점수</span>
+                <span>{user.mannerScore}점</span>
+              </div>
+              <div
+                style={{ background: 'var(--border)', borderRadius: 999, height: 8, overflow: 'hidden' }}
+                role="progressbar"
+                aria-valuenow={user.mannerScore}
+                aria-valuemin={0}
+                aria-valuemax={100}
+              >
+                <div
+                  style={{
+                    background: user.mannerScore >= 70 ? 'var(--brown)' : user.mannerScore >= 40 ? '#b08030' : 'var(--danger)',
+                    borderRadius: 999,
+                    height: '100%',
+                    width: `${user.mannerScore}%`,
+                    transition: 'width 0.4s ease',
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
               <span style={{ color: 'var(--text-muted)' }}>거래 수</span>

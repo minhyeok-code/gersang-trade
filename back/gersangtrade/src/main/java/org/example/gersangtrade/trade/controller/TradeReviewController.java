@@ -3,7 +3,9 @@ package org.example.gersangtrade.trade.controller;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.example.gersangtrade.trade.dto.request.TradeReviewSubmitRequest;
+import org.example.gersangtrade.trade.dto.response.PendingReviewResponse;
 import org.example.gersangtrade.trade.dto.response.TradeReviewResponse;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.example.gersangtrade.trade.service.TradeReviewService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -48,5 +50,19 @@ public class TradeReviewController {
             @AuthenticationPrincipal Long userId
     ) {
         return tradeReviewService.getMyReceivedReviews(userId);
+    }
+
+    /**
+     * 내가 아직 제출하지 않은 대기 중인 평가 목록 조회.
+     * rating IS NULL이고 revealAt 이전인 것만 반환한다.
+     *
+     * GET /api/reviews/pending
+     */
+    @GetMapping("/pending")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<List<PendingReviewResponse>> getMyPendingReviews(
+            @AuthenticationPrincipal Long userId
+    ) {
+        return ResponseEntity.ok(tradeReviewService.getMyPendingReviews(userId));
     }
 }

@@ -178,7 +178,7 @@ export const api = {
     request<UserDto>('/api/users/me', { method: 'PATCH', body: JSON.stringify(body) }),
   updateMyServer: (serverId: number) =>
     request<void>('/api/users/me/server', { method: 'PATCH', body: JSON.stringify({ serverId }) }),
-  getUser: (userId: number) => request<UserDto>(`/api/users/${userId}`),
+  getUser: (userId: number) => request<PublicUserDto>(`/api/users/${userId}`),
   getMyListings: () => request<unknown[]>('/api/users/me/listings'),
   getMyTrades: () => request<unknown[]>('/api/users/me/trades'),
   deleteMe: () => request<void>('/api/users/me', { method: 'DELETE' }),
@@ -210,6 +210,7 @@ export const api = {
 
   // ── 리뷰 ──
   getReceivedReviews: () => request<unknown[]>('/api/reviews/received'),
+  getPendingReviews: () => request<PendingReviewDto[]>('/api/reviews/pending'),
 
   // ── 덱 멤버/슬롯 ──
   addDeckMember: (deckId: number, body: { mercenaryId: number }) =>
@@ -297,6 +298,7 @@ export interface PriceHistoryDto {
 
 export interface ListingDto {
   id: number;
+  sellerId?: number;
   price: number;
   status: string;
   server: string;
@@ -360,6 +362,7 @@ export interface UserDto {
   grade?: string;
   gradeStep?: number;
   totalExp?: number;
+  mannerScore?: number;
   tradeCount?: number;
   status: string;
   createdAt?: string;
@@ -367,6 +370,18 @@ export interface UserDto {
   server?: string;
   serverId?: number;
   serverName?: string;
+}
+
+export interface PublicUserDto {
+  id: number;
+  nickname: string;
+  profileImageUrl?: string;
+  gameNickname?: string;
+  gameAccessTime?: string;
+  grade?: string;
+  gradeStep?: number;
+  tradeCount?: number;
+  mannerScore?: number;
 }
 
 export interface GradeDto {
@@ -379,6 +394,13 @@ export interface GradeDto {
   totalExp: number;
   mannerScore?: number;
   tradeCount?: number;
+}
+
+export interface PendingReviewDto {
+  reviewId: number;
+  counterpartyNickname: string;
+  revealAt: string;
+  chatRoomId: number | null;
 }
 
 export interface NotificationDto {
@@ -426,6 +448,7 @@ export interface ChatRoomDetailDto {
   listingId: number;
   listingDisplayName?: string;
   initiationType?: 'APPLY' | 'NEGOTIATE';
+  partnerId?: number;
   partnerNickname?: string;
   status: string;
   finalPrice?: number;
@@ -510,6 +533,7 @@ export interface MemberStatsDto {
   ritualStats?: { statType: string; value: number }[];
   ritualSetEffectStats?: { statType: string; value: number }[];
   deckBuffStats?: { statType: string; value: number }[];
+  deckBuffDetails?: { sourceName: string; sourceType: string; statType: string; value: number }[];
   levelBonusStats?: { statType: string; value: number }[];
   bonusStats?: { statType: string; value: number }[];
   protagonistBuffStats?: { statType: string; value: number }[];

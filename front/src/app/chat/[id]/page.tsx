@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'next/navigation';
-import { api, sortChatMessages, type ChatMessageDto, type ChatRoomDetailDto } from '@/lib/api';
+import { api, sortChatMessages, type ChatMessageDto, type ChatRoomDetailDto, type PublicUserDto } from '@/lib/api';
 import { isMyMessage, isSystemMessage } from '@/lib/chatUtils';
 import { useWs } from '@/lib/useWs';
 import type { ChatMessageWsEvent, RoomStatusWsEvent } from '@/lib/wsTypes';
@@ -16,6 +16,8 @@ export default function ChatRoomPage() {
   const [content, setContent] = useState('');
   const [error, setError] = useState('');
   const [finalPrice, setFinalPrice] = useState('');
+  const [partnerProfile, setPartnerProfile] = useState<PublicUserDto | null>(null);
+  const [showProfile, setShowProfile] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const prevCountRef = useRef(0);
 
@@ -112,9 +114,23 @@ export default function ChatRoomPage() {
       {error && <p className="text-red-400 text-sm">{error}</p>}
 
       {room && (
-        <div className="bg-gray-800 rounded p-3 text-sm text-gray-300 flex gap-6">
+        <div className="bg-gray-800 rounded p-3 text-sm text-gray-300 flex gap-6 items-center">
           <span>상태: <b className="text-white">{String(room.status ?? '-')}</b></span>
           <span>등록글: {String(room.listingId ?? '-')}</span>
+          {room.partnerNickname && (
+            <button
+              className="ml-auto text-yellow-400 font-semibold hover:underline text-sm"
+              onClick={async () => {
+                if (room.partnerId && !partnerProfile) {
+                  const profile = await api.getUser(room.partnerId).catch(() => null);
+                  setPartnerProfile(profile);
+                }
+                setShowProfile(true);
+              }}
+            >
+              {room.partnerNickname} 프로필 보기
+            </button>
+          )}
         </div>
       )}
 
@@ -179,6 +195,84 @@ export default function ChatRoomPage() {
           </div>
         )}
       </div>
+      {/* 상대방 프로필 모달 */}
+      {showProfile && (
+        <div
+          className="fixed inset-0 z-[500] flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.65)' }}
+          onClick={() => setShowProfile(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-xl overflow-hidden"
+            style={{ background: 'var(--card)', border: '1px solid var(--border)', boxShadow: '0 24px 60px rgba(0,0,0,0.3)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ borderBottom: '1px solid var(--border)' }} className="flex items-center justify-between px-5 py-3.5">
+              <h2 className="font-semibold text-sm" style={{ color: 'var(--text)' }}>
+                {room?.partnerNickname} 프로필
+              </h2>
+              <button onClick={() => setShowProfile(false)} className="text-xl" style={{ color: 'var(--text-muted)' }}>×</button>
+            </div>
+
+            {partnerProfile ? (
+              <div className="p-5 space-y-4">
+                {/* 아바타 + 닉네임 */}
+                <div className="flex items-center gap-3">
+                  <div
+                    className="w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold shrink-0"
+                    style={{ background: 'var(--beige)', color: 'var(--brown)' }}
+                  >
+                    {partnerProfile.nickname.slice(0, 2).toUpperCase()}
+                  </div>
+                  <div>
+                    <p className="font-semibold" style={{ color: 'var(--text)' }}>{partnerProfile.nickname}</p>
+                    {partnerProfile.gameNickname && (
+                      <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>게임: {partnerProfile.gameNickname}</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* 거래량 / 매너점수 / 등급 */}
+                <div
+                  className="grid grid-cols-3 divide-x text-center"
+                  style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}
+                >
+                  <div className="flex flex-col items-center py-3 gap-0.5">
+                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>거래량</span>
+                    <span className="font-bold font-serif text-base" style={{ color: 'var(--text)' }}>
+                      {partnerProfile.tradeCount ?? 0}건
+                    </span>
+                  </div>
+                  <div className="flex flex-col items-center py-3 gap-0.5">
+                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>매너점수</span>
+                    {(() => {
+                      const score = partnerProfile.mannerScore ?? 60;
+                      const color = score >= 70 ? 'var(--brown)' : score >= 40 ? '#b08030' : 'var(--danger)';
+                      return (
+                        <span className="font-bold font-serif text-base" style={{ color }}>{score}점</span>
+                      );
+                    })()}
+                  </div>
+                  <div className="flex flex-col items-center py-3 gap-0.5">
+                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>등급</span>
+                    <span className="font-bold font-serif text-base" style={{ color: 'var(--brown)' }}>
+                      {partnerProfile.grade ?? '-'}
+                    </span>
+                  </div>
+                </div>
+
+                {partnerProfile.gameAccessTime && (
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    접속 가능 시간: {partnerProfile.gameAccessTime}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-center py-8" style={{ color: 'var(--text-muted)' }}>불러오는 중...</p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

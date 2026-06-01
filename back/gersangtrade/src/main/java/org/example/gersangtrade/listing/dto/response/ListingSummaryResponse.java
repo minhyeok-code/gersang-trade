@@ -24,6 +24,7 @@ import java.util.Map;
  */
 public record ListingSummaryResponse(
         Long id,
+        Long sellerId,
         String sellerName,
         String sellerGameNickname,
         String sellerGameAccessTime,
@@ -62,6 +63,7 @@ public record ListingSummaryResponse(
                                               Map<Long, List<BundleLine>> linesByBundleId) {
         return new ListingSummaryResponse(
                 listing.getId(),
+                listing.getSeller().getId(),
                 listing.getSeller().getNickname(),
                 listing.getSeller().getGameNickname(),
                 listing.getSeller().getGameAccessTime(),

@@ -18,6 +18,8 @@ public record ChatRoomDetailResponse(
         Long listingId,
         String listingDisplayName,
         InitiationType initiationType,
+        /** 내 기준 상대방 유저 ID */
+        Long partnerId,
         /** 내 기준 상대방 닉네임 */
         String partnerNickname,
         String posterNickname,
@@ -48,6 +50,9 @@ public record ChatRoomDetailResponse(
                 ? room.getCounterpartyConfirmedAt() != null
                 : room.getPosterConfirmedAt() != null;
 
+        Long partnerId = isPoster
+                ? room.getCounterparty().getId()
+                : room.getPoster().getId();
         String partnerNickname = isPoster
                 ? room.getCounterparty().getNickname()
                 : room.getPoster().getNickname();
@@ -58,6 +63,7 @@ public record ChatRoomDetailResponse(
                 room.getListingId(),
                 listingDisplayName,
                 room.getInitiationType(),
+                partnerId,
                 partnerNickname,
                 room.getPoster().getNickname(),
                 room.getCounterparty().getNickname(),

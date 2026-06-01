@@ -33,4 +33,16 @@ public interface TradeReviewRepository extends JpaRepository<TradeReview, Long> 
      * 사용자 프로필의 거래 평가 이력 표시에 사용된다.
      */
     List<TradeReview> findByTargetIdAndPublishedTrue(Long targetId);
+
+    /**
+     * 내가 아직 제출하지 않은 대기 중인 평가 목록 조회.
+     * 평가 기간(revealAt) 이 지나지 않고 rating이 null인 것만 반환한다.
+     */
+    @Query("SELECT r FROM TradeReview r " +
+           "JOIN FETCH r.target " +
+           "WHERE r.reviewer.id = :reviewerId " +
+           "AND r.rating IS NULL " +
+           "AND r.revealAt > :now")
+    List<TradeReview> findPendingByReviewerId(@Param("reviewerId") Long reviewerId,
+                                              @Param("now") LocalDateTime now);
 }

@@ -31,6 +31,7 @@ public record MemberStatResponse(
         /** 주술 세트효과 합산 — FLAT·PERCENT 모두 statType별로 집계 */
         List<StatEntry> ritualSetEffectStats,
         List<StatEntry> deckBuffStats,
+        List<DeckBuffDetail> deckBuffDetails,
         List<StatEntry> levelBonusStats,
         List<StatEntry> bonusStats,
         /** 주인공 국가 속성 버프 (동일 Nature 아군 ELEMENT_VALUE) */
@@ -46,6 +47,9 @@ public record MemberStatResponse(
         List<DeckMemberSlotResponse> slots
 ) {
     public record StatEntry(StatType statType, int value) {}
+
+    /** 덱 효과(정령·진법·층진) 출처별 스탯 기여 1건 */
+    public record DeckBuffDetail(String sourceName, String sourceType, StatType statType, int value) {}
 
     /** 명왕 스탯 이전 1건 — 수신 멤버에게만 내려간다 */
     public record MyungwangTransferDetail(String sourceMercenaryName, StatType statType, int value) {}
@@ -82,6 +86,7 @@ public record MemberStatResponse(
             Map<StatType, Integer> ritualStatMap,
             Map<StatType, Integer> ritualSetEffectStatMap,
             Map<StatType, Integer> deckBuffStatMap,
+            List<DeckBuffDetail> deckBuffDetails,
             Map<StatType, Integer> levelBonusStatMap,
             Map<StatType, Integer> bonusStatMap,
             Map<StatType, Integer> protagonistBuffStatMap,
@@ -111,6 +116,7 @@ public record MemberStatResponse(
                 toEntries(ritualStatMap),
                 toEntries(ritualSetEffectStatMap),
                 toEntries(deckBuffStatMap),
+                deckBuffDetails,
                 toEntries(levelBonusStatMap),
                 toEntries(bonusStatMap),
                 toEntries(protagonistBuffStatMap),

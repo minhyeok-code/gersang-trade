@@ -34,7 +34,7 @@
     "hit_count": 3,
     "damage_range_factor": 0.1,
     "skill_type": "INSTANT",
-    "casts_per_second": null,
+    "casts_per_second": 0.4,
     "tick_interval_ms": null,
     "confidence": "HIGH",
     "note": null
@@ -54,7 +54,7 @@
     "hit_count": 3,
     "damage_range_factor": 0.1,
     "skill_type": "INSTANT",
-    "casts_per_second": null,
+    "casts_per_second": 0.4,
     "tick_interval_ms": null,
     "confidence": "HIGH",
     "note": null
@@ -74,7 +74,7 @@
     "hit_count": 3,
     "damage_range_factor": 0.1,
     "skill_type": "INSTANT",
-    "casts_per_second": null,
+    "casts_per_second": 0.4,
     "tick_interval_ms": null,
     "confidence": "HIGH",
     "note": null
@@ -94,7 +94,7 @@
     "hit_count": 3,
     "damage_range_factor": 0.1,
     "skill_type": "INSTANT",
-    "casts_per_second": null,
+    "casts_per_second": 0.4,
     "tick_interval_ms": null,
     "confidence": "HIGH",
     "note": null
@@ -114,7 +114,7 @@
     "hit_count": 3,
     "damage_range_factor": 0.1,
     "skill_type": "INSTANT",
-    "casts_per_second": null,
+    "casts_per_second": 0.4,
     "tick_interval_ms": null,
     "confidence": "HIGH",
     "note": null
@@ -134,7 +134,7 @@
     "hit_count": 3,
     "damage_range_factor": 0.1,
     "skill_type": "INSTANT",
-    "casts_per_second": null,
+    "casts_per_second": 0.4,
     "tick_interval_ms": null,
     "confidence": "HIGH",
     "note": null
@@ -171,7 +171,7 @@
     "coef_int": 0.0,
     "coef_atk": 20.0,
     "coef_lvl": 20.0,
-    "hit_count": 7,
+    "hit_count": 4,
     "damage_range_factor": 0.1,
     "skill_type": "INSTANT",
     "casts_per_second": 0.8,

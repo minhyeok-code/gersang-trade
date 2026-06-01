@@ -319,7 +319,7 @@ public class DeckService {
                 components.setEffectStatMap(), components.characteristicStatMap(),
                 components.partyCharacteristicStatMap(), components.enemyDebuffStatMap(),
                 components.ritualStatMap(), components.ritualSetEffectStatMap(), components.deckBuffStatMap(),
-                components.levelBonusStatMap(), components.bonusStatMap(),
+                components.deckBuffDetails(), components.levelBonusStatMap(), components.bonusStatMap(),
                 protagonistBuffStatMap, awakenedMyeongwangBuffStatMap,
                 components.resolvedMainStat(),
                 transferStatMap, transferDetails, components.activeEquipmentSetEffects(),
@@ -475,6 +475,8 @@ public class DeckService {
 
         Map<StatType, Integer> deckBuffStatMap = calculateDeckBuffStatsForMember(
                 deck, member.getMercenary().getNature(), true);
+        List<MemberStatResponse.DeckBuffDetail> deckBuffDetails = computeDeckBuffDetailsForMember(
+                deck, member.getMercenary().getNature(), true);
 
         MemberBuildStatCalculator.BuildStatBonus buildBonus =
                 memberBuildStatCalculator.compute(member, slots);
@@ -494,8 +496,8 @@ public class DeckService {
 
         return new MemberStatComponents(slots, baseStatMap, equipStatMap, setEffectStatMap,
                 characteristicStatMap, partyCharacteristicStatMap, enemyDebuffStatMap, ritualStatMap,
-                ritualSetEffectStatMap, deckBuffStatMap, levelBonusStatMap, bonusStatMap, resolvedMainStat,
-                activeEquipmentSetEffects, activeSetEffects, preTransferTotal);
+                ritualSetEffectStatMap, deckBuffStatMap, deckBuffDetails, levelBonusStatMap, bonusStatMap,
+                resolvedMainStat, activeEquipmentSetEffects, activeSetEffects, preTransferTotal);
     }
 
     /** 덱 내 명왕 스탯 이전 — 수신 멤버별 합산량·출처 내역 */
@@ -537,6 +539,7 @@ public class DeckService {
             Map<StatType, Integer> ritualStatMap,
             Map<StatType, Integer> ritualSetEffectStatMap,
             Map<StatType, Integer> deckBuffStatMap,
+            List<MemberStatResponse.DeckBuffDetail> deckBuffDetails,
             Map<StatType, Integer> levelBonusStatMap,
             Map<StatType, Integer> bonusStatMap,
             StatType resolvedMainStat,
@@ -878,6 +881,47 @@ public class DeckService {
         accumulateDeckBuffSourceForMember(stats, deck.getJinbeopSource(), nature, allyOnly);
         accumulateDeckBuffSourceForMember(stats, deck.getCheungjinSource(), nature, allyOnly);
         return stats;
+    }
+
+    /** 덱 효과 출처별 기여 내역 — 정령·진법·층진 각 항목을 개별 기록으로 반환 */
+    private List<MemberStatResponse.DeckBuffDetail> computeDeckBuffDetailsForMember(
+            UserDeck deck, Nature nature, boolean allyOnly) {
+        List<MemberStatResponse.DeckBuffDetail> details = new ArrayList<>();
+
+        List<Spirit> spirits = selectedSpirits(deck);
+        boolean hasEarthLegend = spirits.stream()
+                .anyMatch(s -> s.getNature() == Nature.EARTH && s.getGrade() == SpiritGrade.LEGEND);
+
+        for (Spirit spirit : spirits) {
+            boolean isEarthLegend = spirit.getNature() == Nature.EARTH && spirit.getGrade() == SpiritGrade.LEGEND;
+            for (SpiritBuff buff : spirit.getBuffs()) {
+                if (allyOnly && buff.getTarget() != BuffTarget.ALLY) continue;
+                if (!isDeckBuffElementApplicable(buff.getElement(), nature)) continue;
+                float value = buff.getValue();
+                if (hasEarthLegend && !isEarthLegend
+                        && !SPIRIT_DOUBLE_EXCLUDED_STATS.contains(buff.getStatType())) {
+                    value *= 2.0f;
+                }
+                details.add(new MemberStatResponse.DeckBuffDetail(
+                        spirit.getName(), "정령", buff.getStatType(), Math.round(value)));
+            }
+        }
+
+        addDeckBuffSourceDetails(details, deck.getJinbeopSource(), "진법", nature, allyOnly);
+        addDeckBuffSourceDetails(details, deck.getCheungjinSource(), "층진", nature, allyOnly);
+        return details;
+    }
+
+    private void addDeckBuffSourceDetails(List<MemberStatResponse.DeckBuffDetail> details,
+                                          DeckBuffSource source, String sourceType,
+                                          Nature nature, boolean allyOnly) {
+        if (source == null) return;
+        for (DeckBuff buff : source.getBuffs()) {
+            if (allyOnly && buff.getTarget() != BuffTarget.ALLY) continue;
+            if (!isDeckBuffElementApplicable(buff.getElement(), nature)) continue;
+            details.add(new MemberStatResponse.DeckBuffDetail(
+                    source.getName(), sourceType, buff.getStatType(), Math.round(buff.getValue())));
+        }
     }
 
     private void accumulateDeckBuffSourceForMember(Map<StatType, Integer> stats,

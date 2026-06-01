@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { api, getSelectedServerName, sortChatMessages, type ChatMessageDto, type ChatRoomDetailDto, type ListingDto, type WantedDto, type ServerDto } from '@/lib/api';
+import { api, getSelectedServerName, sortChatMessages, type ChatMessageDto, type ChatRoomDetailDto, type ListingDto, type WantedDto, type ServerDto, type PublicUserDto } from '@/lib/api';
 import { parseApiError } from '@/lib/parseApiError';
 import { isMyMessage, isSystemMessage } from '@/lib/chatUtils';
 import { useWs } from '@/lib/useWs';
@@ -87,7 +87,7 @@ function mapListing(l: ListingDto): TradeItem {
     description: l.description ?? l.note,
     status: l.status,
     createdAt: l.createdAt,
-    sellerId: l.seller?.id,
+    sellerId: l.seller?.id ?? l.sellerId,
   };
 }
 
@@ -384,6 +384,13 @@ function DetailModal({ item, onClose, onChat }: {
 }) {
   const isSell = item.listingType === 'SELL';
   const [reporting, setReporting] = useState(false);
+  const [sellerProfile, setSellerProfile] = useState<PublicUserDto | null>(null);
+
+  useEffect(() => {
+    if (item.sellerId) {
+      api.getUser(item.sellerId).then(setSellerProfile).catch(() => {});
+    }
+  }, [item.sellerId]);
 
   async function handleReport() {
     setReporting(true);
@@ -476,6 +483,29 @@ function DetailModal({ item, onClose, onChat }: {
                 </div>
               )}
             </div>
+            {sellerProfile && (
+              <div
+                className="grid grid-cols-3 divide-x text-center"
+                style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}
+              >
+                <div className="flex flex-col items-center py-2 gap-0.5">
+                  <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>거래량</span>
+                  <span className="font-bold text-sm font-serif" style={{ color: 'var(--text)' }}>{sellerProfile.tradeCount ?? 0}</span>
+                </div>
+                <div className="flex flex-col items-center py-2 gap-0.5">
+                  <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>매너</span>
+                  <span className="font-bold text-sm font-serif" style={{ color: (sellerProfile.mannerScore ?? 60) >= 70 ? 'var(--brown)' : (sellerProfile.mannerScore ?? 60) >= 40 ? '#b08030' : 'var(--danger)' }}>
+                    {sellerProfile.mannerScore ?? 60}
+                  </span>
+                </div>
+                <div className="flex flex-col items-center py-2 gap-0.5">
+                  <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>등급</span>
+                  <span className="font-bold text-sm font-serif" style={{ color: 'var(--brown)' }}>
+                    {sellerProfile.grade ?? '-'}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* 거래 정보 */}

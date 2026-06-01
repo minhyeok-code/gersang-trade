@@ -84,29 +84,38 @@ async function confirmMemberRemoval(deckId: number, member: DeckMember, mercenar
 }
 
 const STAT_LABEL: Record<string, string> = {
-  STRENGTH: '힘',
-  DEXTERITY: '민첩',
-  VITALITY: '생명',
-  INTELLECT: '지력',
-  RESIST_PIERCE: '저항깎',
   ELEMENT_VALUE: '속성값',
   ELEMENT_PIERCE: '속성깎',
-  FIRE_RESIST: '화저항',
-  WATER_RESIST: '수저항',
-  THUNDER_RESIST: '뇌저항',
-  WIND_RESIST: '풍저항',
-  EARTH_RESIST: '토저항',
-  HITTING_RESISTANCE: '타격저항',
+  RESIST_PIERCE: '저항깎',
+  MIN_POWER: '최소공격력',
+  MAX_POWER: '최대공격력',
+  ATTACK_POWER: '공격력',
+  STRENGTH: '힘',
+  VITALITY: '생명력',
+  DEXTERITY: '민첩',
+  INTELLECT: '지력',
+  DEFENSE: '방어',
+  SIGHT: '시야',
+  HIT_RATE: '명중률',
+  CRITICAL_CHANCE: '크리티컬확률',
   MAGIC_RESISTANCE: '마법저항',
+  HITTING_RESISTANCE: '타격저항',
+  DAMAGE_PERCENT: '데미지증가',
+  SKILL_DAMAGE_PERCENT: '스킬데미지증가',
+  FIELD_MOVE_SPEED: '필드이동속도',
+  ALL_STAT: '모든능력치',
+  CRITICAL_RATE: '치명타확률',
+  CRITICAL_DAMAGE: '치명타피해',
+  MIN_DAMAGE: '최소데미지',
+  MAX_DAMAGE: '최대데미지',
   ATTACK_SPEED: '공격속도',
   MOVE_SPEED: '이동속도',
   HP_RECOVERY: '체력회복',
   MP_RECOVERY: '마력회복',
-  MIN_POWER: '최소공격력',
-  MAX_POWER: '최대공격력',
-  DAMAGE_PERCENT: '데미지증가',
-  SKILL_DAMAGE_PERCENT: '스킬데미지증가',
-  ALL_STAT: '모든능력치',
+  DAMAGE_PERCENT_GROUND: '지상데미지증가',
+  DAMAGE_PERCENT_AIR: '공중데미지증가',
+  STUN_DURATION: '기절시간',
+  SKILL_RANGE: '사거리',
 };
 
 function mercenaryCategory(merc?: Pick<MercenaryDto, 'category'> | null) {
@@ -258,26 +267,6 @@ function statValue(
   return stats?.[section]?.find((s) => s.statType === statType)?.value ?? 0;
 }
 
-function displayStatTypes(stats: MemberStats | null) {
-  const keys = new Set<string>();
-  stats?.baseStats?.forEach((s) => keys.add(s.statType));
-  stats?.equipStats?.forEach((s) => keys.add(s.statType));
-  stats?.setEffectStats?.forEach((s) => keys.add(s.statType));
-  stats?.characteristicStats?.forEach((s) => keys.add(s.statType));
-  stats?.partyCharacteristicStats?.forEach((s) => keys.add(s.statType));
-  stats?.enemyDebuffStats?.forEach((s) => keys.add(s.statType));
-  stats?.ritualStats?.forEach((s) => keys.add(s.statType));
-  stats?.ritualSetEffectStats?.forEach((s) => keys.add(s.statType));
-  stats?.deckBuffStats?.forEach((s) => keys.add(s.statType));
-  stats?.levelBonusStats?.forEach((s) => keys.add(s.statType));
-  stats?.bonusStats?.forEach((s) => keys.add(s.statType));
-  stats?.protagonistBuffStats?.forEach((s) => keys.add(s.statType));
-  stats?.awakenedMyeongwangBuffStats?.forEach((s) => keys.add(s.statType));
-  stats?.myungwangTransferStats?.forEach((s) => keys.add(s.statType));
-  stats?.ritualSetEffects?.forEach((s) => keys.add(s.statType));
-  stats?.totalStats?.forEach((s) => keys.add(s.statType));
-  return Array.from(keys);
-}
 
 function equipmentItemId(item: EquipmentItemDto) {
   return equipmentItemKey(item);
@@ -381,37 +370,114 @@ function layoutCharacteristicGrid(characteristics: CharacteristicItem[]) {
   return { grid, overflow, auto: characteristics.filter((c) => !isSelectableCharacteristic(c)) };
 }
 
+// ALL_STAT 값이 분배될 기본 스탯 4종
+const ALL_STAT_TARGETS = ['STRENGTH', 'DEXTERITY', 'VITALITY', 'INTELLECT'] as const;
+
+// 스탯 출처(우측) 패널에서 집계할 섹션 목록 (기본·레벨·보너스 제외)
+const SOURCE_SECTIONS = [
+  'equipStats', 'setEffectStats', 'characteristicStats', 'partyCharacteristicStats',
+  'enemyDebuffStats', 'ritualStats', 'ritualSetEffectStats', 'deckBuffStats',
+  'protagonistBuffStats', 'awakenedMyeongwangBuffStats', 'myungwangTransferStats',
+] as const;
+
+// 기본+레벨+장비+보너스 합산. ALL_STAT → 힘/민첩/생명력/지력에 분배
+function computePrimaryStats(stats: MemberStats | null): Map<string, number> {
+  const map = new Map<string, number>();
+  const sections = ['baseStats', 'levelBonusStats', 'equipStats', 'bonusStats'] as const;
+  for (const section of sections) {
+    stats?.[section]?.forEach((s) => {
+      map.set(s.statType, (map.get(s.statType) ?? 0) + s.value);
+    });
+  }
+  const allStatVal = map.get('ALL_STAT') ?? 0;
+  if (allStatVal !== 0) {
+    map.delete('ALL_STAT');
+    for (const t of ALL_STAT_TARGETS) {
+      map.set(t, (map.get(t) ?? 0) + allStatVal);
+    }
+  }
+  return map;
+}
+
+function displayPrimaryStatTypes(stats: MemberStats | null): string[] {
+  return Array.from(computePrimaryStats(stats).entries())
+    .filter(([, v]) => v !== 0)
+    .map(([k]) => k);
+}
+
+// 아이템·덱 효과·명왕 이전만 합산 (기본·레벨·보너스 제외), ALL_STAT 분배 포함
+function sourceStatTotal(stats: MemberStats | null, statType: string): number {
+  if (!stats) return 0;
+  const includeAllStat = (ALL_STAT_TARGETS as readonly string[]).includes(statType);
+  return SOURCE_SECTIONS.reduce((sum, section) => {
+    const val = statValue(stats, section, statType);
+    const allVal = includeAllStat ? statValue(stats, section, 'ALL_STAT') : 0;
+    return sum + val + allVal;
+  }, 0);
+}
+
+function displaySourceStatTypes(stats: MemberStats | null): string[] {
+  const keys = new Set<string>();
+  for (const section of SOURCE_SECTIONS) {
+    stats?.[section]?.forEach((s) => keys.add(s.statType));
+  }
+  stats?.ritualSetEffects?.forEach((s) => keys.add(s.statType));
+  stats?.myungwangTransferDetails?.forEach((s) => keys.add(s.statType));
+  if (keys.has('ALL_STAT')) {
+    keys.delete('ALL_STAT');
+    for (const t of ALL_STAT_TARGETS) keys.add(t);
+  }
+  return Array.from(keys).filter((k) => sourceStatTotal(stats, k) !== 0);
+}
+
+// 스탯 출처 기여 내역: 기본·레벨·보너스 제외, ALL_STAT → 4개 기본 스탯에 분배
 function buildStatContributions(stats: MemberStats | null, statType: string): StatContribution[] {
   if (!stats) return [];
+  const includeAllStat = (ALL_STAT_TARGETS as readonly string[]).includes(statType);
+  const v = (section: typeof SOURCE_SECTIONS[number]) => {
+    const base = statValue(stats, section, statType);
+    const allVal = includeAllStat ? statValue(stats, section, 'ALL_STAT') : 0;
+    return base + allVal;
+  };
   const rows: StatContribution[] = [
-    { label: '기본', value: statValue(stats, 'baseStats', statType) },
-    { label: '장비', value: statValue(stats, 'equipStats', statType) },
-    { label: '세트 효과', value: statValue(stats, 'setEffectStats', statType) },
-    { label: '특성(자신)', value: statValue(stats, 'characteristicStats', statType) },
-    { label: '특성(아군)', value: statValue(stats, 'partyCharacteristicStats', statType) },
-    { label: '특성(적군)', value: statValue(stats, 'enemyDebuffStats', statType) },
-    { label: '주술', value: statValue(stats, 'ritualStats', statType) },
-    { label: '주술 세트', value: statValue(stats, 'ritualSetEffectStats', statType) },
-    { label: '덱 효과', value: statValue(stats, 'deckBuffStats', statType) },
-    { label: '레벨 스탯', value: statValue(stats, 'levelBonusStats', statType) },
-    { label: '보너스 스탯', value: statValue(stats, 'bonusStats', statType) },
-    { label: '주인공 국가 버프', value: statValue(stats, 'protagonistBuffStats', statType) },
-    { label: '각성 명왕 버프', value: statValue(stats, 'awakenedMyeongwangBuffStats', statType) },
+    { label: '장비', value: v('equipStats') },
+    { label: '세트 효과', value: v('setEffectStats') },
+    { label: '특성(자신)', value: v('characteristicStats') },
+    { label: '특성(아군)', value: v('partyCharacteristicStats') },
+    { label: '특성(적군)', value: v('enemyDebuffStats') },
+    { label: '주술', value: v('ritualStats') },
+    { label: '주술 세트', value: v('ritualSetEffectStats') },
+    { label: '주인공 국가 버프', value: v('protagonistBuffStats') },
+    { label: '각성 명왕 버프', value: v('awakenedMyeongwangBuffStats') },
   ];
+
+  // 덱 효과: 정령·진법·층진 출처별 개별 행 (sourceName 기준 합산)
+  if (stats.deckBuffDetails) {
+    const sourceMap = new Map<string, { label: string; value: number }>();
+    for (const d of stats.deckBuffDetails) {
+      const match = d.statType === statType || (includeAllStat && d.statType === 'ALL_STAT');
+      if (!match || d.value === 0) continue;
+      const key = `${d.sourceType}:${d.sourceName}`;
+      const label = `${d.sourceType}: ${d.sourceName}`;
+      const existing = sourceMap.get(key);
+      sourceMap.set(key, { label, value: (existing?.value ?? 0) + d.value });
+    }
+    sourceMap.forEach((entry) => rows.push(entry));
+  } else {
+    // deckBuffDetails 미제공 시 집계값으로 fallback
+    rows.push({ label: '덱 효과', value: v('deckBuffStats') });
+  }
+
   stats.ritualSetEffects?.forEach((eff) => {
-    if (eff.statType === statType && eff.statValue !== 0) {
-      rows.push({
-        label: `주술 세트 상세 (${eff.outcome} ${eff.setName})`,
-        value: eff.statValue,
-      });
+    const match = eff.statType === statType || (includeAllStat && eff.statType === 'ALL_STAT');
+    if (match && eff.statValue !== 0) {
+      rows.push({ label: `주술 세트 상세 (${eff.outcome} ${eff.setName})`, value: eff.statValue });
     }
   });
   stats.myungwangTransferDetails?.forEach((detail) => {
-    if (detail.statType === statType && detail.value !== 0) {
-      rows.push({
-        label: `명왕 스탯 이전 (${detail.sourceMercenaryName})`,
-        value: detail.value,
-      });
+    const match = detail.statType === statType || (includeAllStat && detail.statType === 'ALL_STAT');
+    if (match && detail.value !== 0) {
+      rows.push({ label: `명왕 스탯 이전 (${detail.sourceMercenaryName})`, value: detail.value });
     }
   });
   return rows.filter((r) => r.value !== 0);
@@ -1827,7 +1893,9 @@ function EquipmentSetupModal({ member, deckId, deckEffectSignature, equipmentByS
   const slotMap = useMemo(() => new Map(equippedSlots.map((s) => [s.slot, s])), [equippedSlots]);
   const selectedEquipped = slotMap.get(selectedSlot);
   const slotRows = showAppSlots ? APP_SLOT_ROWS : NORMAL_SLOT_ROWS;
-  const statTypes = displayStatTypes(stats);
+  const primaryStatsMap = useMemo(() => computePrimaryStats(stats), [stats]);
+  const primaryStatTypes = useMemo(() => displayPrimaryStatTypes(stats), [stats]);
+  const sourceStatTypes = useMemo(() => displaySourceStatTypes(stats), [stats]);
   const characteristicGrid = useMemo(
     () => layoutCharacteristicGrid(characteristics?.characteristics ?? []),
     [characteristics]
@@ -2458,11 +2526,11 @@ function EquipmentSetupModal({ member, deckId, deckEffectSignature, equipmentByS
                 <p className="text-sm font-semibold mb-4" style={{ color: 'var(--text)' }}>최종 스탯</p>
                 {statsLoading ? (
                   <div style={{ background: 'var(--card)' }} className="h-48 rounded animate-pulse" />
-                ) : statTypes.length === 0 ? (
+                ) : primaryStatTypes.length === 0 ? (
                   <p className="text-xs" style={{ color: 'var(--text-disabled)' }}>표시할 스탯이 없습니다</p>
                 ) : (
                   <div style={{ border: '1px solid var(--border)' }} className="rounded-lg overflow-hidden text-sm">
-                    {statTypes.map((statType) => (
+                    {primaryStatTypes.map((statType) => (
                       <div
                         key={statType}
                         className="flex items-center justify-between px-4 py-2.5"
@@ -2470,7 +2538,7 @@ function EquipmentSetupModal({ member, deckId, deckEffectSignature, equipmentByS
                       >
                         <span style={{ color: 'var(--text-muted)' }}>{formatStatType(statType)}</span>
                         <span className="font-semibold" style={{ color: 'var(--brown)' }}>
-                          {statValue(stats, 'totalStats', statType)}
+                          {primaryStatsMap.get(statType) ?? 0}
                         </span>
                       </div>
                     ))}
@@ -2479,13 +2547,13 @@ function EquipmentSetupModal({ member, deckId, deckEffectSignature, equipmentByS
               </div>
 
               <div className="p-5 overflow-y-auto">
-                <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text)' }}>스탯 구성</p>
+                <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text)' }}>스탯 출처</p>
                 <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
-                  각 스탯의 기여 내역 버튼을 누르면 영향을 준 항목과 수치를 확인할 수 있습니다.
+                  아이템·덱 효과·명왕 이전 등 장착/설정으로 얻은 스탯 향상입니다. 기여 내역 버튼으로 항목별 수치를 확인할 수 있습니다.
                 </p>
                 {statsLoading ? (
                   <div style={{ background: 'var(--card)' }} className="h-48 rounded animate-pulse" />
-                ) : statTypes.length === 0 ? (
+                ) : sourceStatTypes.length === 0 ? (
                   <p className="text-xs" style={{ color: 'var(--text-disabled)' }}>표시할 스탯이 없습니다</p>
                 ) : (
                   <div style={{ border: '1px solid var(--border)' }} className="rounded-lg overflow-hidden text-xs">
@@ -2494,8 +2562,8 @@ function EquipmentSetupModal({ member, deckId, deckEffectSignature, equipmentByS
                       <span className="text-right w-16">값</span>
                       <span className="w-[72px]" />
                     </div>
-                    {statTypes.map((statType) => {
-                      const total = statValue(stats, 'totalStats', statType);
+                    {sourceStatTypes.map((statType) => {
+                      const total = sourceStatTotal(stats, statType);
                       const contributions = buildStatContributions(stats, statType);
                       return (
                         <div

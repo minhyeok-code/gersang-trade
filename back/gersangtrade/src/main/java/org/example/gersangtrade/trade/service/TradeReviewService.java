@@ -8,6 +8,7 @@ import org.example.gersangtrade.domain.trade.enums.TradeRating;
 import org.example.gersangtrade.domain.user.User;
 import org.example.gersangtrade.notification.service.NotificationService;
 import org.example.gersangtrade.trade.dto.request.TradeReviewSubmitRequest;
+import org.example.gersangtrade.trade.dto.response.PendingReviewResponse;
 import org.example.gersangtrade.trade.dto.response.TradeReviewResponse;
 import org.example.gersangtrade.trade.repository.TradeReviewRepository;
 import org.example.gersangtrade.user.util.ExpGradeCalculator;
@@ -89,6 +90,21 @@ public class TradeReviewService {
     public List<TradeReviewResponse> getPublishedReviews(Long targetUserId) {
         return tradeReviewRepository.findByTargetIdAndPublishedTrue(targetUserId).stream()
                 .map(TradeReviewResponse::of)
+                .toList();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 내가 제출해야 할 대기 평가 조회
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * 내가 아직 제출하지 않은 대기 중인 평가 목록을 반환한다.
+     * rating IS NULL이고 revealAt(마감) 이 지나지 않은 것만 포함한다.
+     */
+    public List<PendingReviewResponse> getMyPendingReviews(Long userId) {
+        return tradeReviewRepository.findPendingByReviewerId(userId, LocalDateTime.now())
+                .stream()
+                .map(PendingReviewResponse::of)
                 .toList();
     }
 
