@@ -11,6 +11,8 @@ public interface LegendGeneralCharacteristicRepository extends JpaRepository<Leg
 
     List<LegendGeneralCharacteristic> findByLegendGeneralId(Long legendGeneralId);
 
+    void deleteByLegendGeneralId(Long legendGeneralId);
+
     /** characteristic.effects만 별도 fetch — LegendGeneral.characteristics와 동시 bag fetch 금지 */
     @Query("""
             SELECT DISTINCT c FROM LegendGeneralCharacteristic c

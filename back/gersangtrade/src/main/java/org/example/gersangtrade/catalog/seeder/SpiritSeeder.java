@@ -29,6 +29,7 @@ public class SpiritSeeder implements ApplicationRunner {
     @Transactional
     public void run(ApplicationArguments args) {
         correctWaterLegendBuffs(); // 기존 DB: ADAPTIVE → 4속성 명시 정정
+        correctFireLegendBuff();   // 기존 DB: SKILL_DAMAGE_PERCENT → DAMAGE_PERCENT 정정
 
         long count = spiritRepository.count();
         if (count >= 25) {
@@ -46,6 +47,29 @@ public class SpiritSeeder implements ApplicationRunner {
     }
 
     // ── 헬퍼 ──────────────────────────────────────────────────────────────────
+
+    /** 기존 DB에 SKILL_DAMAGE_PERCENT로 저장된 불 전설 데미지 버프를 DAMAGE_PERCENT로 정정한다. */
+    private void correctFireLegendBuff() {
+        spiritRepository.findByNatureAndGrade(Nature.FIRE, SpiritGrade.LEGEND).ifPresent(spirit -> {
+            boolean hasSkillDmg = spirit.getBuffs().stream()
+                    .anyMatch(b -> b.getStatType() == StatType.SKILL_DAMAGE_PERCENT);
+            if (!hasSkillDmg) return;
+
+            log.info("불 전설 정령 버프 정정: SKILL_DAMAGE_PERCENT → DAMAGE_PERCENT");
+            List<SpiritBuff> otherBuffs = spirit.getBuffs().stream()
+                    .filter(b -> b.getStatType() != StatType.SKILL_DAMAGE_PERCENT)
+                    .toList();
+            float dmgValue = spirit.getBuffs().stream()
+                    .filter(b -> b.getStatType() == StatType.SKILL_DAMAGE_PERCENT)
+                    .findFirst().map(SpiritBuff::getValue).orElse(5f);
+
+            spirit.getBuffs().clear();
+            spirit.getBuffs().addAll(otherBuffs);
+            spirit.getBuffs().add(SpiritBuff.builder().spirit(spirit)
+                    .target(BuffTarget.ALLY).element(Element.NONE)
+                    .statType(StatType.DAMAGE_PERCENT).statUnit(StatUnit.PERCENT).value(dmgValue).build());
+        });
+    }
 
     /** 기존 DB에 ADAPTIVE로 저장된 물 전설 속성값 버프를 토 제외 4속성 명시로 정정한다. */
     private void correctWaterLegendBuffs() {
@@ -233,7 +257,7 @@ public class SpiritSeeder implements ApplicationRunner {
                         buff(BuffTarget.ALLY, Element.NONE, StatType.MAX_POWER,           StatUnit.FLAT,    600f),
                         buff(BuffTarget.ALLY, Element.NONE, StatType.ATTACK_SPEED,        StatUnit.PERCENT,   3f),
                         buff(BuffTarget.ALLY, Element.NONE, StatType.MOVE_SPEED,          StatUnit.PERCENT,   3f),
-                        buff(BuffTarget.ALLY, Element.NONE, StatType.SKILL_DAMAGE_PERCENT,StatUnit.PERCENT,   5f)
+                        buff(BuffTarget.ALLY, Element.NONE, StatType.DAMAGE_PERCENT,      StatUnit.PERCENT,   5f)
                 ));
     }
 

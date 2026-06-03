@@ -6,5 +6,7 @@ package org.example.gersangtrade.domain.catalog.enums;
 public enum DeckBuffSourceType {
     JINBEOP,        // 진법
     CHEUNGJIN,      // 층진
-    LEGEND_GENERAL  // 전설장수 패시브
+    LEGEND_GENERAL, // 전설장수 패시브
+    GONMYEONG,      // 공명
+    GAHO            // 가호
 }

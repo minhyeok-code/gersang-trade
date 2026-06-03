@@ -38,15 +38,27 @@ public record MemberStatResponse(
         List<StatEntry> protagonistBuffStats,
         /** 각성 명왕 편성 수 × 아군 속성값 버프 (+5, 토 +2) */
         List<StatEntry> awakenedMyeongwangBuffStats,
+        /** 사인검 등 ALLY scope 장비 버프 (같은 속성 아군 전체) */
+        List<StatEntry> partyItemBuffStats,
         StatType resolvedMainStat,
         List<StatEntry> myungwangTransferStats,
         List<MyungwangTransferDetail> myungwangTransferDetails,
         List<ActiveEquipmentSetEffect> equipmentSetEffects,
         List<ActiveSetEffect> ritualSetEffects,
         List<StatEntry> totalStats,
+        /** 전설장수 아군 속성 버프 합산 — compound key 예: DAMAGE_PERCENT_FIRE */
+        List<CompoundStatEntry> lgAllyElementalStats,
+        /** 전설장수 아군 속성 버프 장수별 상세 */
+        List<LgAllyDetail> lgAllyDetails,
         List<DeckMemberSlotResponse> slots
 ) {
     public record StatEntry(StatType statType, int value) {}
+
+    /** 원소 속성이 포함된 복합 스탯 표기용 엔트리 (예: statKey="DAMAGE_PERCENT_FIRE") */
+    public record CompoundStatEntry(String statKey, int value) {}
+
+    /** 전설장수 아군 버프 장수별 1건 */
+    public record LgAllyDetail(String mercenaryName, String statKey, int value) {}
 
     /** 덱 효과(정령·진법·층진) 출처별 스탯 기여 1건 */
     public record DeckBuffDetail(String sourceName, String sourceType, StatType statType, int value) {}
@@ -91,12 +103,15 @@ public record MemberStatResponse(
             Map<StatType, Integer> bonusStatMap,
             Map<StatType, Integer> protagonistBuffStatMap,
             Map<StatType, Integer> awakenedMyeongwangBuffStatMap,
+            Map<StatType, Integer> partyItemBuffStatMap,
             StatType resolvedMainStat,
             Map<StatType, Integer> myungwangTransferStatMap,
             List<MyungwangTransferDetail> myungwangTransferDetails,
             List<ActiveEquipmentSetEffect> equipmentSetEffects,
             List<ActiveSetEffect> ritualSetEffects,
             Map<StatType, Integer> totalMap,
+            Map<String, Integer> lgAllyElementalDisplayMap,
+            List<LgAllyDetail> lgAllyDetails,
             List<UserDeckMemberSlot> slots) {
 
         return new MemberStatResponse(
@@ -121,12 +136,17 @@ public record MemberStatResponse(
                 toEntries(bonusStatMap),
                 toEntries(protagonistBuffStatMap),
                 toEntries(awakenedMyeongwangBuffStatMap),
+                toEntries(partyItemBuffStatMap),
                 resolvedMainStat,
                 toEntries(myungwangTransferStatMap),
                 myungwangTransferDetails,
                 equipmentSetEffects,
                 ritualSetEffects,
                 toEntries(totalMap),
+                lgAllyElementalDisplayMap.entrySet().stream()
+                        .map(e -> new CompoundStatEntry(e.getKey(), e.getValue()))
+                        .toList(),
+                lgAllyDetails,
                 slots.stream().map(DeckMemberSlotResponse::of).toList()
         );
     }

@@ -6,6 +6,7 @@ import org.example.gersangtrade.admin.dto.request.EquipmentDetailUpdateRequest;
 import org.example.gersangtrade.admin.dto.request.ItemRestrictionAddRequest;
 import org.example.gersangtrade.admin.dto.request.ItemStatReplaceRequest;
 import org.example.gersangtrade.admin.dto.request.ItemUpdateRequest;
+import org.example.gersangtrade.admin.dto.request.SkillEffectReplaceRequest;
 import org.example.gersangtrade.admin.dto.request.SkillReplaceRequest;
 import org.example.gersangtrade.admin.dto.response.ItemAdminResponse;
 import org.example.gersangtrade.admin.dto.response.ItemDetailAdminResponse;
@@ -99,6 +100,15 @@ public class ItemAdminController {
             @PathVariable Long itemId,
             @Valid @RequestBody SkillReplaceRequest request) {
         return ResponseEntity.ok(itemAdminService.replaceSkills(itemId, request));
+    }
+
+    /** 스킬 효과 전체 교체 (PUT 의미론 — 기존 전부 삭제 후 재적재). */
+    @PutMapping("/{itemId}/skills/{skillId}/effects")
+    public ResponseEntity<ItemDetailAdminResponse.SkillEntry> replaceSkillEffects(
+            @PathVariable Long itemId,
+            @PathVariable Long skillId,
+            @Valid @RequestBody SkillEffectReplaceRequest request) {
+        return ResponseEntity.ok(itemAdminService.replaceSkillEffects(itemId, skillId, request));
     }
 
     /** 아이템 하드 삭제 — 참조 중이면 409를 반환한다. */

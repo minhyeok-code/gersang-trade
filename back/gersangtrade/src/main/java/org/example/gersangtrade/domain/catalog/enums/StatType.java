@@ -58,7 +58,13 @@ public enum StatType {
     ATTACK_POWER("공격력"),
 
     // ── 주인공 전용 ───────────────────────────────────────────
-    SKILL_RANGE("사거리");
+    SKILL_RANGE("사거리"),
+
+    // ── 공명·가호 전용 ────────────────────────────────────────
+    MAIN_STAT_FLAT("주스텟"),
+
+    // ── 특성 전용 ─────────────────────────────────────────────
+    BASE_DAMAGE_MULTIPLIER("기본데미지배율");
 
     /** 화면에 표시할 한국어 명칭 */
     private final String displayName;

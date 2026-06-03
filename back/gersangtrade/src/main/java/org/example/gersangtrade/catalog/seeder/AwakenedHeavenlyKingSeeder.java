@@ -125,12 +125,14 @@ public class AwakenedHeavenlyKingSeeder implements ApplicationRunner {
 
         // 하위: 충격파 (point=1) — 공중 몬스터 마법저항 감소 (항상 적용 가정)
         MercenaryCharacteristic chunggyeokpa = upsertChar(m, "awakenedHK-jeungjang-chunggyeokpa", "충격파", 1, null);
-        seedLevels(chunggyeokpa, "3배 피해 확률",         new float[]{ 4, 10, 20,  40,  70}, null);
+        seedLevels(chunggyeokpa, "3배 피해 확률",         new float[]{ 4, 10, 20,  40,  70}, StatType.CRITICAL_CHANCE);
         seedLevels(chunggyeokpa, "마법저항 (공중 몬스터)", new float[]{-1, -3, -6, -10, -15}, StatType.MAGIC_RESISTANCE);
 
         // 상위: 원격 (point=2, required=충격파)
         MercenaryCharacteristic wongyeok = upsertChar(m, "awakenedHK-jeungjang-wongyeok", "원격", 2, "awakenedHK-jeungjang-chunggyeokpa");
-        seedLevels(wongyeok, "치명타 피해", new float[]{2, 3, 5, 20, 50}, null);
+        seedLevels(wongyeok, "치명타 피해", new float[]{2, 3, 5, 20, 50}, StatType.CRITICAL_DAMAGE);
+        // 레벨 5 전용: 기본 데미지 2배 (100% 가산 = ×2)
+        seedSingleLevel(wongyeok, "기본 데미지 배율", 5, 100.0f, "100%", StatType.BASE_DAMAGE_MULTIPLIER);
     }
 
     // ── 각성 다문천왕 (WATER) ─────────────────────────────────────────────────
@@ -232,6 +234,23 @@ public class AwakenedHeavenlyKingSeeder implements ApplicationRunner {
                     .statType(statType)
                     .build());
         }
+    }
+
+    /** 특정 레벨 단독 저장 — 레벨 5 전용 특수 효과 등에 사용 */
+    private void seedSingleLevel(MercenaryCharacteristic characteristic, String label,
+                                  int level, float value, String amount, StatType statType) {
+        if (levelRepository.findByCharacteristicIdAndLabelAndLevel(
+                characteristic.getId(), label, level).isPresent()) {
+            return;
+        }
+        levelRepository.save(MercenaryCharacteristicLevel.builder()
+                .characteristic(characteristic)
+                .label(label)
+                .level(level)
+                .amount(amount)
+                .amountValue(value)
+                .statType(statType)
+                .build());
     }
 
     /** 초(秒) 단위 레벨 수치 저장 — statType=null */

@@ -10,8 +10,11 @@ import org.example.gersangtrade.calculator.dto.response.MemberDpsResult;
 import org.example.gersangtrade.calculator.dto.response.SkillDpsResult;
 import org.example.gersangtrade.catalog.repository.EquipmentSetEffectRepository;
 import org.example.gersangtrade.catalog.repository.EquipmentSetSkillEffectRepository;
+import org.example.gersangtrade.catalog.repository.ItemSkillEffectRepository;
+import org.example.gersangtrade.catalog.repository.ItemSkillMappingRepository;
 import org.example.gersangtrade.catalog.repository.ItemStatRepository;
 import org.example.gersangtrade.catalog.repository.MercenaryCharacteristicLevelRepository;
+import org.example.gersangtrade.catalog.repository.MercenarySkillEffectRepository;
 import org.example.gersangtrade.catalog.repository.MercenaryStatRepository;
 import org.example.gersangtrade.catalog.repository.MonsterRepository;
 import org.example.gersangtrade.catalog.repository.RitualSetEffectRepository;
@@ -34,8 +37,11 @@ import org.example.gersangtrade.domain.catalog.DeckBuffSource;
 import org.example.gersangtrade.domain.catalog.EquipmentSet;
 import org.example.gersangtrade.domain.catalog.EquipmentSetEffect;
 import org.example.gersangtrade.domain.catalog.EquipmentSetSkillEffect;
+import org.example.gersangtrade.domain.catalog.ItemSkillEffect;
+import org.example.gersangtrade.domain.catalog.ItemSkillMapping;
 import org.example.gersangtrade.domain.catalog.ItemStat;
 import org.example.gersangtrade.domain.catalog.MercenaryCharacteristicLevel;
+import org.example.gersangtrade.domain.catalog.MercenarySkillEffect;
 import org.example.gersangtrade.domain.catalog.MercenaryStat;
 import org.example.gersangtrade.domain.catalog.Monster;
 import org.example.gersangtrade.domain.catalog.RitualSetEffect;
@@ -126,6 +132,9 @@ public class DpsCalculatorService {
     private final RitualSetEffectRepository ritualSetEffectRepository;
     private final RitualStatRepository ritualStatRepository;
     private final SkillCoefficientRepository skillCoefficientRepository;
+    private final ItemSkillMappingRepository itemSkillMappingRepository;
+    private final MercenarySkillEffectRepository mercenarySkillEffectRepository;
+    private final ItemSkillEffectRepository itemSkillEffectRepository;
     private final MonsterRepository monsterRepository;
     private final LegendGeneralLoadService legendGeneralLoadService;
     private final MercenaryCharacteristicRepository mercenaryCharacteristicRepository;
@@ -188,9 +197,29 @@ public class DpsCalculatorService {
         List<SkillCoefficient> mercCoefs = skillCoefficientRepository.findByMercenaryIdIn(mercenaryIds);
         Map<Long, List<SkillCoefficient>> coefsByMercId = mercCoefs.stream()
                 .collect(Collectors.groupingBy(sc -> sc.getMercenarySkill().getMercenary().getId()));
-        Map<Long, List<SkillCoefficient>> coefsByItemId = equippedItemIds.isEmpty() ? Map.of() :
-                skillCoefficientRepository.findByItemIdIn(equippedItemIds).stream()
-                        .collect(Collectors.groupingBy(sc -> sc.getItemSkill().getItem().getId()));
+
+        // 아이템 스킬 계수: itemId → mapping → skillId → coef 패턴으로 조회
+        List<ItemSkillMapping> skillMappings = equippedItemIds.isEmpty() ? List.of() :
+                itemSkillMappingRepository.findByItemIdIn(equippedItemIds);
+        Map<Long, List<SkillCoefficient>> coefsByItemId;
+        if (skillMappings.isEmpty()) {
+            coefsByItemId = Map.of();
+        } else {
+            List<Long> mappedSkillIds = skillMappings.stream()
+                    .map(m -> m.getSkill().getId()).distinct().toList();
+            Map<Long, List<SkillCoefficient>> coefBySkillId = mappedSkillIds.isEmpty() ? Map.of() :
+                    skillCoefficientRepository.findByItemSkillIdIn(mappedSkillIds).stream()
+                            .collect(Collectors.groupingBy(sc -> sc.getItemSkill().getId()));
+            // itemId → List<SkillCoefficient> 로 재구성
+            Map<Long, List<SkillCoefficient>> coefsByItemIdMutable = new HashMap<>();
+            for (var mapping : skillMappings) {
+                Long itemId = mapping.getItem().getId();
+                Long skillId = mapping.getSkill().getId();
+                coefBySkillId.getOrDefault(skillId, List.of()).forEach(sc ->
+                        coefsByItemIdMutable.computeIfAbsent(itemId, k -> new ArrayList<>()).add(sc));
+            }
+            coefsByItemId = coefsByItemIdMutable;
+        }
 
         // ── 특성 레벨 수치 배치 로드 ──────────────────────────────────────────
         List<UserDeckMemberCharacteristic> allMemberChars =
@@ -237,6 +266,21 @@ public class DpsCalculatorService {
                 skillCoefficientRepository.findBySetGrantedSkillIdIn(allSetGrantedSkillIds).stream()
                         .collect(Collectors.groupingBy(sc -> sc.getSetGrantedSkill().getId()));
 
+        // ── 스킬 효과(적 디버프) 배치 로드 ────────────────────────────────────────
+        List<Long> mercenarySkillIds = mercCoefs.stream()
+                .filter(sc -> sc.getMercenarySkill() != null)
+                .map(sc -> sc.getMercenarySkill().getId())
+                .distinct().toList();
+        Map<Long, List<MercenarySkillEffect>> mercSkillEffectsBySkillId = mercenarySkillIds.isEmpty() ? Map.of() :
+                mercenarySkillEffectRepository.findBySkillIdIn(mercenarySkillIds).stream()
+                        .collect(Collectors.groupingBy(e -> e.getSkill().getId()));
+
+        List<Long> itemSkillIds = skillMappings.stream()
+                .map(m -> m.getSkill().getId()).distinct().toList();
+        Map<Long, List<ItemSkillEffect>> itemSkillEffectsBySkillId = itemSkillIds.isEmpty() ? Map.of() :
+                itemSkillEffectRepository.findBySkillIdIn(itemSkillIds).stream()
+                        .collect(Collectors.groupingBy(e -> e.getSkill().getId()));
+
         // ── 파티 버프 · 몬스터 디버프 · 특성 버프 집계 ─────────────────────────────
         Map<StatType, Integer> partyFlatBonus = new EnumMap<>(StatType.class);
         Map<StatType, Integer> partyPercentBonus = new EnumMap<>(StatType.class);
@@ -251,7 +295,9 @@ public class DpsCalculatorService {
         Map<Long, Map<String, Integer>> memberSkillDamageBonus = new HashMap<>();
         List<PartySkillDamageBuff> partySkillDamageBuffs = new ArrayList<>();
 
-        enemyResistPierceHolder[0] += applyDeckEffects(deck, partyFlatBonus, partyPercentBonus);
+        DeckEffectsResult deckEffectsResult = applyDeckEffects(deck, partyFlatBonus, partyPercentBonus);
+        enemyResistPierceHolder[0] += deckEffectsResult.enemyResistPierce();
+        List<SpiritElementBuff> spiritElementBuffs = deckEffectsResult.spiritElementBuffs();
 
         Map<Long, Map<Long, Integer>> charIndexByMercId = buildCharacteristicIndexByMercId(mercenaryIds);
 
@@ -320,6 +366,39 @@ public class DpsCalculatorService {
             }
         }
 
+        // ── 스킬 효과 기반 적 디버프 집계 ─────────────────────────────────────
+        // resolveSkillCoefs와 동일한 우선순위: 아이템 스킬 > 용병 스킬
+        for (UserDeckMember member : members) {
+            List<UserDeckMemberSlot> memberSlots = slotsByMemberId.getOrDefault(member.getId(), List.of());
+
+            boolean usedItemSkill = false;
+            for (UserDeckMemberSlot slot : memberSlots) {
+                if (coefsByItemId.containsKey(slot.getEquipmentItem().getItemId())) {
+                    Long itemId = slot.getEquipmentItem().getItemId();
+                    skillMappings.stream()
+                            .filter(m -> m.getItem().getId().equals(itemId))
+                            .map(m -> m.getSkill().getId())
+                            .flatMap(skillId -> itemSkillEffectsBySkillId.getOrDefault(skillId, List.of()).stream())
+                            .forEach(eff -> applyEnemyDebuff(eff.getStatKey(), eff.getStatValue(),
+                                    enemyResistPierceHolder, enemyMagicResistDebuff,
+                                    enemyHittingResistDebuff, enemyElementDebuff));
+                    usedItemSkill = true;
+                    break;
+                }
+            }
+
+            if (!usedItemSkill) {
+                coefsByMercId.getOrDefault(member.getMercenary().getId(), List.of()).stream()
+                        .filter(sc -> sc.getMercenarySkill() != null)
+                        .map(sc -> sc.getMercenarySkill().getId())
+                        .distinct()
+                        .flatMap(skillId -> mercSkillEffectsBySkillId.getOrDefault(skillId, List.of()).stream())
+                        .forEach(eff -> applyEnemyDebuff(eff.getStatKey(), eff.getStatValue(),
+                                enemyResistPierceHolder, enemyMagicResistDebuff,
+                                enemyHittingResistDebuff, enemyElementDebuff));
+            }
+        }
+
         // ── 멤버별 유효 스탯 산출 ─────────────────────────────────────────────
         Map<Long, Map<StatType, Integer>> effectiveStatsByMemberId = new HashMap<>();
 
@@ -380,6 +459,15 @@ public class DpsCalculatorService {
             // ③ 진법/층진 속성 지정 버프 (NONE/ADAPTIVE는 partyBonus에 이미 포함)
             applyDeckBuffSourcePerMember(deck.getJinbeopSource(), nature, selfFlat, selfPercent);
             applyDeckBuffSourcePerMember(deck.getCheungjinSource(), nature, selfFlat, selfPercent);
+
+            // ④ 속성 지정 정령 ALLY 버프 — 멤버 속성 일치 시에만 selfFlat에 합산 (nature null이면 스킵)
+            if (nature != null) {
+                for (SpiritElementBuff spBuff : spiritElementBuffs) {
+                    if (isElementApplicable(spBuff.element(), nature)) {
+                        accumulate(selfFlat, spBuff.statType(), spBuff.value());
+                    }
+                }
+            }
 
             // 최종 유효 스탯 = (기본 + selfFlat + partyFlat) × (1 + percent/100)
             Map<StatType, Integer> effectiveStats = new EnumMap<>(StatType.class);
@@ -514,6 +602,11 @@ public class DpsCalculatorService {
                         + coef.getCoefAtk() * baseAtk
                         + coef.getCoefLvl() * level;
 
+                int baseDmgMultiplier = stats.getOrDefault(StatType.BASE_DAMAGE_MULTIPLIER, 0);
+                if (baseDmgMultiplier != 0) {
+                    rawDmg *= (1.0 + baseDmgMultiplier / 100.0);
+                }
+
                 double skillDps = 0.0;
                 boolean calculated = false;
 
@@ -533,6 +626,16 @@ public class DpsCalculatorService {
 
                 skillResults.add(new SkillDpsResult(resolveSkillName(coef), skillDps, calculated));
                 memberRawDps += skillDps;
+            }
+
+            // 크리티컬 기대값 보정 (기본 크리티컬 = 3배 데미지 = 일반 대비 +200%, CRITICAL_DAMAGE는 추가)
+            // E[dps] = dps × (1 + critRate/100 × (2 + critDamage/100))
+            int critChance = stats.getOrDefault(StatType.CRITICAL_CHANCE, 0)
+                    + stats.getOrDefault(StatType.CRITICAL_RATE, 0);
+            if (critChance > 0) {
+                int critDamage = stats.getOrDefault(StatType.CRITICAL_DAMAGE, 0);
+                double critMultiplier = 1.0 + (critChance / 100.0) * (2.0 + critDamage / 100.0);
+                memberRawDps *= critMultiplier;
             }
 
             int memberElementValue = stats.getOrDefault(StatType.ELEMENT_VALUE, 0);
@@ -699,10 +802,11 @@ public class DpsCalculatorService {
      * 덱 단위 효과를 파티 버프와 적 디버프로 반영한다.
      * 반환값은 적 저항깎 증가분이다.
      */
-    private int applyDeckEffects(UserDeck deck,
-                                 Map<StatType, Integer> partyFlatBonus,
-                                 Map<StatType, Integer> partyPercentBonus) {
+    private DeckEffectsResult applyDeckEffects(UserDeck deck,
+                                               Map<StatType, Integer> partyFlatBonus,
+                                               Map<StatType, Integer> partyPercentBonus) {
         int enemyResistPierce = 0;
+        List<SpiritElementBuff> spiritElementBuffs = new ArrayList<>();
 
         List<Spirit> spirits = selectedSpirits(deck);
         boolean hasEarthLegend = spirits.stream()
@@ -719,7 +823,12 @@ public class DpsCalculatorService {
                     value *= 2.0f;
                 }
                 if (buff.getTarget() == BuffTarget.ALLY) {
-                    accumulate(partyFlatBonus, buff.getStatType(), Math.round(value));
+                    // NONE/ADAPTIVE는 전체 파티 버프, 속성 지정은 멤버별 처리
+                    if (buff.getElement() == Element.NONE || buff.getElement() == Element.ADAPTIVE) {
+                        accumulate(partyFlatBonus, buff.getStatType(), Math.round(value));
+                    } else {
+                        spiritElementBuffs.add(new SpiritElementBuff(buff.getElement(), buff.getStatType(), Math.round(value)));
+                    }
                 } else if (buff.getTarget() == BuffTarget.ENEMY
                         && buff.getStatType() == StatType.RESIST_PIERCE) {
                     enemyResistPierce += Math.round(value);
@@ -729,7 +838,7 @@ public class DpsCalculatorService {
 
         enemyResistPierce += applyDeckBuffSource(deck.getJinbeopSource(), partyFlatBonus, partyPercentBonus);
         enemyResistPierce += applyDeckBuffSource(deck.getCheungjinSource(), partyFlatBonus, partyPercentBonus);
-        return enemyResistPierce;
+        return new DeckEffectsResult(enemyResistPierce, spiritElementBuffs);
     }
 
     private List<Spirit> selectedSpirits(UserDeck deck) {
@@ -997,7 +1106,7 @@ public class DpsCalculatorService {
             case RESIST_PIERCE -> enemyResistPierceHolder[0] += Math.abs(value);
             case MAGIC_RESISTANCE -> enemyMagicResistDebuff[0] += value;
             case HITTING_RESISTANCE -> enemyHittingResistDebuff[0] += value;
-            case ELEMENT_VALUE -> enemyElementDebuff[0] += value;
+            case ELEMENT_VALUE, ELEMENT_PIERCE -> enemyElementDebuff[0] += Math.abs(value);
             default -> { /* DPS 계산 대상 외 ENEMY 디버프는 무시 */ }
         }
     }
@@ -1017,8 +1126,8 @@ public class DpsCalculatorService {
                 || statType == StatType.MAGIC_RESISTANCE
                 || statType == StatType.HITTING_RESISTANCE
                 || statType == StatType.ATTACK_SPEED
-                || statType == StatType.MOVE_SPEED
-                || statType == StatType.CRITICAL_CHANCE;
+                || statType == StatType.MOVE_SPEED;
+        // CRITICAL_CHANCE는 PERCENT 단위 스탯이지만 PERCENT_ADD = "% 포인트 가산"이므로 flat 처리
     }
 
     /** 스킬 DPS에 적용할 damage_percent 합산 배율 */
@@ -1059,7 +1168,7 @@ public class DpsCalculatorService {
                 });
     }
 
-    /** 각성 명왕 N명 × (전원 +5, EARTH +2 추가) — N명이면 N배 중첩 */
+    /** 각성 명왕 N명 × (EARTH는 2, 그 외 5 — 대체 관계, N명이면 N배 중첩) */
     private void applyAwakenedMyeongwangAllyBuff(List<UserDeckMember> members,
                                                   UserDeckMember target,
                                                   Map<StatType, Integer> effectiveStats) {
@@ -1069,10 +1178,10 @@ public class DpsCalculatorService {
         if (awakenedCount == 0) return;
 
         var allyBuff = awakenedMyungwangBuffCalculator.getCommonAllyBuff();
-        int bonus = (int) (Math.round(allyBuff.defaultValue()) * awakenedCount);
-        if (target.getMercenary().getNature() == Nature.EARTH) {
-            bonus += (int) (Math.round(allyBuff.earthValue()) * awakenedCount);
-        }
+        float perBuff = target.getMercenary().getNature() == Nature.EARTH
+                ? allyBuff.earthValue()
+                : allyBuff.defaultValue();
+        int bonus = (int) (Math.round(perBuff) * awakenedCount);
         effectiveStats.merge(StatType.ELEMENT_VALUE, bonus, Integer::sum);
     }
 
@@ -1080,5 +1189,8 @@ public class DpsCalculatorService {
         if (resistAfterDebuff >= RESIST_CAP) return RESIST_CAP_PASS_RATE;
         return Math.max(0.0, 100.0 - (resistAfterDebuff * 0.16 + 57.0));
     }
+
+    private record SpiritElementBuff(Element element, StatType statType, int value) {}
+    private record DeckEffectsResult(int enemyResistPierce, List<SpiritElementBuff> spiritElementBuffs) {}
 
 }

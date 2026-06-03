@@ -10,5 +10,6 @@ public record EquipmentDetailUpdateRequest(
         Long setId,               // null이면 세트 미소속
         boolean ritualApplicable,
         boolean hasSlotOption,
-        EquipSlot equipSlot       // null이면 미설정 (반지 등)
+        EquipSlot equipSlot,      // null이면 미설정 (반지 등)
+        boolean sainSword         // 사인검 여부 — 공명 주스텟 INTELLECT 강제 적용
 ) {}

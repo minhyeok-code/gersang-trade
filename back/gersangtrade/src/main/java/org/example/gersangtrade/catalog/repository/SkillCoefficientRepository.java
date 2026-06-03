@@ -21,7 +21,6 @@ public interface SkillCoefficientRepository extends JpaRepository<SkillCoefficie
             LEFT JOIN FETCH sc.mercenarySkill ms
             LEFT JOIN FETCH ms.mercenary
             LEFT JOIN FETCH sc.itemSkill isk
-            LEFT JOIN FETCH isk.item
             """)
     java.util.List<SkillCoefficient> findAllWithOwners();
 
@@ -31,7 +30,6 @@ public interface SkillCoefficientRepository extends JpaRepository<SkillCoefficie
             LEFT JOIN FETCH sc.mercenarySkill ms
             LEFT JOIN FETCH ms.mercenary
             LEFT JOIN FETCH sc.itemSkill isk
-            LEFT JOIN FETCH isk.item
             WHERE sc.castsPerSecond IS NULL AND sc.tickIntervalMs IS NULL
             """)
     java.util.List<SkillCoefficient> findUnmeasuredWithOwners();
@@ -45,15 +43,14 @@ public interface SkillCoefficientRepository extends JpaRepository<SkillCoefficie
     java.util.List<SkillCoefficient> findByMercenaryIdIn(
             @org.springframework.data.repository.query.Param("mercenaryIds") java.util.List<Long> mercenaryIds);
 
-    /** 아이템 ID 목록으로 아이템 스킬 계수 일괄 조회 — DPS 계산기 배치 로딩용 */
+    /** 스킬 ID 목록으로 아이템 스킬 계수 일괄 조회 — DPS 계산기 배치 로딩용 */
     @org.springframework.data.jpa.repository.Query("""
             SELECT sc FROM SkillCoefficient sc
             JOIN FETCH sc.itemSkill isk
-            JOIN FETCH isk.item
-            WHERE isk.item.id IN :itemIds
+            WHERE isk.id IN :skillIds
             """)
-    java.util.List<SkillCoefficient> findByItemIdIn(
-            @org.springframework.data.repository.query.Param("itemIds") java.util.List<Long> itemIds);
+    java.util.List<SkillCoefficient> findByItemSkillIdIn(
+            @org.springframework.data.repository.query.Param("skillIds") java.util.List<Long> skillIds);
 
     /** 세트 부여 스킬 ID 목록으로 계수 일괄 조회 — DPS 계산기 배치 로딩용 */
     @org.springframework.data.jpa.repository.Query("""

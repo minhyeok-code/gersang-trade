@@ -69,7 +69,11 @@
       "Bash(curl -s \"http://localhost:8080/api/items/search?q=%EC%95%84%EC%9D%B4%ED%85%9C&limit=5\")",
       "Bash(curl -s \"http://localhost:8080/api/items/search?q=item&limit=3\")",
       "Bash(mysql *)",
-      "Bash(npm list *)"
+      "Bash(npm list *)",
+      "Bash(npx --prefix \"D:/Java/gersangTrade/front\" tsc --noEmit --project \"D:/Java/gersangTrade/front/tsconfig.json\")",
+      "Bash(npx --prefix \"D:\\\\Java\\\\gersangTrade\\\\front\" tsc --noEmit --project \"D:\\\\Java\\\\gersangTrade\\\\front\\\\tsconfig.json\")",
+      "Bash(./gradlew bootRun)",
+      "Bash(echo \"EXIT:$?\")"
     ]
   }
 }

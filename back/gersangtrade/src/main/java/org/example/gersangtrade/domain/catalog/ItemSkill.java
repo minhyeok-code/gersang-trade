@@ -8,9 +8,9 @@ import lombok.NoArgsConstructor;
 import org.example.gersangtrade.domain.catalog.enums.SkillBehaviorType;
 
 /**
- * 아이템 고유 스킬 엔티티.
- * 거상짱 아이템 페이지의 .w-stat 셀에서 수치 없이 텍스트만 표기되는 스킬명을 저장한다.
- * 예: 도선빙의, 화염방패, 신선도술 등
+ * 아이템 스킬 엔티티.
+ * skill_name이 전역 UNIQUE — 동일 스킬명은 하나의 행으로 공유된다.
+ * 아이템과의 관계는 item_skill_mapping 조인 테이블로 관리한다.
  *
  * <p>skillKey는 거니버스 내부 식별 키다. 거상짱 크롤링 시에는 null이며,
  * 거니버스 데이터 적재 후 채워진다. SkillCoefficient와의 연결 키로 사용된다.
@@ -19,8 +19,8 @@ import org.example.gersangtrade.domain.catalog.enums.SkillBehaviorType;
 @Table(
         name = "item_skills",
         uniqueConstraints = @UniqueConstraint(
-                name = "uq_item_skills_item_skill",
-                columnNames = {"item_id", "skill_name"}
+                name = "uq_item_skills_skill_name",
+                columnNames = {"skill_name"}
         )
 )
 @Getter
@@ -30,10 +30,6 @@ public class ItemSkill {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "item_id", nullable = false)
-    private Item item;
 
     @Column(name = "skill_name", nullable = false, length = 100)
     private String skillName;
@@ -79,10 +75,9 @@ public class ItemSkill {
     private String note;
 
     @Builder
-    public ItemSkill(Item item, String skillName, String skillKey,
+    public ItemSkill(String skillName, String skillKey,
                      SkillBehaviorType skillBehaviorType, boolean replacesBaseSkill,
                      Integer triggerEveryN, String triggerBaseSkillKey, String note) {
-        this.item = item;
         this.skillName = skillName;
         this.skillKey = skillKey;
         this.skillBehaviorType = skillBehaviorType;

@@ -83,11 +83,20 @@ public class EquipmentItem {
     @Column(name = "has_slot_option", nullable = false)
     private boolean hasSlotOption = false;
 
+    /**
+     * 사인검 여부.
+     * true이면 주인공 공명 주스텟을 속성 무관 지력(INTELLECT)으로 결정한다.
+     * 관리자가 수동으로 설정한다.
+     */
+    @Column(name = "is_sain_sword", nullable = false)
+    private boolean sainSword = false;
+
     @Builder
     public EquipmentItem(Item item, EquipmentKind equipmentKind,
                          EquipmentSlot slot, EquipmentSet equipmentSet,
                          boolean ritualApplicable, boolean hasSlotOption,
-                         EquipSlot equipSlot, Enhancement enhancement) {
+                         EquipSlot equipSlot, Enhancement enhancement,
+                         boolean sainSword) {
         this.item = item;
         this.equipmentKind = equipmentKind;
         this.slot = slot;
@@ -96,6 +105,7 @@ public class EquipmentItem {
         this.hasSlotOption = hasSlotOption;
         this.equipSlot = equipSlot;
         this.enhancement = enhancement;
+        this.sainSword = sainSword;
     }
 
     /** 세트 크롤러 upsert 시 세트 소속 FK 갱신 */
@@ -109,11 +119,11 @@ public class EquipmentItem {
         if (equipSlot != null) this.equipSlot = equipSlot;
     }
 
-    /** 관리자 수동 수정 — 슬롯, 장비 종류, 주술 가능 여부, 홈 옵션 여부, 세트 소속, 덱 슬롯, 강화 단계 */
+    /** 관리자 수동 수정 — 슬롯, 장비 종류, 주술 가능 여부, 홈 옵션 여부, 세트 소속, 덱 슬롯, 강화 단계, 사인검 여부 */
     public void updateInfo(EquipmentSlot slot, EquipmentKind equipmentKind,
                            boolean ritualApplicable, boolean hasSlotOption,
                            EquipmentSet equipmentSet, EquipSlot equipSlot,
-                           Enhancement enhancement) {
+                           Enhancement enhancement, boolean sainSword) {
         if (slot != null) this.slot = slot;
         if (equipmentKind != null) this.equipmentKind = equipmentKind;
         this.ritualApplicable = ritualApplicable;
@@ -121,5 +131,6 @@ public class EquipmentItem {
         this.equipmentSet = equipmentSet;
         this.equipSlot = equipSlot;
         this.enhancement = enhancement;
+        this.sainSword = sainSword;
     }
 }

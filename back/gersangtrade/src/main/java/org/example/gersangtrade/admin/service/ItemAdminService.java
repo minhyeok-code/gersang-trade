@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.example.gersangtrade.admin.dto.request.EquipmentDetailUpdateRequest;
 import org.example.gersangtrade.admin.dto.request.ItemStatReplaceRequest;
 import org.example.gersangtrade.admin.dto.request.ItemUpdateRequest;
+import org.example.gersangtrade.admin.dto.request.SkillEffectReplaceRequest;
 import org.example.gersangtrade.admin.dto.request.SkillReplaceRequest;
 import org.example.gersangtrade.admin.dto.response.ItemAdminResponse;
 import org.example.gersangtrade.admin.dto.response.ItemDetailAdminResponse;
@@ -14,6 +15,8 @@ import org.example.gersangtrade.catalog.repository.EquipmentSetRepository;
 import org.example.gersangtrade.catalog.repository.EquipmentSetPieceRepository;
 import org.example.gersangtrade.catalog.repository.ItemMercenaryRestrictionRepository;
 import org.example.gersangtrade.catalog.repository.ItemRepository;
+import org.example.gersangtrade.catalog.repository.ItemSkillEffectRepository;
+import org.example.gersangtrade.catalog.repository.ItemSkillMappingRepository;
 import org.example.gersangtrade.catalog.repository.ItemSkillRepository;
 import org.example.gersangtrade.catalog.repository.ItemStatRepository;
 import org.example.gersangtrade.catalog.repository.MaterialItemRepository;
@@ -24,6 +27,8 @@ import org.example.gersangtrade.domain.catalog.EquipmentSet;
 import org.example.gersangtrade.domain.catalog.Item;
 import org.example.gersangtrade.domain.catalog.ItemMercenaryRestriction;
 import org.example.gersangtrade.domain.catalog.ItemSkill;
+import org.example.gersangtrade.domain.catalog.ItemSkillEffect;
+import org.example.gersangtrade.domain.catalog.ItemSkillMapping;
 import org.example.gersangtrade.domain.catalog.ItemStat;
 import org.example.gersangtrade.domain.catalog.Mercenary;
 import org.example.gersangtrade.domain.catalog.enums.Element;
@@ -50,6 +55,8 @@ public class ItemAdminService {
     private final ItemRepository itemRepository;
     private final ItemStatRepository itemStatRepository;
     private final ItemSkillRepository itemSkillRepository;
+    private final ItemSkillMappingRepository itemSkillMappingRepository;
+    private final ItemSkillEffectRepository itemSkillEffectRepository;
     private final EquipmentItemRepository equipmentItemRepository;
     private final EquipmentSetRepository equipmentSetRepository;
     private final MaterialItemRepository materialItemRepository;
@@ -107,11 +114,8 @@ public class ItemAdminService {
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
                             "존재하지 않는 세트 ID입니다: " + req.setId()));
         }
-        eq.updateInfo(req.slot(), req.equipmentKind(), req.ritualApplicable(), req.hasSlotOption(), set, req.equipSlot(), null);
-
-        List<ItemStat> stats = itemStatRepository.findByItemId(itemId);
-        List<ItemSkill> skills = itemSkillRepository.findByItemId(itemId);
-        return ItemDetailAdminResponse.of(item, eq, stats, skills);
+        eq.updateInfo(req.slot(), req.equipmentKind(), req.ritualApplicable(), req.hasSlotOption(), set, req.equipSlot(), null, req.sainSword());
+        return buildDetail(itemId);
     }
 
     // ── 아이템 상세 조회 ─────────────────────────────────────────────────────────
@@ -121,11 +125,7 @@ public class ItemAdminService {
      */
     @Transactional(readOnly = true)
     public ItemDetailAdminResponse getItem(Long itemId) {
-        Item item = getItemOrThrow(itemId);
-        EquipmentItem equipmentItem = equipmentItemRepository.findWithItemByItemId(itemId).orElse(null);
-        List<ItemStat> stats = itemStatRepository.findByItemId(itemId);
-        List<ItemSkill> skills = itemSkillRepository.findByItemId(itemId);
-        return ItemDetailAdminResponse.of(item, equipmentItem, stats, skills);
+        return buildDetail(itemId);
     }
 
     // ── 아이템 기본정보 수정 ─────────────────────────────────────────────────────
@@ -142,10 +142,7 @@ public class ItemAdminService {
     public ItemDetailAdminResponse updateInfo(Long itemId, ItemUpdateRequest req) {
         Item item = getItemOrThrow(itemId);
         item.updateInfo(req.name(), req.type(), req.tradeCategory());
-        EquipmentItem equipmentItem = equipmentItemRepository.findWithItemByItemId(itemId).orElse(null);
-        List<ItemStat> stats = itemStatRepository.findByItemId(itemId);
-        List<ItemSkill> skills = itemSkillRepository.findByItemId(itemId);
-        return ItemDetailAdminResponse.of(item, equipmentItem, stats, skills);
+        return buildDetail(itemId);
     }
 
     // ── 아이템 스탯 전체 교체 ───────────────────────────────────────────────────
@@ -160,7 +157,7 @@ public class ItemAdminService {
     public ItemDetailAdminResponse replaceStats(Long itemId, ItemStatReplaceRequest req) {
         Item item = getItemOrThrow(itemId);
         itemStatRepository.deleteByItemId(itemId);
-        List<ItemStat> saved = req.stats().stream()
+        req.stats().stream()
                 .map(e -> itemStatRepository.save(ItemStat.builder()
                         .item(item)
                         .statType(e.statType())
@@ -168,9 +165,7 @@ public class ItemAdminService {
                         .value(e.value())
                         .build()))
                 .toList();
-        EquipmentItem equipmentItem = equipmentItemRepository.findWithItemByItemId(itemId).orElse(null);
-        List<ItemSkill> skills = itemSkillRepository.findByItemId(itemId);
-        return ItemDetailAdminResponse.of(item, equipmentItem, saved, skills);
+        return buildDetail(itemId);
     }
 
     // ── 아이템 스킬 전체 교체 ───────────────────────────────────────────────────
@@ -183,17 +178,20 @@ public class ItemAdminService {
     @CacheEvict(value = CacheConfig.EQUIPMENT_SLOT, allEntries = true)
     public ItemDetailAdminResponse replaceSkills(Long itemId, SkillReplaceRequest req) {
         Item item = getItemOrThrow(itemId);
-        itemSkillRepository.deleteByItemId(itemId);
-        List<ItemSkill> saved = req.skills().stream()
+        // 기존 매핑만 삭제 — 공유 스킬 행(ItemSkill) 자체는 삭제하지 않음
+        itemSkillMappingRepository.deleteByItemId(itemId);
+        req.skills().stream()
                 .filter(s -> s != null && !s.isBlank())
-                .map(s -> itemSkillRepository.save(ItemSkill.builder()
-                        .item(item)
-                        .skillName(s.trim())
-                        .build()))
-                .toList();
-        EquipmentItem equipmentItem = equipmentItemRepository.findWithItemByItemId(itemId).orElse(null);
-        List<ItemStat> stats = itemStatRepository.findByItemId(itemId);
-        return ItemDetailAdminResponse.of(item, equipmentItem, stats, saved);
+                .forEach(s -> {
+                    String name = s.trim();
+                    ItemSkill skill = itemSkillRepository.findBySkillName(name)
+                            .orElseGet(() -> itemSkillRepository.save(
+                                    ItemSkill.builder().skillName(name).build()));
+                    if (!itemSkillMappingRepository.existsByItemIdAndSkillId(item.getId(), skill.getId())) {
+                        itemSkillMappingRepository.save(new ItemSkillMapping(item, skill));
+                    }
+                });
+        return buildDetail(itemId);
     }
 
     // ── 아이템 하드 삭제 ────────────────────────────────────────────────────────
@@ -211,7 +209,8 @@ public class ItemAdminService {
         Item item = getItemOrThrow(itemId);
         try {
             itemStatRepository.deleteByItemId(itemId);
-            itemSkillRepository.deleteByItemId(itemId);
+            // 매핑만 삭제 — 공유 스킬 행(ItemSkill) 자체는 삭제하지 않음
+            itemSkillMappingRepository.deleteByItemId(itemId);
 
             equipmentItemRepository.findById(itemId).ifPresent(equipmentItem -> {
                 ritualApplicabilityRepository.deleteByEquipmentItem_ItemId(itemId);
@@ -281,11 +280,58 @@ public class ItemAdminService {
         itemMercenaryRestrictionRepository.delete(restriction);
     }
 
+    // ── 스킬 효과 전체 교체 ──────────────────────────────────────────────────────
+
+    /**
+     * 스킬 효과를 PUT 의미론으로 교체한다.
+     * 기존 효과를 전부 삭제하고 요청 목록으로 재적재한다.
+     */
+    @Transactional
+    public ItemDetailAdminResponse.SkillEntry replaceSkillEffects(Long itemId, Long skillId, SkillEffectReplaceRequest req) {
+        ItemSkill skill = itemSkillRepository.findById(skillId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "스킬을 찾을 수 없습니다: " + skillId));
+        // 해당 아이템에 이 스킬이 매핑되어 있는지 검증
+        if (!itemSkillMappingRepository.existsByItemIdAndSkillId(itemId, skillId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "해당 아이템의 스킬이 아닙니다.");
+        }
+
+        itemSkillEffectRepository.deleteBySkillId(skillId);
+        List<ItemSkillEffect> saved = req.effects().stream()
+                .map(e -> itemSkillEffectRepository.save(ItemSkillEffect.builder()
+                        .skill(skill)
+                        .statKey(e.statKey())
+                        .statValue(e.statValue())
+                        .build()))
+                .toList();
+
+        List<ItemDetailAdminResponse.EffectEntry> effects = saved.stream()
+                .map(e -> new ItemDetailAdminResponse.EffectEntry(e.getStatKey(), e.getStatValue()))
+                .toList();
+        return new ItemDetailAdminResponse.SkillEntry(skill.getId(), skill.getSkillName(), effects);
+    }
+
     // ── 내부 헬퍼 ────────────────────────────────────────────────────────────────
 
     private Item getItemOrThrow(Long id) {
         return itemRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                         "아이템을 찾을 수 없습니다: " + id));
+    }
+
+    /** 아이템 ID로 상세 응답을 조립한다. 스킬 효과를 배치 로드해 N+1을 방지한다. */
+    private ItemDetailAdminResponse buildDetail(Long itemId) {
+        Item item = getItemOrThrow(itemId);
+        EquipmentItem equipmentItem = equipmentItemRepository.findWithItemByItemId(itemId).orElse(null);
+        List<ItemStat> stats = itemStatRepository.findByItemId(itemId);
+        // 매핑 테이블을 통해 이 아이템에 연결된 스킬 목록 조회
+        List<ItemSkill> skills = itemSkillMappingRepository.findByItemId(itemId).stream()
+                .map(ItemSkillMapping::getSkill)
+                .toList();
+        List<Long> skillIds = skills.stream().map(ItemSkill::getId).toList();
+        Map<Long, List<ItemSkillEffect>> effectsBySkillId = itemSkillEffectRepository.findBySkillIdIn(skillIds)
+                .stream().collect(Collectors.groupingBy(e -> e.getSkill().getId()));
+        return ItemDetailAdminResponse.of(item, equipmentItem, stats, skills, effectsBySkillId);
     }
 }

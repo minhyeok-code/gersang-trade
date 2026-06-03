@@ -31,6 +31,9 @@ public interface ItemRepository extends JpaRepository<Item, Long> {
     /** 아이템명으로 단건 조회 — 크롤러 UPSERT 패턴에서 기존 레코드 확인에 사용된다 */
     Optional<Item> findByName(String name);
 
+    /** 이름에 특정 문자열이 포함된 아이템 목록 — ItemStat correction 등에서 사용 */
+    List<Item> findByNameContaining(String keyword);
+
     /** imageUrl이 null인 아이템 전체 조회 — ItemDetailStep의 처리 대상 선정에 사용된다 */
     List<Item> findByImageUrlIsNull();
 

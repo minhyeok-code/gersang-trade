@@ -5,8 +5,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.example.gersangtrade.catalog.repository.LegendGeneralCharacteristicRepository;
 import org.example.gersangtrade.catalog.repository.LegendGeneralPassiveRepository;
 import org.example.gersangtrade.catalog.repository.LegendGeneralRepository;
+import org.example.gersangtrade.catalog.repository.MercenaryCharacteristicRepository;
 import org.example.gersangtrade.catalog.repository.MercenaryRepository;
 import org.example.gersangtrade.catalog.repository.MercenarySkillRepository;
+import org.example.gersangtrade.domain.catalog.MercenaryCharacteristic;
 import org.example.gersangtrade.domain.catalog.MercenarySkill;
 import org.example.gersangtrade.domain.catalog.CharacteristicEffect;
 import org.example.gersangtrade.domain.catalog.LegendGeneral;
@@ -15,6 +17,7 @@ import org.example.gersangtrade.domain.catalog.LegendGeneralPassive;
 import org.example.gersangtrade.domain.catalog.Mercenary;
 import org.example.gersangtrade.domain.catalog.enums.BuffTarget;
 import org.example.gersangtrade.domain.catalog.enums.BuffValueType;
+import org.example.gersangtrade.domain.catalog.enums.CharacteristicApplyType;
 import org.example.gersangtrade.domain.catalog.enums.Element;
 import org.example.gersangtrade.domain.catalog.enums.LegendGeneralType;
 import org.example.gersangtrade.domain.catalog.enums.MercenaryCategory;
@@ -28,7 +31,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 전설장수 15마리 초기 데이터 시딩.
@@ -44,19 +50,34 @@ public class LegendGeneralSeeder implements ApplicationRunner {
     private final LegendGeneralRepository legendGeneralRepository;
     private final LegendGeneralPassiveRepository passiveRepository;
     private final LegendGeneralCharacteristicRepository characteristicRepository;
+    private final MercenaryCharacteristicRepository mercenaryCharacteristicRepository;
     private final MercenarySkillRepository skillRepository;
+
+    /** 시딩 실행 중에만 유효한 임시 상태 — run() 시작 시점에 패시브가 있는 LG ID 집합 */
+    private Set<Long> existingPassiveLgIds = new HashSet<>();
 
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
-        // 속성 정정은 시딩 여부와 무관하게 항상 실행 (기존 DB에도 적용)
+        // 속성 정정·스텁 보장·데이터 정정은 시딩 여부와 무관하게 항상 실행 (기존 DB에도 적용)
         correctNatures();
+        ensureCharacteristicStubs();
+        correctBajiraoCharacteristics();
 
-        // 패시브 존재 여부로 완전 시딩 여부 판단 (Mercenary만 있고 패시브 없는 부분 시딩 방지)
-        if (passiveRepository.count() > 0) {
-            log.debug("전설장수 시딩 skip: 이미 존재");
+        long passiveCount = passiveRepository.count();
+        long charCount = characteristicRepository.count();
+        log.info("전설장수 시딩 상태 — passives={}, characteristics={}", passiveCount, charCount);
+
+        // 패시브·특성 둘 다 존재할 때만 skip (패시브만 있고 특성이 없는 부분 시딩 상태도 처리)
+        if (passiveCount > 0 && charCount > 0) {
+            log.info("전설장수 시딩 skip: 이미 존재");
             return;
         }
+
+        // 시딩 시작 전 기존 패시브 보유 LG ID 캡처 — addPassive에서 재저장 방지
+        existingPassiveLgIds = passiveRepository.findAll().stream()
+                .map(p -> p.getLegendGeneral().getId())
+                .collect(Collectors.toSet());
 
         log.info("전설장수 시딩 시작");
         // 타입 A
@@ -101,6 +122,8 @@ public class LegendGeneralSeeder implements ApplicationRunner {
             LegendGeneralCharacteristic row = buildChar(lg, 1, "고취", lvl);
             addEffect(row, StatType.SKILL_DAMAGE_PERCENT, Element.NONE, BuffValueType.PERCENT_ADD, BuffTarget.SELF, c1[lvl-1]);
         }
+        addCharacteristicStub(lg, 0, "폭뢰");
+        addCharacteristicStub(lg, 1, "고취");
     }
 
     private void seedMaenghwak() {
@@ -123,6 +146,8 @@ public class LegendGeneralSeeder implements ApplicationRunner {
             LegendGeneralCharacteristic row = buildChar(lg, 1, "고무", lvl);
             addEffect(row, StatType.SKILL_DAMAGE_PERCENT, Element.NONE, BuffValueType.PERCENT_ADD, BuffTarget.SELF, c1[lvl-1]);
         }
+        addCharacteristicStub(lg, 0, "돌입");
+        addCharacteristicStub(lg, 1, "고무");
     }
 
     private void seedNobutsuna() {
@@ -151,6 +176,8 @@ public class LegendGeneralSeeder implements ApplicationRunner {
             addEffect(row, StatType.SKILL_DAMAGE_PERCENT, Element.NONE, BuffValueType.PERCENT_ADD, BuffTarget.SELF, sdPct[lvl-1]);
             addEffect(row, StatType.CRITICAL_CHANCE, Element.NONE, BuffValueType.PERCENT_ADD, BuffTarget.SELF, critPct[lvl-1]);
         }
+        addCharacteristicStub(lg, 0, "격렬");
+        addCharacteristicStub(lg, 1, "기습");
     }
 
     private void seedBajirao() {
@@ -158,23 +185,25 @@ public class LegendGeneralSeeder implements ApplicationRunner {
         addSkill(lg.getMercenary(), "광기의칼날", "rhkdrldlekfsk");
 
         addPassive(lg, StatType.DAMAGE_PERCENT, Element.NONE, BuffValueType.PERCENT_ADD, BuffTarget.ALLY,
-                200, 0.5f, 10, 0.5f, null);
+                200, 1.0f, 10, 0.5f, null);
 
-        // 특성 0: 고양 — DAMAGE_PERCENT NONE + DAMAGE_PERCENT EARTH ALLY
-        float[] c0none  = {0.5f, 1.0f, 1.5f, 2.0f, 2.5f, 3.0f, 3.5f, 4.0f, 5.0f, 6.0f};
-        float[] c0earth = {1, 1, 1, 2, 2, 3, 3, 4, 4, 5};
+        // 특성 0: 고양 — DAMAGE_PERCENT NONE ALLY
+        float[] c0 = {0.5f, 1.0f, 1.5f, 2.0f, 2.5f, 3.0f, 3.5f, 4.0f, 5.0f, 6.0f};
         for (int lvl = 1; lvl <= 10; lvl++) {
             LegendGeneralCharacteristic row = buildChar(lg, 0, "고양", lvl);
-            addEffect(row, StatType.DAMAGE_PERCENT, Element.NONE,  BuffValueType.PERCENT_ADD, BuffTarget.ALLY, c0none[lvl-1]);
-            addEffect(row, StatType.DAMAGE_PERCENT, Element.EARTH, BuffValueType.PERCENT_ADD, BuffTarget.ALLY, c0earth[lvl-1]);
+            addEffect(row, StatType.DAMAGE_PERCENT, Element.NONE, BuffValueType.PERCENT_ADD, BuffTarget.ALLY, c0[lvl-1]);
         }
 
-        // 특성 1: 광분 — 스킬 데미지 SELF
-        float[] c1 = {10, 20, 30, 40, 50, 60, 70, 80, 90, 100};
+        // 특성 1: 광분 — 스킬 데미지 SELF + 지속성 데미지증가(EARTH) ALLY
+        float[] c1skill = {10, 20, 30, 40, 50, 60, 70, 80, 90, 100};
+        float[] c1earth = {1, 1, 1, 2, 2, 3, 3, 4, 4, 5};
         for (int lvl = 1; lvl <= 10; lvl++) {
             LegendGeneralCharacteristic row = buildChar(lg, 1, "광분", lvl);
-            addEffect(row, StatType.SKILL_DAMAGE_PERCENT, Element.NONE, BuffValueType.PERCENT_ADD, BuffTarget.SELF, c1[lvl-1]);
+            addEffect(row, StatType.SKILL_DAMAGE_PERCENT, Element.NONE,  BuffValueType.PERCENT_ADD, BuffTarget.SELF, c1skill[lvl-1]);
+            addEffect(row, StatType.DAMAGE_PERCENT,       Element.EARTH, BuffValueType.PERCENT_ADD, BuffTarget.ALLY, c1earth[lvl-1]);
         }
+        addCharacteristicStub(lg, 0, "고양");
+        addCharacteristicStub(lg, 1, "광분");
     }
 
     private void seedChoseon() {
@@ -193,6 +222,8 @@ public class LegendGeneralSeeder implements ApplicationRunner {
             LegendGeneralCharacteristic row = buildChar(lg, 1, "지능", lvl);
             addEffect(row, StatType.SKILL_DAMAGE_PERCENT, Element.NONE, BuffValueType.PERCENT_ADD, BuffTarget.SELF, c1[lvl-1]);
         }
+        addCharacteristicStub(lg, 0, "결빙");
+        addCharacteristicStub(lg, 1, "지능");
     }
 
     // ── 타입 B ─────────────────────────────────────────────────────────────────
@@ -214,6 +245,8 @@ public class LegendGeneralSeeder implements ApplicationRunner {
             LegendGeneralCharacteristic row = buildChar(lg, 1, "연마", lvl);
             addEffect(row, StatType.SKILL_DAMAGE_PERCENT, Element.NONE, BuffValueType.PERCENT_ADD, BuffTarget.SELF, c1[lvl-1]);
         }
+        addCharacteristicStub(lg, 0, "발도");
+        addCharacteristicStub(lg, 1, "연마");
     }
 
     private void seedAkbareu() {
@@ -233,6 +266,8 @@ public class LegendGeneralSeeder implements ApplicationRunner {
             LegendGeneralCharacteristic row = buildChar(lg, 1, "부호", lvl);
             addEffect(row, StatType.ELEMENT_VALUE, Element.ADAPTIVE, BuffValueType.FLAT, BuffTarget.ALLY, c1[lvl-1]);
         }
+        addCharacteristicStub(lg, 0, "사풍");
+        addCharacteristicStub(lg, 1, "부호");
     }
 
     private void seedHonggildong() {
@@ -255,6 +290,8 @@ public class LegendGeneralSeeder implements ApplicationRunner {
             addEffect(row, StatType.SKILL_DAMAGE_PERCENT, Element.NONE, BuffValueType.PERCENT_ADD, BuffTarget.SELF,  sd[lvl-1]);
             addEffect(row, StatType.HITTING_RESISTANCE,   Element.NONE, BuffValueType.PERCENT_ADD, BuffTarget.ENEMY, hit[lvl-1]);
         }
+        addCharacteristicStub(lg, 0, "풍주");
+        addCharacteristicStub(lg, 1, "용오름");
     }
 
     private void seedYeopo() {
@@ -277,6 +314,8 @@ public class LegendGeneralSeeder implements ApplicationRunner {
             addEffect(row, StatType.SKILL_DAMAGE_PERCENT, Element.NONE, BuffValueType.PERCENT_ADD, BuffTarget.SELF,  sd[lvl-1]);
             addEffect(row, StatType.MAGIC_RESISTANCE,     Element.NONE, BuffValueType.PERCENT_ADD, BuffTarget.ENEMY, mag[lvl-1]);
         }
+        addCharacteristicStub(lg, 0, "화주");
+        addCharacteristicStub(lg, 1, "무쌍");
     }
 
     private void seedChiyome() {
@@ -297,6 +336,8 @@ public class LegendGeneralSeeder implements ApplicationRunner {
             LegendGeneralCharacteristic row = buildChar(lg, 1, "수주", lvl);
             addEffect(row, StatType.DAMAGE_PERCENT, Element.WATER, BuffValueType.PERCENT_ADD, BuffTarget.ALLY, c1[lvl-1]);
         }
+        addCharacteristicStub(lg, 0, "현성");
+        addCharacteristicStub(lg, 1, "수주");
     }
 
     private void seedRejina() {
@@ -321,6 +362,8 @@ public class LegendGeneralSeeder implements ApplicationRunner {
             addEffect(row, StatType.SKILL_DAMAGE_PERCENT, Element.NONE, BuffValueType.PERCENT_ADD, BuffTarget.SELF, sd[lvl-1]);
             addEffect(row, StatType.ATTACK_SPEED,         Element.NONE, BuffValueType.PERCENT_ADD, BuffTarget.ALLY, aspeed[lvl-1]);
         }
+        addCharacteristicStub(lg, 0, "지주");
+        addCharacteristicStub(lg, 1, "속사");
     }
 
     private void seedHwamokran() {
@@ -341,6 +384,8 @@ public class LegendGeneralSeeder implements ApplicationRunner {
             LegendGeneralCharacteristic row = buildChar(lg, 1, "결의", lvl);
             addEffect(row, StatType.SKILL_DAMAGE_PERCENT, Element.NONE, BuffValueType.PERCENT_ADD, BuffTarget.SELF, c1[lvl-1]);
         }
+        addCharacteristicStub(lg, 0, "집중");
+        addCharacteristicStub(lg, 1, "결의");
     }
 
     private void seedManseonya() {
@@ -360,6 +405,8 @@ public class LegendGeneralSeeder implements ApplicationRunner {
             LegendGeneralCharacteristic row = buildChar(lg, 1, "분노", lvl);
             addEffect(row, StatType.SKILL_DAMAGE_PERCENT, Element.NONE, BuffValueType.PERCENT_ADD, BuffTarget.SELF, c1[lvl-1]);
         }
+        addCharacteristicStub(lg, 0, "뇌주");
+        addCharacteristicStub(lg, 1, "분노");
     }
 
     private void seedMajo() {
@@ -379,6 +426,8 @@ public class LegendGeneralSeeder implements ApplicationRunner {
             LegendGeneralCharacteristic row = buildChar(lg, 1, "가호", lvl);
             addEffect(row, StatType.SKILL_DAMAGE_PERCENT, Element.NONE, BuffValueType.PERCENT_ADD, BuffTarget.SELF, c1[lvl-1]);
         }
+        addCharacteristicStub(lg, 0, "혼란");
+        addCharacteristicStub(lg, 1, "가호");
     }
 
     private void seedChoimuseon() {
@@ -398,9 +447,92 @@ public class LegendGeneralSeeder implements ApplicationRunner {
             LegendGeneralCharacteristic row = buildChar(lg, 1, "집중", lvl);
             addEffect(row, StatType.SKILL_DAMAGE_PERCENT, Element.NONE, BuffValueType.PERCENT_ADD, BuffTarget.SELF, c1[lvl-1]);
         }
+        addCharacteristicStub(lg, 0, "포화");
+        addCharacteristicStub(lg, 1, "집중");
     }
 
     // ── 헬퍼 ────────────────────────────────────────────────────────────────────
+
+    /**
+     * MercenaryCharacteristic 스텁이 없는 전설장수에만 스텁을 생성한다.
+     * 시딩 여부와 무관하게 항상 실행 — 기존 DB에 스텁이 누락된 경우에도 보완된다.
+     */
+    private void ensureCharacteristicStubs() {
+        record LgStub(String key, String char0, String char1) {}
+        var stubs = List.of(
+                new LgStub("joomong",          "폭뢰",   "고취"),
+                new LgStub("maenghwaek",       "돌입",   "고무"),
+                new LgStub("nobootsuna",       "격렬",   "기습"),
+                new LgStub("bajirao",          "고양",   "광분"),
+                new LgStub("chosun",           "결빙",   "지능"),
+                new LgStub("bokuten",          "발도",   "연마"),
+                new LgStub("akbar",            "사풍",   "부호"),
+                new LgStub("honggildong",      "풍주",   "용오름"),
+                new LgStub("yeopo",            "화주",   "무쌍"),
+                new LgStub("mochizki-chiyome", "현성",   "수주"),
+                new LgStub("fpwlsktnfxksk",    "지주",   "속사"),
+                new LgStub("hwamokran",        "집중",   "결의"),
+                new LgStub("tjsdlsakstjsdi",   "뇌주",   "분노"),
+                new LgStub("majo",             "혼란",   "가호"),
+                new LgStub("choimoosun",       "포화",   "집중")
+        );
+        for (var s : stubs) {
+            mercenaryRepository.findByKey(s.key()).ifPresent(mercenary -> {
+                createStubIfAbsent(mercenary, 0, s.char0());
+                createStubIfAbsent(mercenary, 1, s.char1());
+            });
+        }
+    }
+
+    /**
+     * 바지라오 특성 데이터 정정: 광분(char1)에 DAMAGE_PERCENT EARTH ALLY 효과가 없으면
+     * 기존 LGC 행을 전부 삭제하고 올바른 값으로 재삽입한다.
+     */
+    private void correctBajiraoCharacteristics() {
+        mercenaryRepository.findByKey("bajirao").ifPresent(mercenary ->
+                legendGeneralRepository.findByMercenaryId(mercenary.getId()).ifPresent(lg -> {
+                    boolean needsCorrection = characteristicRepository
+                            .findWithEffectsByLegendGeneralId(lg.getId()).stream()
+                            .filter(c -> c.getCharacteristicIndex() == 1)
+                            .flatMap(c -> c.getEffects().stream())
+                            .noneMatch(e -> e.getStatType() == StatType.DAMAGE_PERCENT
+                                    && e.getElement() == Element.EARTH);
+                    if (!needsCorrection) return;
+
+                    log.info("바지라오 특성 데이터 정정 시작");
+                    characteristicRepository.deleteByLegendGeneralId(lg.getId());
+                    characteristicRepository.flush();
+
+                    float[] c0 = {0.5f, 1.0f, 1.5f, 2.0f, 2.5f, 3.0f, 3.5f, 4.0f, 5.0f, 6.0f};
+                    for (int lvl = 1; lvl <= 10; lvl++) {
+                        LegendGeneralCharacteristic row = buildChar(lg, 0, "고양", lvl);
+                        addEffect(row, StatType.DAMAGE_PERCENT, Element.NONE, BuffValueType.PERCENT_ADD, BuffTarget.ALLY, c0[lvl-1]);
+                    }
+
+                    float[] c1skill = {10, 20, 30, 40, 50, 60, 70, 80, 90, 100};
+                    float[] c1earth = {1, 1, 1, 2, 2, 3, 3, 4, 4, 5};
+                    for (int lvl = 1; lvl <= 10; lvl++) {
+                        LegendGeneralCharacteristic row = buildChar(lg, 1, "광분", lvl);
+                        addEffect(row, StatType.SKILL_DAMAGE_PERCENT, Element.NONE,  BuffValueType.PERCENT_ADD, BuffTarget.SELF, c1skill[lvl-1]);
+                        addEffect(row, StatType.DAMAGE_PERCENT,       Element.EARTH, BuffValueType.PERCENT_ADD, BuffTarget.ALLY, c1earth[lvl-1]);
+                    }
+                    log.info("바지라오 특성 데이터 정정 완료");
+                })
+        );
+    }
+
+    private void createStubIfAbsent(Mercenary mercenary, int index, String name) {
+        String key = mercenary.getKey() + "_char" + index;
+        if (mercenaryCharacteristicRepository.findByKey(key).isPresent()) return;
+        log.info("전설장수 특성 스텁 생성: {}", key);
+        mercenaryCharacteristicRepository.save(MercenaryCharacteristic.builder()
+                .mercenary(mercenary)
+                .key(key)
+                .name(name)
+                .point(null)
+                .applyType(CharacteristicApplyType.NORMAL)
+                .build());
+    }
 
     /** 잘못 저장된 전설장수 속성을 정정한다. 시딩 완료 여부와 무관하게 항상 실행된다. */
     private void correctNatures() {
@@ -445,12 +577,19 @@ public class LegendGeneralSeeder implements ApplicationRunner {
                                 .comingSoon(false)
                                 .build()
                 ));
-        return legendGeneralRepository.save(
-                LegendGeneral.builder()
-                        .mercenary(mercenary)
-                        .type(type)
-                        .build()
-        );
+        // 기존 LG가 있으면 재사용, 없으면 새로 생성 (중복 LG 생성 방지)
+        return legendGeneralRepository.findByMercenaryId(mercenary.getId())
+                .orElseGet(() -> legendGeneralRepository.save(
+                        LegendGeneral.builder()
+                                .mercenary(mercenary)
+                                .type(type)
+                                .build()
+                ));
+    }
+
+    /** MercenaryCharacteristic 스텁을 생성한다 — 내부적으로 createStubIfAbsent를 위임한다. */
+    private void addCharacteristicStub(LegendGeneral lg, int index, String name) {
+        createStubIfAbsent(lg.getMercenary(), index, name);
     }
 
     // saveChar는 저장하지 않고 빌드만 한다. addEffect 이후 save 호출.
@@ -477,6 +616,8 @@ public class LegendGeneralSeeder implements ApplicationRunner {
                              BuffValueType valueType, BuffTarget target,
                              Integer startLevel, Float startValue,
                              Integer incrementPerLevels, Float incrementValue, Float maxValue) {
+        // 시딩 시작 시점에 이미 패시브가 있던 LG는 재저장하지 않는다
+        if (existingPassiveLgIds.contains(lg.getId())) return;
         lg.getPassives().add(
                 LegendGeneralPassive.builder()
                         .legendGeneral(lg)

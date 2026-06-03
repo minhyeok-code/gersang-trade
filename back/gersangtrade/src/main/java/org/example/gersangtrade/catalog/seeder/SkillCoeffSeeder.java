@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.gersangtrade.catalog.repository.ItemRepository;
+import org.example.gersangtrade.catalog.repository.ItemSkillMappingRepository;
 import org.example.gersangtrade.catalog.repository.ItemSkillRepository;
 import org.example.gersangtrade.catalog.repository.MercenaryRepository;
 import org.example.gersangtrade.catalog.repository.MercenarySkillRepository;
@@ -12,6 +13,7 @@ import org.example.gersangtrade.catalog.repository.SetGrantedSkillRepository;
 import org.example.gersangtrade.catalog.repository.SkillCoefficientRepository;
 import org.example.gersangtrade.domain.catalog.Item;
 import org.example.gersangtrade.domain.catalog.ItemSkill;
+import org.example.gersangtrade.domain.catalog.ItemSkillMapping;
 import org.example.gersangtrade.domain.catalog.Mercenary;
 import org.example.gersangtrade.domain.catalog.MercenarySkill;
 import org.example.gersangtrade.domain.catalog.SetGrantedSkill;
@@ -46,6 +48,7 @@ public class SkillCoeffSeeder implements ApplicationRunner {
     private final ItemRepository itemRepository;
     private final MercenarySkillRepository mercenarySkillRepository;
     private final ItemSkillRepository itemSkillRepository;
+    private final ItemSkillMappingRepository itemSkillMappingRepository;
     private final SetGrantedSkillRepository setGrantedSkillRepository;
     private final SkillCoefficientRepository skillCoefficientRepository;
     private final ObjectMapper objectMapper;
@@ -167,15 +170,18 @@ public class SkillCoeffSeeder implements ApplicationRunner {
     }
 
     private ItemSkill findOrCreateItemSkill(Item item, String skillName, String skillKey) {
-        return itemSkillRepository
-                .findByItemIdAndSkillName(item.getId(), skillName)
+        ItemSkill skill = itemSkillRepository.findBySkillName(skillName)
                 .orElseGet(() -> itemSkillRepository.save(
                         ItemSkill.builder()
-                                .item(item)
                                 .skillName(skillName)
                                 .skillKey(skillKey)
                                 .build()
                 ));
+        // 아이템-스킬 매핑이 없으면 신규 저장
+        if (!itemSkillMappingRepository.existsByItemIdAndSkillId(item.getId(), skill.getId())) {
+            itemSkillMappingRepository.save(new ItemSkillMapping(item, skill));
+        }
+        return skill;
     }
 
     // ── UPSERT ────────────────────────────────────────────────────────────────

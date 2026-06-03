@@ -29,6 +29,7 @@ public record MemberCharacteristicResponse(
             Integer level,
             String amount,
             Float amountValue,
-            String statType          // null이면 미매핑
+            String statType,         // null이면 미매핑
+            String element           // null이면 NONE (속성 무관)
     ) {}
 }

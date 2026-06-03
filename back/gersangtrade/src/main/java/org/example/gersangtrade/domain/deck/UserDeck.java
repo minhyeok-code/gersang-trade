@@ -77,6 +77,20 @@ public class UserDeck {
     @JoinColumn(name = "cheungjin_source_id")
     private DeckBuffSource cheungjinSource;
 
+    /**
+     * 공명 레벨 (1~30). null이면 미적용.
+     * 주인공 주스텟 증가 + 전체 용병 데미지 증가.
+     */
+    @Column(name = "gonmyeong_level")
+    private Integer gonmyeongLevel;
+
+    /**
+     * 가호 레벨 (1~30). null이면 미적용.
+     * 전체 용병 주스텟 증가 + 속성값 증가 + 전체 용병 데미지 증가.
+     */
+    @Column(name = "gaho_level")
+    private Integer gahoLevel;
+
     /** 덱 생성 시각 (불변) */
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -117,10 +131,14 @@ public class UserDeck {
     /** 덱 단위 버프 선택값 수정 */
     public void updateEffects(Spirit spirit1, Spirit spirit2,
                               DeckBuffSource jinbeopSource,
-                              DeckBuffSource cheungjinSource) {
+                              DeckBuffSource cheungjinSource,
+                              Integer gonmyeongLevel,
+                              Integer gahoLevel) {
         this.spirit1 = spirit1;
         this.spirit2 = spirit2;
         this.jinbeopSource = jinbeopSource;
         this.cheungjinSource = cheungjinSource;
+        this.gonmyeongLevel = gonmyeongLevel;
+        this.gahoLevel = gahoLevel;
     }
 }

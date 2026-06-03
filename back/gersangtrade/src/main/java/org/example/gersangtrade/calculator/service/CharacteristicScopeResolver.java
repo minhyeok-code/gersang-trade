@@ -88,6 +88,9 @@ public final class CharacteristicScopeResolver {
                             : new ScopedEffect(BuffTarget.SELF, ApplicationMode.STAT, percent);
             case ATTACK_SPEED, MP_RECOVERY, HP_RECOVERY, FIELD_MOVE_SPEED ->
                     new ScopedEffect(BuffTarget.ALLY, ApplicationMode.STAT, percent);
+            // % 표기여도 flat으로 저장해 effectiveStats에서 직접 읽는다 (rawDmg 배율 적용용)
+            case BASE_DAMAGE_MULTIPLIER ->
+                    new ScopedEffect(BuffTarget.SELF, ApplicationMode.STAT, false);
             default ->
                     new ScopedEffect(BuffTarget.SELF, ApplicationMode.STAT, percent);
         };

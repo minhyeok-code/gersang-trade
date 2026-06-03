@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.example.gersangtrade.catalog.repository.EquipmentItemRepository;
 import org.example.gersangtrade.catalog.repository.GemRepository;
 import org.example.gersangtrade.catalog.repository.ItemRepository;
+import org.example.gersangtrade.catalog.repository.ItemSkillMappingRepository;
 import org.example.gersangtrade.catalog.repository.ItemSkillRepository;
 import org.example.gersangtrade.catalog.repository.ItemStatRepository;
 import org.example.gersangtrade.catalog.repository.RitualRepository;
@@ -20,6 +21,7 @@ import org.example.gersangtrade.domain.catalog.EquipmentItem;
 import org.example.gersangtrade.domain.catalog.Gem;
 import org.example.gersangtrade.domain.catalog.Item;
 import org.example.gersangtrade.domain.catalog.ItemSkill;
+import org.example.gersangtrade.domain.catalog.ItemSkillMapping;
 import org.example.gersangtrade.domain.catalog.ItemStat;
 import org.example.gersangtrade.domain.catalog.Ritual;
 import org.example.gersangtrade.domain.catalog.enums.Element;
@@ -67,6 +69,7 @@ public class GersangjjangItemTasklet implements Tasklet {
     private final ItemRepository itemRepository;
     private final ItemStatRepository itemStatRepository;
     private final ItemSkillRepository itemSkillRepository;
+    private final ItemSkillMappingRepository itemSkillMappingRepository;
     private final EquipmentItemRepository equipmentItemRepository;
     private final GemRepository gemRepository;
     private final RitualRepository ritualRepository;
@@ -297,15 +300,15 @@ public class GersangjjangItemTasklet implements Tasklet {
         if (uploaded != null) item.updateImageUrl(uploaded);
     }
 
-    /** 파싱된 스킬명 전체 UPSERT — 이미 존재하는 skillName은 건너뜀 */
+    /** 파싱된 스킬명 전체 UPSERT — 스킬은 전역 공유, 아이템-스킬 매핑만 추가 */
     private void upsertSkills(Item item, List<String> skills) {
         for (String skillName : skills) {
-            if (!itemSkillRepository.existsByItemIdAndSkillName(item.getId(), skillName)) {
-                itemSkillRepository.save(ItemSkill.builder()
-                        .item(item)
-                        .skillName(skillName)
-                        .build());
-                log.debug("스킬 저장: {} → {}", item.getName(), skillName);
+            ItemSkill skill = itemSkillRepository.findBySkillName(skillName)
+                    .orElseGet(() -> itemSkillRepository.save(
+                            ItemSkill.builder().skillName(skillName).build()));
+            if (!itemSkillMappingRepository.existsByItemIdAndSkillId(item.getId(), skill.getId())) {
+                itemSkillMappingRepository.save(new ItemSkillMapping(item, skill));
+                log.debug("스킬 매핑 저장: {} → {}", item.getName(), skillName);
             }
         }
     }

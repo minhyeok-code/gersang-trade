@@ -7,6 +7,7 @@ import org.example.gersangtrade.admin.dto.request.CharacteristicUpdateRequest;
 import org.example.gersangtrade.admin.dto.request.MercenaryBulkUpdateRequest;
 import org.example.gersangtrade.admin.dto.request.MercenaryStatReplaceRequest;
 import org.example.gersangtrade.admin.dto.request.MercenaryUpdateRequest;
+import org.example.gersangtrade.admin.dto.request.SkillEffectReplaceRequest;
 import org.example.gersangtrade.admin.dto.request.SkillReplaceRequest;
 import org.example.gersangtrade.admin.dto.response.CharacteristicAdminResponse;
 import org.example.gersangtrade.admin.dto.response.MercenaryAdminResponse;
@@ -15,12 +16,14 @@ import org.example.gersangtrade.catalog.repository.MercenaryCharacteristicLevelR
 import org.example.gersangtrade.catalog.repository.MercenaryCharacteristicRepository;
 import org.example.gersangtrade.catalog.repository.MercenaryMaterialRepository;
 import org.example.gersangtrade.catalog.repository.MercenaryRepository;
+import org.example.gersangtrade.catalog.repository.MercenarySkillEffectRepository;
 import org.example.gersangtrade.catalog.repository.MercenarySkillRepository;
 import org.example.gersangtrade.catalog.repository.MercenaryStatRepository;
 import org.example.gersangtrade.domain.catalog.Mercenary;
 import org.example.gersangtrade.domain.catalog.MercenaryCharacteristic;
 import org.example.gersangtrade.domain.catalog.MercenaryCharacteristicLevel;
 import org.example.gersangtrade.domain.catalog.MercenarySkill;
+import org.example.gersangtrade.domain.catalog.MercenarySkillEffect;
 import org.example.gersangtrade.domain.catalog.MercenaryStat;
 import org.example.gersangtrade.domain.catalog.enums.MercenaryCategory;
 import org.example.gersangtrade.domain.catalog.enums.Nation;
@@ -49,19 +52,17 @@ public class MercenaryAdminService {
     private final MercenaryCharacteristicLevelRepository levelRepository;
     private final MercenaryStatRepository statRepository;
     private final MercenarySkillRepository skillRepository;
+    private final MercenarySkillEffectRepository skillEffectRepository;
     private final MercenaryMaterialRepository mercenaryMaterialRepository;
 
     // ── 용병 상세 조회 ───────────────────────────────────────────────────────────
 
     /**
-     * 용병 단건 상세 조회 — 기본정보 + 스탯 + 스킬 반환.
+     * 용병 단건 상세 조회 — 기본정보 + 스탯 + 스킬 + 스킬 효과 반환.
      */
     @Transactional(readOnly = true)
     public MercenaryDetailAdminResponse getMercenary(Long mercenaryId) {
-        Mercenary mercenary = getMercenaryOrThrow(mercenaryId);
-        List<MercenaryStat> stats = statRepository.findByMercenaryId(mercenaryId);
-        List<MercenarySkill> skills = skillRepository.findByMercenaryId(mercenaryId);
-        return MercenaryDetailAdminResponse.of(mercenary, stats, skills);
+        return buildDetail(mercenaryId);
     }
 
     // ── 용병 기본정보 수정 ───────────────────────────────────────────────────────
@@ -76,9 +77,7 @@ public class MercenaryAdminService {
         Mercenary mercenary = getMercenaryOrThrow(mercenaryId);
         mercenary.updateInfo(req.name(), req.category(), req.nation(),
                 req.nature(), req.natureValue(), req.comingSoon());
-        List<MercenaryStat> stats = statRepository.findByMercenaryId(mercenaryId);
-        List<MercenarySkill> skills = skillRepository.findByMercenaryId(mercenaryId);
-        return MercenaryDetailAdminResponse.of(mercenary, stats, skills);
+        return buildDetail(mercenaryId);
     }
 
     // ── 용병 스탯 전체 교체 ─────────────────────────────────────────────────────
@@ -92,15 +91,12 @@ public class MercenaryAdminService {
     public MercenaryDetailAdminResponse replaceStats(Long mercenaryId, MercenaryStatReplaceRequest req) {
         Mercenary mercenary = getMercenaryOrThrow(mercenaryId);
         statRepository.deleteByMercenaryId(mercenaryId);
-        List<MercenaryStat> saved = req.stats().stream()
-                .map(e -> statRepository.save(MercenaryStat.builder()
-                        .mercenary(mercenary)
-                        .statKey(e.statType())
-                        .statValue(e.value())
-                        .build()))
-                .toList();
-        List<MercenarySkill> skills = skillRepository.findByMercenaryId(mercenaryId);
-        return MercenaryDetailAdminResponse.of(mercenary, saved, skills);
+        req.stats().forEach(e -> statRepository.save(MercenaryStat.builder()
+                .mercenary(mercenary)
+                .statKey(e.statType())
+                .statValue(e.value())
+                .build()));
+        return buildDetail(mercenaryId);
     }
 
     // ── 용병 스킬 전체 교체 ─────────────────────────────────────────────────────
@@ -113,16 +109,45 @@ public class MercenaryAdminService {
     @CacheEvict(value = CacheConfig.MERCENARIES, allEntries = true)
     public MercenaryDetailAdminResponse replaceSkills(Long mercenaryId, SkillReplaceRequest req) {
         Mercenary mercenary = getMercenaryOrThrow(mercenaryId);
+        // 스킬 삭제 전 효과 먼저 삭제 (FK 제약)
+        skillEffectRepository.deleteBySkill_MercenaryId(mercenaryId);
         skillRepository.deleteByMercenaryId(mercenaryId);
-        List<MercenarySkill> saved = req.skills().stream()
+        req.skills().stream()
                 .filter(s -> s != null && !s.isBlank())
-                .map(s -> skillRepository.save(MercenarySkill.builder()
+                .map(String::trim)
+                .distinct()
+                .forEach(s -> skillRepository.save(MercenarySkill.builder()
                         .mercenary(mercenary)
-                        .skillName(s.trim())
+                        .skillName(s)
+                        .build()));
+        return buildDetail(mercenaryId);
+    }
+
+    /**
+     * 스킬 효과 전체 교체 (PUT 의미론).
+     * 기존 효과를 전부 삭제하고 요청 목록으로 재적재한다.
+     */
+    @Transactional
+    public MercenaryDetailAdminResponse.SkillEntry replaceSkillEffects(Long mercenaryId, Long skillId,
+                                                                        SkillEffectReplaceRequest req) {
+        MercenarySkill skill = skillRepository.findById(skillId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "스킬을 찾을 수 없습니다: " + skillId));
+        if (!skill.getMercenary().getId().equals(mercenaryId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "해당 용병의 스킬이 아닙니다.");
+        }
+        skillEffectRepository.deleteBySkillId(skillId);
+        List<MercenarySkillEffect> saved = req.effects().stream()
+                .map(e -> skillEffectRepository.save(MercenarySkillEffect.builder()
+                        .skill(skill)
+                        .statKey(e.statKey())
+                        .statValue(e.statValue())
                         .build()))
                 .toList();
-        List<MercenaryStat> stats = statRepository.findByMercenaryId(mercenaryId);
-        return MercenaryDetailAdminResponse.of(mercenary, stats, saved);
+        List<MercenaryDetailAdminResponse.EffectEntry> effects = saved.stream()
+                .map(e -> new MercenaryDetailAdminResponse.EffectEntry(e.getStatKey(), e.getStatValue()))
+                .toList();
+        return new MercenaryDetailAdminResponse.SkillEntry(skill.getId(), skill.getSkillName(), effects);
     }
 
     // ── 용병 목록 조회 ───────────────────────────────────────────────────────────
@@ -373,6 +398,7 @@ public class MercenaryAdminService {
             }
             characteristicRepository.deleteByMercenaryId(mercenaryId);
             statRepository.deleteByMercenaryId(mercenaryId);
+            skillEffectRepository.deleteBySkill_MercenaryId(mercenaryId);
             skillRepository.deleteByMercenaryId(mercenaryId);
             mercenaryMaterialRepository.deleteByResultMercenaryId(mercenaryId);
 
@@ -385,6 +411,18 @@ public class MercenaryAdminService {
     }
 
     // ── 내부 헬퍼 ────────────────────────────────────────────────────────────────
+
+    /** 용병 상세 응답 조립 — 스탯·스킬·스킬효과를 한 번에 로드한다. */
+    private MercenaryDetailAdminResponse buildDetail(Long mercenaryId) {
+        Mercenary mercenary = getMercenaryOrThrow(mercenaryId);
+        List<MercenaryStat> stats = statRepository.findByMercenaryId(mercenaryId);
+        List<MercenarySkill> skills = skillRepository.findByMercenaryId(mercenaryId);
+        List<Long> skillIds = skills.stream().map(MercenarySkill::getId).toList();
+        Map<Long, List<MercenarySkillEffect>> effectsBySkillId = skillEffectRepository
+                .findBySkillIdIn(skillIds).stream()
+                .collect(Collectors.groupingBy(e -> e.getSkill().getId()));
+        return MercenaryDetailAdminResponse.of(mercenary, stats, skills, effectsBySkillId);
+    }
 
     private Mercenary getMercenaryOrThrow(Long id) {
         return mercenaryRepository.findById(id)

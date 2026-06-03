@@ -124,6 +124,14 @@ public class DeckController {
         return ResponseEntity.ok(deckService.getMemberCharacteristics(userId, deckId, memberId));
     }
 
+    /** 덱 전체 멤버의 속성값 일괄 조회 — DPS 없이 카드에 표시하기 위해 사용 */
+    @GetMapping("/{deckId}/members/element-values")
+    public ResponseEntity<List<MemberElementValueResponse>> getMemberElementValues(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long deckId) {
+        return ResponseEntity.ok(deckService.getMemberElementValues(userId, deckId));
+    }
+
     @GetMapping("/{deckId}/members/{memberId}/stats")
     public ResponseEntity<MemberStatResponse> getMemberStats(
             @AuthenticationPrincipal Long userId,

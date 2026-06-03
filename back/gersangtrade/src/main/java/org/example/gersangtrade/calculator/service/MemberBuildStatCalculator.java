@@ -2,7 +2,9 @@ package org.example.gersangtrade.calculator.service;
 
 import lombok.RequiredArgsConstructor;
 import org.example.gersangtrade.calculator.dto.request.BonusStatTarget;
+import org.example.gersangtrade.catalog.repository.ItemSkillMappingRepository;
 import org.example.gersangtrade.catalog.repository.SkillCoefficientRepository;
+import org.example.gersangtrade.domain.catalog.ItemSkillMapping;
 import org.example.gersangtrade.domain.catalog.SkillCoefficient;
 import org.example.gersangtrade.domain.catalog.enums.StatType;
 import org.example.gersangtrade.domain.deck.UserDeckMember;
@@ -11,6 +13,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -27,6 +30,7 @@ public class MemberBuildStatCalculator {
     public static final int LEVEL_STAT_260 = 2466;
 
     private final SkillCoefficientRepository skillCoefficientRepository;
+    private final ItemSkillMappingRepository itemSkillMappingRepository;
 
     public record BuildStatBonus(
             Map<StatType, Integer> levelBonusStats,
@@ -71,9 +75,20 @@ public class MemberBuildStatCalculator {
                     .map(s -> s.getEquipmentItem().getItemId())
                     .distinct()
                     .toList();
-            Map<Long, List<SkillCoefficient>> coefsByItemId = skillCoefficientRepository.findByItemIdIn(itemIds)
-                    .stream()
-                    .collect(Collectors.groupingBy(sc -> sc.getItemSkill().getItem().getId()));
+            // itemId → mapping → skillId → coef 패턴으로 조회
+            List<ItemSkillMapping> mappings = itemSkillMappingRepository.findByItemIdIn(itemIds);
+            List<Long> mappedSkillIds = mappings.stream()
+                    .map(m -> m.getSkill().getId()).distinct().toList();
+            Map<Long, List<SkillCoefficient>> coefBySkillId = mappedSkillIds.isEmpty() ? Map.of() :
+                    skillCoefficientRepository.findByItemSkillIdIn(mappedSkillIds).stream()
+                            .collect(Collectors.groupingBy(sc -> sc.getItemSkill().getId()));
+            Map<Long, List<SkillCoefficient>> coefsByItemId = new HashMap<>();
+            for (ItemSkillMapping mapping : mappings) {
+                Long itemId = mapping.getItem().getId();
+                Long skillId = mapping.getSkill().getId();
+                coefBySkillId.getOrDefault(skillId, List.of()).forEach(sc ->
+                        coefsByItemId.computeIfAbsent(itemId, k -> new ArrayList<>()).add(sc));
+            }
 
             for (UserDeckMemberSlot slot : slots) {
                 Long itemId = slot.getEquipmentItem().getItemId();

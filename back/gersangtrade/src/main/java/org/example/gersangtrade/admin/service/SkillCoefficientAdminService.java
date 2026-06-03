@@ -10,6 +10,7 @@ import org.example.gersangtrade.admin.dto.response.SkillCoefficientAdminResponse
 import org.example.gersangtrade.admin.dto.response.SkillCoefficientIssueListResponse;
 import org.example.gersangtrade.admin.dto.response.SkillCoefficientIssueResponse;
 import org.example.gersangtrade.catalog.repository.ItemRepository;
+import org.example.gersangtrade.catalog.repository.ItemSkillMappingRepository;
 import org.example.gersangtrade.catalog.repository.ItemSkillRepository;
 import org.example.gersangtrade.catalog.repository.MercenaryRepository;
 import org.example.gersangtrade.catalog.repository.MercenarySkillRepository;
@@ -17,6 +18,7 @@ import org.example.gersangtrade.catalog.repository.SetGrantedSkillRepository;
 import org.example.gersangtrade.catalog.repository.SkillCoefficientRepository;
 import org.example.gersangtrade.domain.catalog.Item;
 import org.example.gersangtrade.domain.catalog.ItemSkill;
+import org.example.gersangtrade.domain.catalog.ItemSkillMapping;
 import org.example.gersangtrade.domain.catalog.Mercenary;
 import org.example.gersangtrade.domain.catalog.MercenarySkill;
 import org.example.gersangtrade.domain.catalog.SetGrantedSkill;
@@ -84,6 +86,7 @@ public class SkillCoefficientAdminService {
     private final MercenarySkillRepository mercenarySkillRepository;
     private final ItemRepository itemRepository;
     private final ItemSkillRepository itemSkillRepository;
+    private final ItemSkillMappingRepository itemSkillMappingRepository;
     private final SetGrantedSkillRepository setGrantedSkillRepository;
 
     // ── 목록 조회 ────────────────────────────────────────────────────────────
@@ -253,51 +256,38 @@ public class SkillCoefficientAdminService {
         if (row.itemKey() != null && !row.itemKey().isBlank()) {
             Optional<Item> item = itemRepository.findByItemKey(row.itemKey());
             if (item.isPresent()) {
-                return findOrCreateItemSkill(item.get(), row);
+                ItemSkill skill = findOrCreateItemSkill(row);
+                ensureItemSkillMapping(item.get(), skill);
+                return skill;
             }
         }
 
-        return findUniqueItemSkillBySkillKey(row)
-                .or(() -> findUniqueItemSkillBySkillName(row))
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "아이템 스킬 매핑 실패: itemKey=" + row.itemKey()
-                                + ", skillKey=" + row.skillKey()
-                                + ", skillName=" + row.skillName()));
+        // itemKey 없으면 스킬만 find-or-create (매핑 없이)
+        return findOrCreateItemSkill(row);
     }
 
-    private ItemSkill findOrCreateItemSkill(Item item, SkillCoefficientJsonRow row) {
-        return itemSkillRepository
-                .findByItemIdAndSkillName(item.getId(), row.skillName())
+    /**
+     * skillKey/skillName 기반으로 전역 ItemSkill을 찾거나 신규 생성한다.
+     * skill_name이 전역 UNIQUE이므로 item 파라미터 불필요.
+     */
+    private ItemSkill findOrCreateItemSkill(SkillCoefficientJsonRow row) {
+        if (row.skillKey() != null && !row.skillKey().isBlank()) {
+            Optional<ItemSkill> byKey = itemSkillRepository.findBySkillKey(row.skillKey());
+            if (byKey.isPresent()) return byKey.get();
+        }
+        return itemSkillRepository.findBySkillName(row.skillName())
                 .orElseGet(() -> itemSkillRepository.save(
                         ItemSkill.builder()
-                                .item(item)
                                 .skillName(row.skillName())
                                 .skillKey(row.skillKey())
                                 .build()));
     }
 
-    private Optional<ItemSkill> findUniqueItemSkillBySkillKey(SkillCoefficientJsonRow row) {
-        if (row.skillKey() == null || row.skillKey().isBlank()) {
-            return Optional.empty();
+    /** (아이템, 스킬) 매핑이 없으면 신규 저장 */
+    private void ensureItemSkillMapping(Item item, ItemSkill skill) {
+        if (!itemSkillMappingRepository.existsByItemIdAndSkillId(item.getId(), skill.getId())) {
+            itemSkillMappingRepository.save(new ItemSkillMapping(item, skill));
         }
-
-        List<ItemSkill> matches = itemSkillRepository.findBySkillKey(row.skillKey());
-        if (matches.size() > 1) {
-            throw new IllegalArgumentException("아이템 스킬 skillKey 중복: skillKey=" + row.skillKey());
-        }
-        return matches.stream().findFirst();
-    }
-
-    private Optional<ItemSkill> findUniqueItemSkillBySkillName(SkillCoefficientJsonRow row) {
-        if (row.skillName() == null || row.skillName().isBlank()) {
-            return Optional.empty();
-        }
-
-        List<ItemSkill> matches = itemSkillRepository.findBySkillName(row.skillName());
-        if (matches.size() > 1) {
-            throw new IllegalArgumentException("아이템 스킬명 중복: skillName=" + row.skillName());
-        }
-        return matches.stream().findFirst();
     }
 
     private void upsertCoefficient(SkillCoefficientJsonRow row,

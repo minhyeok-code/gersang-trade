@@ -9,6 +9,7 @@ import org.example.gersangtrade.admin.dto.request.MercenaryBulkUpdateRequest;
 import org.example.gersangtrade.admin.dto.request.MercenaryStatPatchRequest;
 import org.example.gersangtrade.admin.dto.request.MercenaryStatReplaceRequest;
 import org.example.gersangtrade.admin.dto.request.MercenaryUpdateRequest;
+import org.example.gersangtrade.admin.dto.request.SkillEffectReplaceRequest;
 import org.example.gersangtrade.admin.dto.request.SkillReplaceRequest;
 import org.example.gersangtrade.admin.dto.response.CharacteristicAdminResponse;
 import org.example.gersangtrade.admin.dto.response.MercenaryAdminResponse;
@@ -94,12 +95,21 @@ public class MercenaryAdminController {
         return ResponseEntity.ok(mercenaryAdminService.patchStat(mercenaryId, statType, request.value()));
     }
 
-    /** 용병 스킬 전체 교체 (PUT 의미론 — 기존 전부 삭제 후 재적재). */
+    /** 용병 스킬 전체 교체 (PUT 의미론 — 기존 전부 삭제 후 재적재). 스킬 교체 시 효과도 초기화된다. */
     @PutMapping("/{mercenaryId}/skills")
     public ResponseEntity<MercenaryDetailAdminResponse> replaceSkills(
             @PathVariable Long mercenaryId,
             @Valid @RequestBody SkillReplaceRequest request) {
         return ResponseEntity.ok(mercenaryAdminService.replaceSkills(mercenaryId, request));
+    }
+
+    /** 스킬 효과 전체 교체 (PUT 의미론 — 기존 전부 삭제 후 재적재). */
+    @PutMapping("/{mercenaryId}/skills/{skillId}/effects")
+    public ResponseEntity<MercenaryDetailAdminResponse.SkillEntry> replaceSkillEffects(
+            @PathVariable Long mercenaryId,
+            @PathVariable Long skillId,
+            @Valid @RequestBody SkillEffectReplaceRequest request) {
+        return ResponseEntity.ok(mercenaryAdminService.replaceSkillEffects(mercenaryId, skillId, request));
     }
 
     /**

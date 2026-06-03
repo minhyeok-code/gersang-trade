@@ -37,7 +37,8 @@ public record SkillCoefficientIssueResponse(
             skillName = sc.getMercenarySkill().getSkillName();
         } else {
             ownerType = "ITEM";
-            ownerName = sc.getItemSkill().getItem().getName();
+            // 스킬이 여러 아이템에 공유되므로 아이템명 대신 스킬명을 owner로 사용
+            ownerName = sc.getItemSkill().getSkillName();
             skillName = sc.getItemSkill().getSkillName();
         }
 

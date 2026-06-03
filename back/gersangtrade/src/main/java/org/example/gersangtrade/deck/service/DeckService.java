@@ -28,6 +28,7 @@ import org.example.gersangtrade.domain.catalog.EquipmentSet;
 import org.example.gersangtrade.domain.catalog.EquipmentSetEffect;
 import org.example.gersangtrade.domain.catalog.EquipmentSetPiece;
 import org.example.gersangtrade.domain.catalog.EquipmentItem;
+import org.example.gersangtrade.domain.catalog.ItemStat;
 import org.example.gersangtrade.domain.catalog.Mercenary;
 import org.example.gersangtrade.domain.catalog.MercenaryCharacteristic;
 import org.example.gersangtrade.domain.catalog.MercenaryCharacteristicLevel;
@@ -37,18 +38,23 @@ import org.example.gersangtrade.calculator.service.CharacteristicScopeResolver;
 import org.example.gersangtrade.calculator.service.CharacteristicScopeResolver.ApplicationMode;
 import org.example.gersangtrade.calculator.service.CharacteristicScopeResolver.ScopedEffect;
 import org.example.gersangtrade.calculator.service.AwakenedMyungwangBuffCalculator;
+import org.example.gersangtrade.calculator.service.GahoBuffCalculator;
+import org.example.gersangtrade.calculator.service.GonmyeongBuffCalculator;
 import org.example.gersangtrade.calculator.service.LegendGeneralBuffCalculator;
 import org.example.gersangtrade.calculator.service.MemberBuildStatCalculator;
 import org.example.gersangtrade.calculator.service.MyungwangStatTransferCalculator;
 import org.example.gersangtrade.calculator.service.PlayerCharacterBuffCalculator;
+import org.example.gersangtrade.calculator.service.PlayerCharacterStatResolver;
 import org.example.gersangtrade.catalog.service.LegendGeneralLoadService;
 import org.example.gersangtrade.domain.catalog.LegendGeneral;
+import org.example.gersangtrade.domain.catalog.LegendGeneralCharacteristic;
 import org.example.gersangtrade.domain.catalog.enums.BuffTarget;
 import org.example.gersangtrade.domain.catalog.enums.BuffValueType;
 import org.example.gersangtrade.domain.catalog.enums.DeckBuffSourceType;
 import org.example.gersangtrade.domain.catalog.enums.Element;
 import org.example.gersangtrade.domain.catalog.enums.EquipmentKind;
 import org.example.gersangtrade.domain.catalog.enums.EquipmentSlot;
+import org.example.gersangtrade.domain.catalog.enums.CharacteristicApplyType;
 import org.example.gersangtrade.domain.catalog.enums.MercenaryCategory;
 import org.example.gersangtrade.domain.catalog.enums.Nature;
 import org.example.gersangtrade.domain.catalog.enums.SpiritGrade;
@@ -109,6 +115,9 @@ public class DeckService {
     private final MemberBuildStatCalculator memberBuildStatCalculator;
     private final PlayerCharacterBuffCalculator playerCharacterBuffCalculator;
     private final AwakenedMyungwangBuffCalculator awakenedMyungwangBuffCalculator;
+    private final GonmyeongBuffCalculator gonmyeongBuffCalculator;
+    private final GahoBuffCalculator gahoBuffCalculator;
+    private final PlayerCharacterStatResolver playerCharacterStatResolver;
 
     /** 땅 전설 정령의 2배 효과에서 제외되는 속도 계열 스탯 */
     private static final Set<StatType> SPIRIT_DOUBLE_EXCLUDED_STATS = Set.of(
@@ -218,7 +227,14 @@ public class DeckService {
                 ? getDeckBuffSourceOrThrow(req.cheungjinSourceId(), DeckBuffSourceType.CHEUNGJIN)
                 : null;
 
-        deck.updateEffects(spirit1, spirit2, jinbeop, cheungjin);
+        if (req.gonmyeongLevel() != null && (req.gonmyeongLevel() < 1 || req.gonmyeongLevel() > 30)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "공명 레벨은 1~30 범위여야 합니다.");
+        }
+        if (req.gahoLevel() != null && (req.gahoLevel() < 1 || req.gahoLevel() > 30)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "가호 레벨은 1~30 범위여야 합니다.");
+        }
+
+        deck.updateEffects(spirit1, spirit2, jinbeop, cheungjin, req.gonmyeongLevel(), req.gahoLevel());
         return buildDeckEffectResponse(deck);
     }
 
@@ -257,6 +273,95 @@ public class DeckService {
     }
 
     // ── 용병 스탯 ───────────────────────────────────────────────────────────
+
+    /**
+     * 덱 전체 멤버의 속성값(ELEMENT_VALUE)을 한 번에 계산 — DPS 없이 카드에 표시하기 위해 사용.
+     * computeMemberStatComponents를 멤버당 1회만 호출하고 명왕 이전을 직접 배치 계산하여 O(n) 유지.
+     */
+    @Transactional(readOnly = true)
+    public List<MemberElementValueResponse> getMemberElementValues(Long userId, Long deckId) {
+        UserDeck deck = getDeckOrThrow(deckId);
+        validateOwner(deck, userId);
+
+        List<UserDeckMember> allMembers = memberRepository.findByDeckIdWithMercenary(deckId);
+        if (allMembers.isEmpty()) return List.of();
+
+        // ① 멤버별 preTransferTotal 계산 (명왕 이전 전 합산)
+        Map<Long, Map<StatType, Integer>> preTotals = new HashMap<>();
+        for (UserDeckMember m : allMembers) {
+            preTotals.put(m.getId(), computeMemberStatComponents(deck, m).preTransferTotal());
+        }
+
+        // ② 명왕 스탯 이전 — preTotals 재사용으로 computeMemberStatComponents 중복 호출 방지
+        List<Long> memberIds = allMembers.stream().map(UserDeckMember::getId).toList();
+        List<UserDeckMemberCharacteristic> allChars = memberCharacteristicRepository.findByDeckMemberIdIn(memberIds);
+        Map<Long, List<UserDeckMemberCharacteristic>> charsByMemberId = allChars.stream()
+                .collect(Collectors.groupingBy(c -> c.getDeckMember().getId()));
+        List<Long> characteristicIds = allChars.stream().map(c -> c.getCharacteristic().getId()).distinct().toList();
+        Map<Long, List<MercenaryCharacteristicLevel>> charLevelsByCharId = characteristicIds.isEmpty() ? Map.of()
+                : characteristicLevelRepository.findByCharacteristicIdIn(characteristicIds).stream()
+                        .collect(Collectors.groupingBy(l -> l.getCharacteristic().getId()));
+        MyungwangStatTransferCalculator.ComputedTransfers transfers =
+                myungwangStatTransferCalculator.computeReceivedTransfers(
+                        allMembers, charsByMemberId, charLevelsByCharId, preTotals);
+
+        // ③ 파티 버프 공통 데이터 (1회 로드)
+        List<UserDeckMemberSlot> allSlots = slotRepository.findByDeckMemberIdIn(memberIds);
+        List<Long> allItemIds = allSlots.stream().map(s -> s.getEquipmentItem().getItemId()).toList();
+        List<ItemStat> allyElementStats = allItemIds.isEmpty() ? List.of()
+                : itemStatRepository.findByItemIdIn(allItemIds).stream()
+                        .filter(ist -> ist.getScope() == BuffTarget.ALLY
+                                && ist.getStatType() == StatType.ELEMENT_VALUE)
+                        .toList();
+
+        long awakenedCount = allMembers.stream()
+                .filter(m -> m.getMercenary().getCategory() == MercenaryCategory.MYEONG_KING_AWAKENING).count();
+        AwakenedMyungwangBuffCalculator.AllyElementBuff awakenedAllyBuff =
+                awakenedCount > 0 ? awakenedMyungwangBuffCalculator.getCommonAllyBuff() : null;
+
+        Mercenary protagonistMerc = allMembers.stream()
+                .filter(m -> m.getMercenary().getCategory() == MercenaryCategory.PROTAGONIST)
+                .map(UserDeckMember::getMercenary)
+                .findFirst().orElse(null);
+        PlayerCharacterBuffCalculator.NationBuff nationBuff =
+                protagonistMerc != null ? playerCharacterBuffCalculator.getNationBuff(protagonistMerc.getNation()) : null;
+
+        // ④ 멤버별 ELEMENT_VALUE 합산
+        List<MemberElementValueResponse> results = new ArrayList<>();
+        for (UserDeckMember member : allMembers) {
+            int ev = preTotals.get(member.getId()).getOrDefault(StatType.ELEMENT_VALUE, 0);
+            ev += transfers.receivedByMemberId().getOrDefault(member.getId(), Map.of())
+                    .getOrDefault(StatType.ELEMENT_VALUE, 0);
+
+            Nature nature = member.getMercenary().getNature();
+            if (nature != null) {
+                // 주인공 국가 속성 버프
+                if (nationBuff != null && nationBuff.value() > 0
+                        && nationBuff.element() != Element.NONE
+                        && nationBuff.element().name().equals(nature.name())) {
+                    ev += Math.round(nationBuff.value());
+                }
+                // 각성 명왕 ALLY 속성값 버프 (EARTH는 2, 그 외 5 — 대체 관계)
+                if (awakenedAllyBuff != null) {
+                    float perBuff = nature == Nature.EARTH
+                            ? awakenedAllyBuff.earthValue()
+                            : awakenedAllyBuff.defaultValue();
+                    ev += (int) (Math.round(perBuff) * awakenedCount);
+                }
+                // ALLY scope 장비 ELEMENT_VALUE
+                for (ItemStat ist : allyElementStats) {
+                    if (isDeckBuffElementApplicable(ist.getElement(), nature)) {
+                        ev += ist.getValue();
+                    }
+                }
+                // 전설장수 ALLY ELEMENT_VALUE
+                ev += computeLgAllyContributions(allMembers, member)
+                        .statMap().getOrDefault(StatType.ELEMENT_VALUE, 0);
+            }
+            results.add(new MemberElementValueResponse(member.getId(), ev));
+        }
+        return results;
+    }
 
     /**
      * 용병 기본 스탯 + 착용 장비(SELF scope) + 선택 특성 스탯 합산 조회.
@@ -301,29 +406,116 @@ public class DeckService {
                     }
                 });
 
-        // 각성 명왕 N명 × 아군 속성값 버프 (+5, EARTH +2 중첩)
+        // 각성 명왕 N명 × 아군 속성값 버프 (EARTH는 2, 그 외 5 — 대체 관계, 중첩 아님)
         long awakenedMyeongwangCount = allMembers.stream()
                 .filter(m -> m.getMercenary().getCategory() == MercenaryCategory.MYEONG_KING_AWAKENING)
                 .count();
         if (awakenedMyeongwangCount > 0) {
             var allyBuff = awakenedMyungwangBuffCalculator.getCommonAllyBuff();
-            int bonus = (int) (Math.round(allyBuff.defaultValue()) * awakenedMyeongwangCount);
-            if (member.getMercenary().getNature() == Nature.EARTH) {
-                bonus += (int) (Math.round(allyBuff.earthValue()) * awakenedMyeongwangCount);
-            }
+            float perBuff = member.getMercenary().getNature() == Nature.EARTH
+                    ? allyBuff.earthValue()
+                    : allyBuff.defaultValue();
+            int bonus = (int) (Math.round(perBuff) * awakenedMyeongwangCount);
             awakenedMyeongwangBuffStatMap.merge(StatType.ELEMENT_VALUE, bonus, Integer::sum);
             totalMap.merge(StatType.ELEMENT_VALUE, bonus, Integer::sum);
         }
+
+        // 사인검 등 ALLY scope 장비 버프 — 덱 전체 장비 중 scope=ALLY이고 element가 일치하는 스탯을 이 멤버에게 적용
+        Map<StatType, Integer> partyItemBuffStatMap = new HashMap<>();
+        List<Long> allMemberIds = allMembers.stream().map(UserDeckMember::getId).toList();
+        List<UserDeckMemberSlot> allSlots = slotRepository.findByDeckMemberIdIn(allMemberIds);
+        if (!allSlots.isEmpty()) {
+            List<Long> allItemIds = allSlots.stream().map(s -> s.getEquipmentItem().getItemId()).toList();
+            itemStatRepository.findByItemIdIn(allItemIds).stream()
+                    .filter(ist -> ist.getScope() == BuffTarget.ALLY)
+                    .filter(ist -> isDeckBuffElementApplicable(ist.getElement(), member.getMercenary().getNature()))
+                    .forEach(ist -> {
+                        partyItemBuffStatMap.merge(ist.getStatType(), ist.getValue(), Integer::sum);
+                        totalMap.merge(ist.getStatType(), ist.getValue(), Integer::sum);
+                    });
+        }
+
+        // 전설장수 ALLY 속성 버프 — 다른 멤버의 속성 데미지 증가 등을 이 멤버에게 적용
+        LgAllyContribution lgAlly = computeLgAllyContributions(allMembers, member);
+        lgAlly.statMap().forEach((k, v) -> totalMap.merge(k, v, Integer::sum));
 
         return MemberStatResponse.of(member, components.baseStatMap(), components.equipStatMap(),
                 components.setEffectStatMap(), components.characteristicStatMap(),
                 components.partyCharacteristicStatMap(), components.enemyDebuffStatMap(),
                 components.ritualStatMap(), components.ritualSetEffectStatMap(), components.deckBuffStatMap(),
                 components.deckBuffDetails(), components.levelBonusStatMap(), components.bonusStatMap(),
-                protagonistBuffStatMap, awakenedMyeongwangBuffStatMap,
+                protagonistBuffStatMap, awakenedMyeongwangBuffStatMap, partyItemBuffStatMap,
                 components.resolvedMainStat(),
                 transferStatMap, transferDetails, components.activeEquipmentSetEffects(),
-                components.activeSetEffects(), totalMap, components.slots());
+                components.activeSetEffects(), totalMap, lgAlly.displayMap(), lgAlly.details(), components.slots());
+    }
+
+    private record LgAllyContribution(
+            Map<StatType, Integer> statMap,                          // 스탯 합산용 (StatType 키)
+            Map<String, Integer> displayMap,                         // 표시용 compound 키 (예: DAMAGE_PERCENT_FIRE)
+            List<MemberStatResponse.LgAllyDetail> details            // 장수별 상세 내역
+    ) {}
+
+    /**
+     * 전설장수 멤버들의 ALLY 속성 버프를 수신 멤버에게 배분 계산.
+     * NONE 원소: 전원 적용. 특정 원소: Nature 일치 멤버에게만 적용.
+     */
+    private LgAllyContribution computeLgAllyContributions(
+            List<UserDeckMember> allMembers, UserDeckMember receiver) {
+        Map<StatType, Integer> statMap = new HashMap<>();
+        Map<String, Integer> displayMap = new HashMap<>();
+        List<MemberStatResponse.LgAllyDetail> details = new ArrayList<>();
+
+        Nature receiverNature = receiver.getMercenary().getNature();
+
+        for (UserDeckMember provider : allMembers) {
+            if (provider.getId().equals(receiver.getId())) continue;
+            if (provider.getMercenary().getCategory() != MercenaryCategory.LEGENDARY_GENERAL) continue;
+
+            LegendGeneral lg = legendGeneralLoadService.loadForCalculation(provider.getMercenary().getId())
+                    .orElse(null);
+            if (lg == null) continue;
+
+            String providerName = provider.getMercenary().getName();
+
+            // 이 멤버가 선택한 특성 레벨 → characteristicIndex 맵
+            List<UserDeckMemberCharacteristic> providerChars =
+                    memberCharacteristicRepository.findByDeckMemberIdIn(List.of(provider.getId()));
+
+            List<MercenaryCharacteristic> stubs = characteristicRepository
+                    .findByMercenaryId(provider.getMercenary().getId()).stream()
+                    .sorted(Comparator.comparing(MercenaryCharacteristic::getId))
+                    .toList();
+            Map<Long, Integer> charIndexByCharId = new HashMap<>();
+            for (int i = 0; i < stubs.size(); i++) {
+                charIndexByCharId.put(stubs.get(i).getId(), i);
+            }
+
+            Map<Integer, Integer> pointsMap = new HashMap<>();
+            for (UserDeckMemberCharacteristic mc : providerChars) {
+                Integer idx = charIndexByCharId.get(mc.getCharacteristic().getId());
+                if (idx != null) pointsMap.put(idx, mc.getSelectedLevel());
+            }
+
+            // ALLY/ENEMY 효과 계산 (패시브 + 특성)
+            legendGeneralBuffCalculator.calculate(lg, provider.getLevel(), pointsMap)
+                    .forEach((key, value) -> {
+                        if (key.target() != BuffTarget.ALLY || key.statType() == null) return;
+                        // 원소 필터: NONE은 전원, 특정 원소는 Nature 일치 시만
+                        if (key.element() != Element.NONE
+                                && !key.element().name().equals(receiverNature.name())) return;
+
+                        int rounded = Math.round(value);
+                        statMap.merge(key.statType(), rounded, Integer::sum);
+
+                        String displayKey = key.element() != Element.NONE
+                                ? key.statType().name() + "_" + key.element().name()
+                                : key.statType().name();
+                        displayMap.merge(displayKey, rounded, Integer::sum);
+                        details.add(new MemberStatResponse.LgAllyDetail(providerName, displayKey, rounded));
+                    });
+        }
+        return new LgAllyContribution(statMap, displayMap, details);
     }
 
     /** 이전·합산 전 멤버별 스탯 구성요소 (명왕 스탯 이전 계산의 소스 스탯으로 사용) */
@@ -403,6 +595,22 @@ public class DeckService {
             }
         }
 
+        // SELF_AUTO 특성 자동 적용 (user_deck_member_characteristics에 저장되지 않으므로 별도 처리)
+        List<MercenaryCharacteristic> selfAutoChars = characteristicRepository
+                .findByMercenaryId(member.getMercenary().getId()).stream()
+                .filter(c -> c.getApplyType() == CharacteristicApplyType.SELF_AUTO)
+                .toList();
+        if (!selfAutoChars.isEmpty()) {
+            List<Long> autoCharIds = selfAutoChars.stream().map(MercenaryCharacteristic::getId).toList();
+            characteristicLevelRepository.findByCharacteristicIdIn(autoCharIds).stream()
+                    .filter(cl -> cl.getAmountValue() != null)
+                    .forEach(cl -> {
+                        ScopedEffect scoped = CharacteristicScopeResolver.resolve(cl);
+                        if (scoped == null || scoped.mode() != ApplicationMode.STAT || cl.getStatType() == null) return;
+                        characteristicStatMap.merge(cl.getStatType(), Math.round(cl.getAmountValue()), Integer::sum);
+                    });
+        }
+
         // 주술 스탯 합산 (슬롯별 주술 outcome에 따라 RitualStat 조회)
         Map<StatType, Integer> ritualStatMap = new HashMap<>();
         List<MemberStatResponse.ActiveSetEffect> activeSetEffects = new ArrayList<>();
@@ -473,10 +681,17 @@ public class DeckService {
             }
         }
 
+        // 공명 주스텟 — 주인공 멤버에만 적용. 슬롯 목록은 이미 로드된 slots 사용.
+        StatType gonmyeongMainStat = null;
+        if (deck.getGonmyeongLevel() != null
+                && member.getMercenary().getCategory() == MercenaryCategory.PROTAGONIST) {
+            gonmyeongMainStat = playerCharacterStatResolver.resolve(member.getMercenary(), slots);
+        }
+
         Map<StatType, Integer> deckBuffStatMap = calculateDeckBuffStatsForMember(
-                deck, member.getMercenary().getNature(), true);
+                deck, member.getMercenary().getNature(), true, gonmyeongMainStat);
         List<MemberStatResponse.DeckBuffDetail> deckBuffDetails = computeDeckBuffDetailsForMember(
-                deck, member.getMercenary().getNature(), true);
+                deck, member.getMercenary().getNature(), true, gonmyeongMainStat);
 
         MemberBuildStatCalculator.BuildStatBonus buildBonus =
                 memberBuildStatCalculator.compute(member, slots);
@@ -646,20 +861,28 @@ public class DeckService {
                 .collect(Collectors.toMap(c -> c.getCharacteristic().getId(),
                         UserDeckMemberCharacteristic::getSelectedLevel));
 
-        List<Long> charIds = allCharacteristics.stream().map(MercenaryCharacteristic::getId).toList();
-        Map<Long, List<MercenaryCharacteristicLevel>> levelsByCharId = charIds.isEmpty()
-                ? Map.of()
-                : characteristicLevelRepository.findByCharacteristicIdIn(charIds).stream()
-                        .collect(Collectors.groupingBy(l -> l.getCharacteristic().getId()));
+        // 전설장수는 MercenaryCharacteristicLevel 대신 LegendGeneralCharacteristic에서 레벨 데이터 로드
+        Map<Long, List<MemberCharacteristicResponse.LevelEntry>> levelsByCharId;
+        if (member.getMercenary().getCategory() == MercenaryCategory.LEGENDARY_GENERAL) {
+            levelsByCharId = buildLgLevelsByCharId(allCharacteristics, mercenaryId);
+        } else {
+            List<Long> charIds = allCharacteristics.stream().map(MercenaryCharacteristic::getId).toList();
+            levelsByCharId = charIds.isEmpty() ? Map.of()
+                    : characteristicLevelRepository.findByCharacteristicIdIn(charIds).stream()
+                            .collect(Collectors.groupingBy(
+                                    l -> l.getCharacteristic().getId(),
+                                    Collectors.mapping(l -> new MemberCharacteristicResponse.LevelEntry(
+                                            l.getLabel(), l.getLevel(), l.getAmount(), l.getAmountValue(),
+                                            l.getStatType() != null ? l.getStatType().name() : null,
+                                            null),
+                                            Collectors.toList())));
+        }
 
         List<MemberCharacteristicResponse.CharacteristicEntry> entries = allCharacteristics.stream()
                 .map(c -> {
                     List<MemberCharacteristicResponse.LevelEntry> levels =
                             levelsByCharId.getOrDefault(c.getId(), List.of()).stream()
-                                    .sorted(Comparator.comparing(MercenaryCharacteristicLevel::getLevel))
-                                    .map(l -> new MemberCharacteristicResponse.LevelEntry(
-                                            l.getLabel(), l.getLevel(), l.getAmount(), l.getAmountValue(),
-                                            l.getStatType() != null ? l.getStatType().name() : null))
+                                    .sorted(Comparator.comparing(MemberCharacteristicResponse.LevelEntry::level))
                                     .toList();
                     return new MemberCharacteristicResponse.CharacteristicEntry(
                             c.getId(), c.getKey(), c.getName(), c.getPoint(),
@@ -671,6 +894,36 @@ public class DeckService {
                 .toList();
 
         return new MemberCharacteristicResponse(memberId, member.getLevel(), maxCharacteristicPoints(member), entries);
+    }
+
+    /** 전설장수 MercenaryCharacteristic 스텁 ID → LevelEntry 목록 매핑 빌드. */
+    private Map<Long, List<MemberCharacteristicResponse.LevelEntry>> buildLgLevelsByCharId(
+            List<MercenaryCharacteristic> stubs, Long mercenaryId) {
+        LegendGeneral lg = legendGeneralLoadService.loadForCalculation(mercenaryId).orElse(null);
+        if (lg == null) return Map.of();
+
+        Map<Integer, List<LegendGeneralCharacteristic>> byIndex = lg.getCharacteristics().stream()
+                .collect(Collectors.groupingBy(LegendGeneralCharacteristic::getCharacteristicIndex));
+
+        List<MercenaryCharacteristic> sortedStubs = stubs.stream()
+                .sorted(Comparator.comparing(MercenaryCharacteristic::getId))
+                .toList();
+
+        Map<Long, List<MemberCharacteristicResponse.LevelEntry>> result = new HashMap<>();
+        for (int i = 0; i < sortedStubs.size(); i++) {
+            Long stubId = sortedStubs.get(i).getId();
+            List<LegendGeneralCharacteristic> lgcRows = byIndex.getOrDefault(i, List.of());
+            List<MemberCharacteristicResponse.LevelEntry> levels = lgcRows.stream()
+                    .sorted(Comparator.comparing(LegendGeneralCharacteristic::getLevel))
+                    .flatMap(row -> row.getEffects().stream()
+                            .map(eff -> new MemberCharacteristicResponse.LevelEntry(
+                                    null, row.getLevel(), null, eff.getValue(),
+                                    eff.getStatType() != null ? eff.getStatType().name() : null,
+                                    eff.getElement() != null ? eff.getElement().name() : null)))
+                    .toList();
+            result.put(stubId, levels);
+        }
+        return result;
     }
 
     // ── 장비 슬롯 ───────────────────────────────────────────────────────────
@@ -846,6 +1099,8 @@ public class DeckService {
                 selectedSpirits(deck).stream().map(DeckEffectResponse.SpiritEntry::of).toList(),
                 DeckEffectResponse.DeckBuffSourceEntry.of(deck.getJinbeopSource()),
                 DeckEffectResponse.DeckBuffSourceEntry.of(deck.getCheungjinSource()),
+                deck.getGonmyeongLevel(),
+                deck.getGahoLevel(),
                 DeckEffectResponse.StatEntry.from(calculateDeckBuffStats(deck, false))
         );
     }
@@ -870,22 +1125,65 @@ public class DeckService {
 
         accumulateDeckBuffSource(stats, deck.getJinbeopSource(), allyOnly);
         accumulateDeckBuffSource(stats, deck.getCheungjinSource(), allyOnly);
+
+        // 공명·가호 DAMAGE_PERCENT는 전체 용병 공통
+        if (deck.getGonmyeongLevel() != null) {
+            gonmyeongBuffCalculator.getDamagePercent(deck.getGonmyeongLevel())
+                    .ifPresent(v -> stats.merge(StatType.DAMAGE_PERCENT, v, Integer::sum));
+        }
+        if (deck.getGahoLevel() != null) {
+            gahoBuffCalculator.getDamagePercent(deck.getGahoLevel())
+                    .ifPresent(v -> stats.merge(StatType.DAMAGE_PERCENT, v, Integer::sum));
+        }
         return stats;
     }
 
-    /** 멤버 속성(Nature)에 맞는 진법·층진 버프만 반영한다. DPS 계산기와 동일 규칙. */
-    private Map<StatType, Integer> calculateDeckBuffStatsForMember(UserDeck deck, Nature nature, boolean allyOnly) {
+    /**
+     * 멤버 속성(Nature)에 맞는 진법·층진·공명·가호 버프를 합산한다.
+     *
+     * @param gonmyeongMainStat 공명 MAIN_STAT_FLAT 대상 스탯. 주인공 멤버만 non-null.
+     */
+    private Map<StatType, Integer> calculateDeckBuffStatsForMember(
+            UserDeck deck, Nature nature, boolean allyOnly, StatType gonmyeongMainStat) {
         Map<StatType, Integer> stats = new EnumMap<>(StatType.class);
 
         accumulateSpiritBuffs(stats, selectedSpirits(deck), allyOnly, nature);
         accumulateDeckBuffSourceForMember(stats, deck.getJinbeopSource(), nature, allyOnly);
         accumulateDeckBuffSourceForMember(stats, deck.getCheungjinSource(), nature, allyOnly);
+
+        // 공명 버프
+        if (deck.getGonmyeongLevel() != null) {
+            int lvl = deck.getGonmyeongLevel();
+            gonmyeongBuffCalculator.getDamagePercent(lvl)
+                    .ifPresent(v -> stats.merge(StatType.DAMAGE_PERCENT, v, Integer::sum));
+            if (gonmyeongMainStat != null) {
+                gonmyeongBuffCalculator.getMainStatFlat(lvl)
+                        .ifPresent(v -> stats.merge(gonmyeongMainStat, v, Integer::sum));
+            }
+        }
+
+        // 가호 버프
+        if (deck.getGahoLevel() != null) {
+            int lvl = deck.getGahoLevel();
+            gahoBuffCalculator.getDamagePercent(lvl)
+                    .ifPresent(v -> stats.merge(StatType.DAMAGE_PERCENT, v, Integer::sum));
+            StatType mainStat = gahoBuffCalculator.resolveMainStat(nature);
+            gahoBuffCalculator.getMainStatFlat(lvl)
+                    .ifPresent(v -> stats.merge(mainStat, v, Integer::sum));
+            gahoBuffCalculator.getElementValue(lvl, nature)
+                    .ifPresent(v -> stats.merge(StatType.ELEMENT_VALUE, v, Integer::sum));
+        }
+
         return stats;
     }
 
-    /** 덱 효과 출처별 기여 내역 — 정령·진법·층진 각 항목을 개별 기록으로 반환 */
+    /**
+     * 덱 효과 출처별 기여 내역 — 정령·진법·층진·공명·가호 각 항목을 개별 기록으로 반환.
+     *
+     * @param gonmyeongMainStat 공명 MAIN_STAT_FLAT 대상 스탯. 주인공 멤버만 non-null.
+     */
     private List<MemberStatResponse.DeckBuffDetail> computeDeckBuffDetailsForMember(
-            UserDeck deck, Nature nature, boolean allyOnly) {
+            UserDeck deck, Nature nature, boolean allyOnly, StatType gonmyeongMainStat) {
         List<MemberStatResponse.DeckBuffDetail> details = new ArrayList<>();
 
         List<Spirit> spirits = selectedSpirits(deck);
@@ -909,6 +1207,32 @@ public class DeckService {
 
         addDeckBuffSourceDetails(details, deck.getJinbeopSource(), "진법", nature, allyOnly);
         addDeckBuffSourceDetails(details, deck.getCheungjinSource(), "층진", nature, allyOnly);
+
+        // 공명 detail
+        if (deck.getGonmyeongLevel() != null) {
+            int lvl = deck.getGonmyeongLevel();
+            String label = "공명 " + lvl + "단계";
+            gonmyeongBuffCalculator.getDamagePercent(lvl)
+                    .ifPresent(v -> details.add(new MemberStatResponse.DeckBuffDetail(label, "공명", StatType.DAMAGE_PERCENT, v)));
+            if (gonmyeongMainStat != null) {
+                gonmyeongBuffCalculator.getMainStatFlat(lvl)
+                        .ifPresent(v -> details.add(new MemberStatResponse.DeckBuffDetail(label, "공명", gonmyeongMainStat, v)));
+            }
+        }
+
+        // 가호 detail
+        if (deck.getGahoLevel() != null) {
+            int lvl = deck.getGahoLevel();
+            String label = "가호 " + lvl + "단계";
+            StatType mainStat = gahoBuffCalculator.resolveMainStat(nature);
+            gahoBuffCalculator.getDamagePercent(lvl)
+                    .ifPresent(v -> details.add(new MemberStatResponse.DeckBuffDetail(label, "가호", StatType.DAMAGE_PERCENT, v)));
+            gahoBuffCalculator.getMainStatFlat(lvl)
+                    .ifPresent(v -> details.add(new MemberStatResponse.DeckBuffDetail(label, "가호", mainStat, v)));
+            gahoBuffCalculator.getElementValue(lvl, nature)
+                    .ifPresent(v -> details.add(new MemberStatResponse.DeckBuffDetail(label, "가호", StatType.ELEMENT_VALUE, v)));
+        }
+
         return details;
     }
 

@@ -14,12 +14,14 @@ import java.util.Map;
 
 /**
  * 덱 단위 효과 응답 DTO.
- * 정령/진법/층진 선택 상태와 적용 스탯 요약에 공통으로 사용한다.
+ * 정령/진법/층진/공명/가호 선택 상태와 적용 스탯 요약에 공통으로 사용한다.
  */
 public record DeckEffectResponse(
         List<SpiritEntry> spirits,
         DeckBuffSourceEntry jinbeop,
         DeckBuffSourceEntry cheungjin,
+        Integer gonmyeongLevel,
+        Integer gahoLevel,
         List<StatEntry> stats
 ) {
     public record SpiritEntry(
