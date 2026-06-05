@@ -8,6 +8,7 @@ import org.example.gersangtrade.domain.catalog.enums.MercenaryCategory;
 import org.example.gersangtrade.domain.catalog.enums.Nation;
 import org.example.gersangtrade.domain.catalog.enums.Nature;
 import org.example.gersangtrade.domain.catalog.enums.StatType;
+import org.example.gersangtrade.domain.catalog.enums.ValueType;
 
 import java.util.List;
 import java.util.Map;
@@ -28,7 +29,7 @@ public record MercenaryDetailAdminResponse(
 
     public record SkillEntry(Long id, String skillName, List<EffectEntry> effects) {}
 
-    public record EffectEntry(StatType statKey, Integer statValue) {}
+    public record EffectEntry(StatType statKey, Integer statValue, ValueType valueType) {}
 
     public static MercenaryDetailAdminResponse of(Mercenary m,
                                                    List<MercenaryStat> stats,
@@ -45,7 +46,7 @@ public record MercenaryDetailAdminResponse(
                 stats.stream().map(s -> new StatEntry(s.getId(), s.getStatKey(), s.getStatValue())).toList(),
                 skills.stream().map(s -> {
                     List<EffectEntry> fx = effectsBySkillId.getOrDefault(s.getId(), List.of()).stream()
-                            .map(e -> new EffectEntry(e.getStatKey(), e.getStatValue())).toList();
+                            .map(e -> new EffectEntry(e.getStatKey(), e.getStatValue(), e.getValueType())).toList();
                     return new SkillEntry(s.getId(), s.getSkillName(), fx);
                 }).toList()
         );

@@ -257,23 +257,9 @@ public class GersangjjangParser {
         }
     }
 
-    /**
-     * 카테고리 페이지 아이템 1행 파싱 결과.
-     *
-     * @param name     아이템명
-     * @param stats    파싱된 스탯 목록 (없으면 빈 리스트)
-     * @param skills   파싱된 고유 스킬명 목록 (없으면 빈 리스트)
-     * @param imageUrl 아이템 이미지 절대 URL (.w-img img 없으면 null)
-     */
-    public record ItemRow(String name, List<ParsedStat> stats, List<String> skills, String imageUrl) {}
+    public record ItemRow(String name, List<ParsedStat> stats, List<String> skills) {}
 
-    /**
-     * 재료 카테고리 페이지 아이템 1행 파싱 결과.
-     *
-     * @param name     아이템명 (br 태그를 공백으로 치환하여 단일 문자열로 반환)
-     * @param imageUrl 아이템 이미지 절대 URL (img src 없으면 null)
-     */
-    public record MaterialRow(String name, String imageUrl) {}
+    public record MaterialRow(String name) {}
 
     /**
      * 재료 카테고리 페이지에서 아이템 목록을 추출한다.
@@ -310,28 +296,10 @@ public class GersangjjangParser {
                     .trim();
             if (name.isBlank()) continue;
 
-            Element img = row.selectFirst(".w-img img");
-            String imageUrl = null;
-            if (img != null) {
-                String src = img.attr("src").trim();
-                if (!src.isBlank()) {
-                    // src는 "img3/..." 형태의 상대 경로 → BASE_URL 기준 절대 URL로 변환
-                    imageUrl = BASE_URL + src;
-                }
-            }
-
-            rows.add(new MaterialRow(name, imageUrl));
+            rows.add(new MaterialRow(name));
         }
 
         return rows;
-    }
-
-    /** img 엘리먼트의 src → 절대 URL. null이거나 src가 비어있으면 null 반환 */
-    static String parseImageUrl(Element imgEl) {
-        if (imgEl == null) return null;
-        String src = imgEl.attr("src").trim();
-        if (src.isBlank()) return null;
-        return src.startsWith("http") ? src : BASE_URL + src;
     }
 
     private GersangjjangParser() {}
@@ -397,8 +365,7 @@ public class GersangjjangParser {
             List<String> skills = new ArrayList<>();
             parseStatCell(row.selectFirst(".w-stat"), stats, skills);
 
-            String imageUrl = parseImageUrl(row.selectFirst(".w-img img"));
-            rows.add(new ItemRow(name, stats, skills, imageUrl));
+            rows.add(new ItemRow(name, stats, skills));
         }
 
         // Type B: .item-row .sub-row 구조 (무기 페이지 — strong 없이 첫 텍스트 노드가 이름)
@@ -419,10 +386,7 @@ public class GersangjjangParser {
                 List<String> skills = new ArrayList<>();
                 parseStatCell(subRow.selectFirst(".w-stat"), stats, skills);
 
-                // Type B 행은 아이템 이미지가 상위 .item-row에 있을 수 있음
-                Element parentRow = subRow.parent();
-                Element imgEl = (parentRow != null) ? parentRow.selectFirst(".w-img img") : null;
-                rows.add(new ItemRow(name, stats, skills, parseImageUrl(imgEl)));
+                rows.add(new ItemRow(name, stats, skills));
             }
         }
 

@@ -2,6 +2,9 @@ package org.example.gersangtrade.catalog.repository;
 
 import org.example.gersangtrade.domain.catalog.SkillCoefficient;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.Optional;
 
@@ -33,6 +36,9 @@ public interface SkillCoefficientRepository extends JpaRepository<SkillCoefficie
             WHERE sc.castsPerSecond IS NULL AND sc.tickIntervalMs IS NULL
             """)
     java.util.List<SkillCoefficient> findUnmeasuredWithOwners();
+
+    /** 스킬 ID에 연결된 계수 존재 여부 — 스킬 삭제 가능 여부 판단에 사용 */
+    boolean existsByMercenarySkillId(Long mercenarySkillId);
 
     /** 용병 ID 목록으로 스킬 계수 일괄 조회 — DPS 계산기 배치 로딩용 */
     @org.springframework.data.jpa.repository.Query("""

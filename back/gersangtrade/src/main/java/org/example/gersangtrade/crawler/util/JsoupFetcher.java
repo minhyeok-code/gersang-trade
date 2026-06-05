@@ -98,35 +98,6 @@ public class JsoupFetcher {
         return fetchBody(url, "https://geota.co.kr/");
     }
 
-    /**
-     * 바이너리 데이터(이미지) 패치.
-     * ignoreContentType 옵션으로 이미지 URL에서 바이트 배열을 받아온다.
-     *
-     * @param url 이미지 URL
-     * @return 이미지 바이트 배열
-     * @throws IOException 패치 실패 시
-     */
-    public byte[] fetchBytes(String url) throws IOException {
-        IOException lastException = null;
-
-        for (int attempt = 1; attempt <= MAX_RETRY; attempt++) {
-            try {
-                applyDelay(url, attempt);
-                return Jsoup.connect(url)
-                        .userAgent(USER_AGENT)
-                        .timeout(TIMEOUT_MS)
-                        .ignoreContentType(true)
-                        .execute()
-                        .bodyAsBytes();
-            } catch (IOException e) {
-                lastException = e;
-                log.warn("이미지 패치 실패 (시도 {}/{}): {} — {}", attempt, MAX_RETRY, url, e.getMessage());
-            }
-        }
-
-        throw new IOException("이미지 패치 최대 재시도 횟수 초과: " + url, lastException);
-    }
-
     /** 요청 딜레이 적용. 첫 번째 시도도 딜레이를 넣어 서버 부하를 줄인다 */
     private void applyDelay(String url, int attempt) {
         try {

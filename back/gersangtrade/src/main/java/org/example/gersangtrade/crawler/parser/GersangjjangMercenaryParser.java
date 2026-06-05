@@ -229,19 +229,8 @@ public final class GersangjjangMercenaryParser {
             }
         }
 
-        // 카드 이미지 파싱 — img src가 상대 경로면 도메인을 붙임
-        String imageUrl = null;
-        Element imgEl = card.selectFirst("img");
-        if (imgEl != null) {
-            String src = imgEl.attr("src").trim();
-            if (!src.isBlank()) {
-                imageUrl = src.startsWith("http") ? src
-                        : "https://www.gersangjjang.com" + (src.startsWith("/") ? "" : "/") + src;
-            }
-        }
-
         return new MercenaryRow(cleanName, defaultCategory, nation, nature, stats,
-                skills, characteristicNames, imageUrl);
+                skills, characteristicNames);
     }
 
     /**
@@ -333,12 +322,7 @@ public final class GersangjjangMercenaryParser {
 
     private record StatNaturePair(ParsedStat stat, Nature nature) {}
 
-    /**
-     * 카드 1행 파싱 결과.
-     *
-     * @param characteristicNames 특성명 목록 (레벨 수치 없음 — 관리자 수동 입력)
-     * @param imageUrl            카드 이미지 절대 URL (없으면 null)
-     */
+    /** @param characteristicNames 특성명 목록 (레벨 수치 없음 — 관리자 수동 입력) */
     public record MercenaryRow(
             String name,
             MercenaryCategory category,
@@ -346,7 +330,6 @@ public final class GersangjjangMercenaryParser {
             Nature nature,
             List<ParsedStat> stats,
             List<String> skills,
-            List<String> characteristicNames,
-            String imageUrl
+            List<String> characteristicNames
     ) {}
 }

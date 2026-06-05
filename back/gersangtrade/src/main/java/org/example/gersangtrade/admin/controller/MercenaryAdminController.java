@@ -126,8 +126,9 @@ public class MercenaryAdminController {
             @RequestParam(required = false) MercenaryCategory category,
             @RequestParam(required = false) Nature nature,
             @RequestParam(required = false) Nation nation,
+            @RequestParam(required = false) String name,
             @PageableDefault(size = 30, sort = "name", direction = Sort.Direction.ASC) Pageable pageable) {
-        return ResponseEntity.ok(mercenaryAdminService.listMercenaries(category, nature, nation, pageable));
+        return ResponseEntity.ok(mercenaryAdminService.listMercenaries(category, nature, nation, name, pageable));
     }
 
     /**

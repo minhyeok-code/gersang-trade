@@ -73,7 +73,10 @@
       "Bash(npx --prefix \"D:/Java/gersangTrade/front\" tsc --noEmit --project \"D:/Java/gersangTrade/front/tsconfig.json\")",
       "Bash(npx --prefix \"D:\\\\Java\\\\gersangTrade\\\\front\" tsc --noEmit --project \"D:\\\\Java\\\\gersangTrade\\\\front\\\\tsconfig.json\")",
       "Bash(./gradlew bootRun)",
-      "Bash(echo \"EXIT:$?\")"
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(rm \"D:/Java/gersangTrade/back/gersangtrade/src/main/java/org/example/gersangtrade/crawler/service/S3ImageService.java\")",
+      "Bash(rm \"D:/Java/gersangTrade/back/gersangtrade/src/main/java/org/example/gersangtrade/config/S3Config.java\")",
+      "Bash(npx --prefix \"D:/Java/gersangTrade/front\" tsc --noEmit -p \"D:/Java/gersangTrade/front/tsconfig.json\")"
     ]
   }
 }

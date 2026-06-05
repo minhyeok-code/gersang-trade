@@ -10,6 +10,7 @@ import org.example.gersangtrade.domain.catalog.enums.EquipmentKind;
 import org.example.gersangtrade.domain.catalog.enums.EquipmentSlot;
 import org.example.gersangtrade.domain.catalog.enums.ItemType;
 import org.example.gersangtrade.domain.catalog.enums.StatType;
+import org.example.gersangtrade.domain.catalog.enums.ValueType;
 
 import java.util.List;
 import java.util.Map;
@@ -29,7 +30,7 @@ public record ItemDetailAdminResponse(
 
     public record SkillEntry(Long id, String skillName, List<EffectEntry> effects) {}
 
-    public record EffectEntry(StatType statKey, Integer statValue) {}
+    public record EffectEntry(StatType statKey, Integer statValue, ValueType valueType) {}
 
     public record EquipmentInfo(
             EquipmentKind equipmentKind,
@@ -63,7 +64,7 @@ public record ItemDetailAdminResponse(
                         .toList(),
                 skills.stream().map(s -> {
                     List<EffectEntry> fx = effectsBySkillId.getOrDefault(s.getId(), List.of()).stream()
-                            .map(e -> new EffectEntry(e.getStatKey(), e.getStatValue())).toList();
+                            .map(e -> new EffectEntry(e.getStatKey(), e.getStatValue(), e.getValueType())).toList();
                     return new SkillEntry(s.getId(), s.getSkillName(), fx);
                 }).toList()
         );

@@ -10,7 +10,6 @@ import org.example.gersangtrade.catalog.repository.ItemSkillRepository;
 import org.example.gersangtrade.catalog.repository.ItemStatRepository;
 import org.example.gersangtrade.catalog.repository.RitualRepository;
 import org.example.gersangtrade.crawler.dto.ParsedItemDto;
-import org.example.gersangtrade.crawler.service.S3ImageService;
 import org.example.gersangtrade.crawler.parser.GersangjjangParser;
 import org.example.gersangtrade.crawler.parser.GersangjjangParser.CategoryInfo;
 import org.example.gersangtrade.crawler.parser.GersangjjangParser.ItemRow;
@@ -65,7 +64,6 @@ public class GersangjjangItemTasklet implements Tasklet {
     private static final String INDEX_URL = "https://www.gersangjjang.com/item/index.asp";
 
     private final JsoupFetcher jsoupFetcher;
-    private final S3ImageService s3ImageService;
     private final ItemRepository itemRepository;
     private final ItemStatRepository itemStatRepository;
     private final ItemSkillRepository itemSkillRepository;
@@ -122,27 +120,23 @@ public class GersangjjangItemTasklet implements Tasklet {
                             Item item = upsertEquipmentItem(parsed.cleanName(), detectedSlot, category.kind());
                             upsertAllStats(item, row.stats());
                             upsertSkills(item, row.skills());
-                            uploadItemImage(item, row.imageUrl());
                             equipmentCount++;
                         } else {
                             log.warn("슬롯 감지 실패 — MATERIAL로 저장: [{}] ({})", parsed.cleanName(), category.text());
                             Item item = upsertMaterialItem(parsed.cleanName());
                             upsertAllStats(item, row.stats());
                             upsertSkills(item, row.skills());
-                            uploadItemImage(item, row.imageUrl());
                             materialCount++;
                         }
                     } else if (category.isEquipment()) {
                         Item item = upsertEquipmentItem(parsed.cleanName(), category.slot(), category.kind());
                         upsertAllStats(item, row.stats());
                         upsertSkills(item, row.skills());
-                        uploadItemImage(item, row.imageUrl());
                         equipmentCount++;
                     } else {
                         Item item = upsertMaterialItem(parsed.cleanName());
                         upsertAllStats(item, row.stats());
                         upsertSkills(item, row.skills());
-                        uploadItemImage(item, row.imageUrl());
                         materialCount++;
                     }
                 }
@@ -291,13 +285,6 @@ public class GersangjjangItemTasklet implements Tasklet {
                 log.debug("스탯 저장: {} {} {} → {}", item.getName(), ps.element(), ps.statType(), ps.value());
             }
         }
-    }
-
-    /** imageUrl이 null이 아니고 item에 이미지가 없을 때만 S3 업로드 후 저장 */
-    private void uploadItemImage(Item item, String imageUrl) {
-        if (imageUrl == null || item.getImageUrl() != null) return;
-        String uploaded = s3ImageService.uploadItemImageFromUrl(imageUrl);
-        if (uploaded != null) item.updateImageUrl(uploaded);
     }
 
     /** 파싱된 스킬명 전체 UPSERT — 스킬은 전역 공유, 아이템-스킬 매핑만 추가 */

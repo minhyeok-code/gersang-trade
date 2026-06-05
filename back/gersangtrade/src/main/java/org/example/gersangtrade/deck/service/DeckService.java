@@ -583,6 +583,8 @@ public class DeckService {
                             case SELF -> characteristicStatMap;
                             case ALLY -> partyCharacteristicStatMap;
                             case ENEMY -> enemyDebuffStatMap;
+                            // 명왕부는 특성에서 발생하지 않으므로 ALLY 버킷으로 fallback
+                            case ALLY_HEAVENLY_KING -> partyCharacteristicStatMap;
                         };
                         targetMap.merge(cl.getStatType(), value, Integer::sum);
                     });

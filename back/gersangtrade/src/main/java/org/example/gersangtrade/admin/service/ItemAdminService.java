@@ -303,11 +303,12 @@ public class ItemAdminService {
                         .skill(skill)
                         .statKey(e.statKey())
                         .statValue(e.statValue())
+                        .valueType(e.valueType())
                         .build()))
                 .toList();
 
         List<ItemDetailAdminResponse.EffectEntry> effects = saved.stream()
-                .map(e -> new ItemDetailAdminResponse.EffectEntry(e.getStatKey(), e.getStatValue()))
+                .map(e -> new ItemDetailAdminResponse.EffectEntry(e.getStatKey(), e.getStatValue(), e.getValueType()))
                 .toList();
         return new ItemDetailAdminResponse.SkillEntry(skill.getId(), skill.getSkillName(), effects);
     }

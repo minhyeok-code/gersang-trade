@@ -1,10 +1,12 @@
 package org.example.gersangtrade.calculator.service;
 
 import org.example.gersangtrade.calculator.dto.request.BonusStatTarget;
+import org.example.gersangtrade.catalog.repository.ItemSkillMappingRepository;
 import org.example.gersangtrade.catalog.repository.SkillCoefficientRepository;
 import org.example.gersangtrade.domain.catalog.EquipmentItem;
 import org.example.gersangtrade.domain.catalog.Item;
 import org.example.gersangtrade.domain.catalog.ItemSkill;
+import org.example.gersangtrade.domain.catalog.ItemSkillMapping;
 import org.example.gersangtrade.domain.catalog.Mercenary;
 import org.example.gersangtrade.domain.catalog.SkillCoefficient;
 import org.example.gersangtrade.domain.catalog.enums.MercenaryCategory;
@@ -33,6 +35,9 @@ class MemberBuildStatCalculatorTest {
 
     @Mock
     private SkillCoefficientRepository skillCoefficientRepository;
+
+    @Mock
+    private ItemSkillMappingRepository itemSkillMappingRepository;
 
     @InjectMocks
     private MemberBuildStatCalculator calculator;
@@ -77,9 +82,21 @@ class MemberBuildStatCalculatorTest {
     @DisplayName("장비 스킬 계수가 있으면 장비 기준 주스탯 판별")
     void 장비스킬_우선() {
         long itemId = 99L;
-        SkillCoefficient itemCoef = mockItemCoef(itemId, 30f, 0f, 0f, 0f);
-        given(skillCoefficientRepository.findByItemIdIn(anyList()))
-                .willReturn(List.of(itemCoef));
+        long skillId = 50L;
+
+        Item item = mock(Item.class);
+        when(item.getId()).thenReturn(itemId);
+        ItemSkill itemSkill = mock(ItemSkill.class);
+        when(itemSkill.getId()).thenReturn(skillId);
+        ItemSkillMapping mapping = mock(ItemSkillMapping.class);
+        when(mapping.getItem()).thenReturn(item);
+        when(mapping.getSkill()).thenReturn(itemSkill);
+
+        SkillCoefficient itemCoef = mockCoefValues(30f, 0f, 0f, 0f);
+        when(itemCoef.getItemSkill()).thenReturn(itemSkill);
+
+        given(itemSkillMappingRepository.findByItemIdIn(anyList())).willReturn(List.of(mapping));
+        given(skillCoefficientRepository.findByItemSkillIdIn(anyList())).willReturn(List.of(itemCoef));
 
         UserDeckMember member = member(BonusStatTarget.MAIN_STAT, 260, 0);
         UserDeckMemberSlot slot = mockEquippedSlot(itemId);
@@ -116,16 +133,6 @@ class MemberBuildStatCalculatorTest {
         when(coef.getCoefDex()).thenReturn(dex);
         when(coef.getCoefVit()).thenReturn(vit);
         when(coef.getCoefInt()).thenReturn(intel);
-        return coef;
-    }
-
-    private static SkillCoefficient mockItemCoef(long itemId, float str, float dex, float vit, float intel) {
-        Item item = mock(Item.class);
-        when(item.getId()).thenReturn(itemId);
-        ItemSkill itemSkill = mock(ItemSkill.class);
-        when(itemSkill.getItem()).thenReturn(item);
-        SkillCoefficient coef = mockCoefValues(str, dex, vit, intel);
-        when(coef.getItemSkill()).thenReturn(itemSkill);
         return coef;
     }
 

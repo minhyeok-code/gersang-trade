@@ -10,7 +10,6 @@ import software.amazon.awssdk.services.s3.S3Client;
 
 /**
  * AWS S3 클라이언트 설정.
- * 크롤러 Batch Job에서 아이템/용병 이미지를 S3에 업로드할 때 사용한다.
  *
  * <p>환경변수로 설정해야 하는 값:
  * <pre>
@@ -32,10 +31,6 @@ public class S3Config {
     @Value("${aws.region}")
     private String region;
 
-    /**
-     * AWS SDK v2 S3 클라이언트 빈.
-     * StaticCredentialsProvider를 사용하여 환경변수 기반 인증을 적용한다.
-     */
     @Bean
     public S3Client s3Client() {
         return S3Client.builder()

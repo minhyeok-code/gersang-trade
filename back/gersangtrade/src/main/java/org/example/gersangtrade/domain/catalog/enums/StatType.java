@@ -28,6 +28,8 @@ public enum StatType {
     // ── 저항 (용병·세트효과 공통) ─────────────────────
     MAGIC_RESISTANCE("마법저항"),
     HITTING_RESISTANCE("타격저항"),
+    MAGIC_RESISTANCE_PIERCE("마법저항깎"),
+    HITTING_RESISTANCE_PIERCE("타격저항깎"),
 
     // ── 세트효과·주술세트효과 전용 ────────────────────
     DAMAGE_PERCENT("데미지증가"),

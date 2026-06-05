@@ -7,7 +7,6 @@ import org.example.gersangtrade.catalog.repository.MercenaryRepository;
 import org.example.gersangtrade.catalog.repository.MercenarySkillRepository;
 import org.example.gersangtrade.catalog.repository.MercenaryStatRepository;
 import org.example.gersangtrade.crawler.parser.GersangjjangMercenaryParser;
-import org.example.gersangtrade.crawler.service.S3ImageService;
 import org.example.gersangtrade.crawler.util.JsoupFetcher;
 import org.example.gersangtrade.domain.catalog.Mercenary;
 import org.example.gersangtrade.domain.catalog.MercenaryCharacteristic;
@@ -56,7 +55,6 @@ public class GersangjjangMercenaryTasklet implements Tasklet {
     private static final String INDEX_URL = "https://www.gersangjjang.com/yongbing/index.asp";
 
     private final JsoupFetcher jsoupFetcher;
-    private final S3ImageService s3ImageService;
     private final MercenaryRepository mercenaryRepository;
     private final MercenaryStatRepository mercenaryStatRepository;
     private final MercenarySkillRepository mercenarySkillRepository;
@@ -120,13 +118,11 @@ public class GersangjjangMercenaryTasklet implements Tasklet {
 
         if (mercenary == null) {
             // 거니버스에도 없는 용병 — 신규 저장
-            String uploadedImage = uploadMercenaryImage(row.imageUrl(), null);
             mercenary = mercenaryRepository.save(Mercenary.builder()
                     .name(row.name())
                     .category(row.category())
                     .nation(row.nation() != null ? row.nation() : Nation.NONE)
                     .nature(row.nature() != null ? row.nature() : Nature.NONE)
-                    .imageUrl(uploadedImage)
                     .build());
             log.debug("용병 신규 저장 (거상짱): {}", row.name());
         } else {
@@ -135,7 +131,6 @@ public class GersangjjangMercenaryTasklet implements Tasklet {
             if (fromGerniverse) {
                 log.debug("거니버스 기적재 용병 — 거상짱은 보완만 수행: {}", row.name());
             }
-            String imageUrl = uploadMercenaryImage(row.imageUrl(), mercenary.getImageUrl());
             mercenary.updateSpec(
                     mercenary.getKey(),
                     selectValue(mercenary.getCategory(), row.category()),
@@ -143,22 +138,13 @@ public class GersangjjangMercenaryTasklet implements Tasklet {
                     selectNature(mercenary.getNature(), row.nature()),
                     mercenary.getNatureValue(),
                     mercenary.isComingSoon(),
-                    imageUrl != null ? imageUrl : mercenary.getImageUrl(),
+                    mercenary.getImageUrl(),
                     LocalDateTime.now());
         }
 
         fillMissingStats(mercenary, row.stats());
         upsertSkills(mercenary, row.skills());
         upsertCharacteristics(mercenary, row.characteristicNames());
-    }
-
-    /**
-     * 이미지가 없는 경우에만 S3 업로드.
-     * existingImageUrl이 null이고 sourceUrl이 있을 때만 업로드한다.
-     */
-    private String uploadMercenaryImage(String sourceUrl, String existingImageUrl) {
-        if (existingImageUrl != null || sourceUrl == null) return existingImageUrl;
-        return s3ImageService.uploadMercenaryImageFromUrl(sourceUrl);
     }
 
     /**

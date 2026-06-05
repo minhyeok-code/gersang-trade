@@ -267,13 +267,11 @@ public class DpsCalculatorService {
                         .collect(Collectors.groupingBy(sc -> sc.getSetGrantedSkill().getId()));
 
         // ── 스킬 효과(적 디버프) 배치 로드 ────────────────────────────────────────
-        List<Long> mercenarySkillIds = mercCoefs.stream()
-                .filter(sc -> sc.getMercenarySkill() != null)
-                .map(sc -> sc.getMercenarySkill().getId())
-                .distinct().toList();
-        Map<Long, List<MercenarySkillEffect>> mercSkillEffectsBySkillId = mercenarySkillIds.isEmpty() ? Map.of() :
-                mercenarySkillEffectRepository.findBySkillIdIn(mercenarySkillIds).stream()
-                        .collect(Collectors.groupingBy(e -> e.getSkill().getId()));
+        // 스킬 계수(SkillCoefficient) 유무와 무관하게 용병 ID로 직접 조회
+        // — 계수 없이 디버프 효과만 있는 용병(예: 코끼리 주술사)도 정상 반영
+        Map<Long, List<MercenarySkillEffect>> mercSkillEffectsByMercId = mercenaryIds.isEmpty() ? Map.of() :
+                mercenarySkillEffectRepository.findBySkill_MercenaryIdIn(mercenaryIds).stream()
+                        .collect(Collectors.groupingBy(e -> e.getSkill().getMercenary().getId()));
 
         List<Long> itemSkillIds = skillMappings.stream()
                 .map(m -> m.getSkill().getId()).distinct().toList();
@@ -335,7 +333,9 @@ public class DpsCalculatorService {
             }
         }
 
-        int enemyResistPierceBonus = enemyResistPierceHolder[0];
+        // 명왕부 버프 수집 — 명왕이 장착한 아이템의 ALLY_HEAVENLY_KING scope 스탯
+        // element: 명왕의 속성, 같은 속성의 사천왕에게만 적용
+        List<HeavenlyKingBuff> heavenlyKingBuffs = new ArrayList<>();
 
         // 장비·세트 ALLY/ENEMY scope
         for (UserDeckMember member : members) {
@@ -344,10 +344,32 @@ public class DpsCalculatorService {
 
             for (UserDeckMemberSlot slot : memberSlots) {
                 for (ItemStat stat : itemStatsByItemId.getOrDefault(slot.getEquipmentItem().getItemId(), List.of())) {
-                    if (stat.getScope() != BuffTarget.ALLY) continue;
-                    if (!isElementApplicable(stat.getElement(), nature)) continue;
-                    accumulate(stat.getStatUnit() == StatUnit.PERCENT ? partyPercentBonus : partyFlatBonus,
-                            stat.getStatType(), stat.getValue());
+                    if (stat.getScope() == BuffTarget.ALLY) {
+                        if (!isElementApplicable(stat.getElement(), nature)) continue;
+                        accumulate(stat.getStatUnit() == StatUnit.PERCENT ? partyPercentBonus : partyFlatBonus,
+                                stat.getStatType(), stat.getValue());
+                    } else if (stat.getScope() == BuffTarget.ALLY_HEAVENLY_KING) {
+                        // 명왕 속성(nature)을 버프 element로 저장 — 나중에 같은 속성 사천왕에게 적용
+                        Element memberElement = nature != null ? natureToElement(nature) : null;
+                        heavenlyKingBuffs.add(new HeavenlyKingBuff(
+                                memberElement,
+                                stat.getStatType(),
+                                stat.getStatUnit() == StatUnit.PERCENT ? stat.getValue() : stat.getValue(),
+                                stat.getStatUnit() == StatUnit.PERCENT
+                        ));
+                    } else if (stat.getScope() == BuffTarget.ENEMY) {
+                        // ENEMY scope 아이템 스탯 → 적 디버프 적용
+                        switch (stat.getStatType()) {
+                            case RESIST_PIERCE -> enemyResistPierceHolder[0] += Math.abs(stat.getValue());
+                            case MAGIC_RESISTANCE, MAGIC_RESISTANCE_PIERCE ->
+                                    enemyMagicResistDebuff[0] += Math.abs(stat.getValue());
+                            case HITTING_RESISTANCE, HITTING_RESISTANCE_PIERCE ->
+                                    enemyHittingResistDebuff[0] += Math.abs(stat.getValue());
+                            case ELEMENT_VALUE, ELEMENT_PIERCE ->
+                                    enemyElementDebuff[0] += Math.abs(stat.getValue());
+                            default -> {}
+                        }
+                    }
                 }
             }
 
@@ -360,21 +382,25 @@ public class DpsCalculatorService {
                         accumulate(effect.getStatUnit() == StatUnit.PERCENT ? partyPercentBonus : partyFlatBonus,
                                 effect.getStatType(), effect.getStatValue());
                     } else if (effect.getScope() == BuffTarget.ENEMY && effect.getStatType() == StatType.RESIST_PIERCE) {
-                        enemyResistPierceBonus += effect.getStatValue();
+                        enemyResistPierceHolder[0] += Math.abs(effect.getStatValue());
                     }
                 }
             }
         }
 
         // ── 스킬 효과 기반 적 디버프 집계 ─────────────────────────────────────
-        // resolveSkillCoefs와 동일한 우선순위: 아이템 스킬 > 용병 스킬
+        // 아이템 스킬 우선 — SkillCoefficient 미측정 여부와 무관하게 ItemSkillMapping 존재 시 대체
+        Set<Long> itemIdsWithSkillMapping = skillMappings.stream()
+                .map(m -> m.getItem().getId())
+                .collect(Collectors.toSet());
+
         for (UserDeckMember member : members) {
             List<UserDeckMemberSlot> memberSlots = slotsByMemberId.getOrDefault(member.getId(), List.of());
 
             boolean usedItemSkill = false;
             for (UserDeckMemberSlot slot : memberSlots) {
-                if (coefsByItemId.containsKey(slot.getEquipmentItem().getItemId())) {
-                    Long itemId = slot.getEquipmentItem().getItemId();
+                Long itemId = slot.getEquipmentItem().getItemId();
+                if (itemIdsWithSkillMapping.contains(itemId)) {
                     skillMappings.stream()
                             .filter(m -> m.getItem().getId().equals(itemId))
                             .map(m -> m.getSkill().getId())
@@ -388,16 +414,15 @@ public class DpsCalculatorService {
             }
 
             if (!usedItemSkill) {
-                coefsByMercId.getOrDefault(member.getMercenary().getId(), List.of()).stream()
-                        .filter(sc -> sc.getMercenarySkill() != null)
-                        .map(sc -> sc.getMercenarySkill().getId())
-                        .distinct()
-                        .flatMap(skillId -> mercSkillEffectsBySkillId.getOrDefault(skillId, List.of()).stream())
+                mercSkillEffectsByMercId.getOrDefault(member.getMercenary().getId(), List.of())
                         .forEach(eff -> applyEnemyDebuff(eff.getStatKey(), eff.getStatValue(),
                                 enemyResistPierceHolder, enemyMagicResistDebuff,
                                 enemyHittingResistDebuff, enemyElementDebuff));
             }
         }
+
+        // 모든 루프(아이템·세트·스킬효과) 완료 후 스냅샷 — 이후 값은 변경되지 않음
+        int enemyResistPierceBonus = enemyResistPierceHolder[0];
 
         // ── 멤버별 유효 스탯 산출 ─────────────────────────────────────────────
         Map<Long, Map<StatType, Integer>> effectiveStatsByMemberId = new HashMap<>();
@@ -469,6 +494,15 @@ public class DpsCalculatorService {
                 }
             }
 
+            // ⑤ 명왕부 버프 — 사천왕 카테고리이고 명왕 속성과 일치할 때 적용
+            if (nature != null && isHeavenlyKingCategory(member.getMercenary().getCategory())) {
+                for (HeavenlyKingBuff hkBuff : heavenlyKingBuffs) {
+                    if (hkBuff.element() == null) continue;
+                    if (!isElementApplicable(hkBuff.element(), nature)) continue;
+                    accumulate(hkBuff.percent() ? selfPercent : selfFlat, hkBuff.statType(), hkBuff.value());
+                }
+            }
+
             // 최종 유효 스탯 = (기본 + selfFlat + partyFlat) × (1 + percent/100)
             Map<StatType, Integer> effectiveStats = new EnumMap<>(StatType.class);
             for (StatType type : StatType.values()) {
@@ -519,9 +553,9 @@ public class DpsCalculatorService {
                 : (monster.getHittingResistance() != null ? monster.getHittingResistance() : 0);
 
         if (resistType == ResistanceType.MAGIC) {
-            monsterResist += enemyMagicResistDebuff[0];
+            monsterResist -= enemyMagicResistDebuff[0];
         } else {
-            monsterResist += enemyHittingResistDebuff[0];
+            monsterResist -= enemyHittingResistDebuff[0];
         }
 
         int resistAfterDebuff = monsterResist - memberResistPierce - enemyResistPierceBonus;
@@ -560,7 +594,10 @@ public class DpsCalculatorService {
             int baseDex = stats.getOrDefault(StatType.DEXTERITY, 0);
             int baseVit = stats.getOrDefault(StatType.VITALITY, 0);
             int baseInt = stats.getOrDefault(StatType.INTELLECT, 0);
-            int baseAtk = stats.getOrDefault(StatType.ATTACK_POWER, 0);
+            // 공격력 = ATTACK_POWER + (최소+최대)/2 — MIN/MAX_POWER 버프도 반영
+            int baseAtk = stats.getOrDefault(StatType.ATTACK_POWER, 0)
+                    + (stats.getOrDefault(StatType.MIN_POWER, 0)
+                    + stats.getOrDefault(StatType.MAX_POWER, 0)) / 2;
 
             List<UserDeckMemberSlot> memberSlots = slotsByMemberId.getOrDefault(member.getId(), List.of());
             List<SkillCoefficient> skillCoefs = resolveSkillCoefs(
@@ -607,6 +644,10 @@ public class DpsCalculatorService {
                     rawDmg *= (1.0 + baseDmgMultiplier / 100.0);
                 }
 
+                // 아이템·세트 DAMAGE_PERCENT (특성 경로와 별개) — effectiveStats에서 직접 읽어 배율 적용
+                int itemDamagePct = stats.getOrDefault(StatType.DAMAGE_PERCENT, 0);
+                double itemDamageMultiplier = itemDamagePct != 0 ? (1.0 + itemDamagePct / 100.0) : 1.0;
+
                 double skillDps = 0.0;
                 boolean calculated = false;
 
@@ -614,12 +655,14 @@ public class DpsCalculatorService {
                         && coef.getCastsPerSecond() > 0) {
                     skillDps = rawDmg * damageMultiplier(member, resolveSkillName(coef),
                             memberDamagePercentSum, memberSkillDamageBonus, partySkillDamageBuffs)
-                            * coef.getHitCount() * coef.getCastsPerSecond();
+                            * itemDamageMultiplier
+                            * coef.getHitCount() / coef.getCastsPerSecond();
                     calculated = true;
                 } else if (coef.getSkillType() == SkillType.PERSISTENT && coef.getTickIntervalMs() != null
                         && coef.getTickIntervalMs() > 0) {
                     skillDps = rawDmg * damageMultiplier(member, resolveSkillName(coef),
                             memberDamagePercentSum, memberSkillDamageBonus, partySkillDamageBuffs)
+                            * itemDamageMultiplier
                             / (coef.getTickIntervalMs() / 1000.0);
                     calculated = true;
                 }
@@ -831,7 +874,7 @@ public class DpsCalculatorService {
                     }
                 } else if (buff.getTarget() == BuffTarget.ENEMY
                         && buff.getStatType() == StatType.RESIST_PIERCE) {
-                    enemyResistPierce += Math.round(value);
+                    enemyResistPierce += Math.abs(Math.round(value));
                 }
             }
         }
@@ -1104,8 +1147,8 @@ public class DpsCalculatorService {
                                 int[] enemyElementDebuff) {
         switch (statType) {
             case RESIST_PIERCE -> enemyResistPierceHolder[0] += Math.abs(value);
-            case MAGIC_RESISTANCE -> enemyMagicResistDebuff[0] += value;
-            case HITTING_RESISTANCE -> enemyHittingResistDebuff[0] += value;
+            case MAGIC_RESISTANCE, MAGIC_RESISTANCE_PIERCE -> enemyMagicResistDebuff[0] += Math.abs(value);
+            case HITTING_RESISTANCE, HITTING_RESISTANCE_PIERCE -> enemyHittingResistDebuff[0] += Math.abs(value);
             case ELEMENT_VALUE, ELEMENT_PIERCE -> enemyElementDebuff[0] += Math.abs(value);
             default -> { /* DPS 계산 대상 외 ENEMY 디버프는 무시 */ }
         }
@@ -1190,7 +1233,24 @@ public class DpsCalculatorService {
         return Math.max(0.0, 100.0 - (resistAfterDebuff * 0.16 + 57.0));
     }
 
+    /** 명왕부 버프 — 명왕 속성(element)이 일치하는 사천왕에게만 적용 */
+    private record HeavenlyKingBuff(Element element, StatType statType, int value, boolean percent) {}
+
     private record SpiritElementBuff(Element element, StatType statType, int value) {}
     private record DeckEffectsResult(int enemyResistPierce, List<SpiritElementBuff> spiritElementBuffs) {}
+
+    private boolean isHeavenlyKingCategory(MercenaryCategory category) {
+        return category == MercenaryCategory.FOUR_HEAVENLY_KINGS
+                || category == MercenaryCategory.FOUR_HEAVENLY_KINGS_AWAKENING;
+    }
+
+    /** Nature를 동명의 Element로 변환. NONE이면 NONE 반환. */
+    private Element natureToElement(Nature nature) {
+        try {
+            return Element.valueOf(nature.name());
+        } catch (IllegalArgumentException e) {
+            return Element.NONE;
+        }
+    }
 
 }

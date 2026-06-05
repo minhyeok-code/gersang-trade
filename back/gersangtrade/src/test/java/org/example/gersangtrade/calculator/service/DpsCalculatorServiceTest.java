@@ -4,7 +4,10 @@ import org.example.gersangtrade.calculator.dto.request.DpsRequest;
 import org.example.gersangtrade.calculator.dto.response.DpsResponse;
 import org.example.gersangtrade.catalog.repository.EquipmentSetEffectRepository;
 import org.example.gersangtrade.catalog.repository.EquipmentSetSkillEffectRepository;
+import org.example.gersangtrade.catalog.repository.ItemSkillEffectRepository;
+import org.example.gersangtrade.catalog.repository.ItemSkillMappingRepository;
 import org.example.gersangtrade.catalog.repository.ItemStatRepository;
+import org.example.gersangtrade.catalog.repository.MercenarySkillEffectRepository;
 import org.example.gersangtrade.catalog.service.LegendGeneralLoadService;
 import org.example.gersangtrade.catalog.repository.MercenaryCharacteristicRepository;
 import org.example.gersangtrade.catalog.repository.MercenaryCharacteristicLevelRepository;
@@ -97,6 +100,9 @@ class DpsCalculatorServiceTest {
     @Mock private RitualSetEffectRepository ritualSetEffectRepository;
     @Mock private RitualStatRepository ritualStatRepository;
     @Mock private SkillCoefficientRepository skillCoefficientRepository;
+    @Mock private ItemSkillMappingRepository itemSkillMappingRepository;
+    @Mock private MercenarySkillEffectRepository mercenarySkillEffectRepository;
+    @Mock private ItemSkillEffectRepository itemSkillEffectRepository;
     @Mock private MonsterRepository monsterRepository;
     @Mock private LegendGeneralLoadService legendGeneralLoadService;
     @Mock private MercenaryCharacteristicRepository mercenaryCharacteristicRepository;
@@ -183,7 +189,9 @@ class DpsCalculatorServiceTest {
         when(characteristicRepository.findByDeckMemberIdIn(anyList())).thenReturn(List.of());
         when(mercenaryCharacteristicRepository.findByMercenaryId(MERC_ID)).thenReturn(List.of());
         when(skillCoefficientRepository.findByMercenaryIdIn(anyList())).thenReturn(List.of(baseCoef));
-        when(skillCoefficientRepository.findByItemIdIn(anyList())).thenReturn(List.of());
+        when(itemSkillMappingRepository.findByItemIdIn(anyList())).thenReturn(List.of());
+        when(mercenarySkillEffectRepository.findBySkill_MercenaryIdIn(anyList())).thenReturn(List.of());
+        when(itemSkillEffectRepository.findBySkillIdIn(anyList())).thenReturn(List.of());
         when(monsterRepository.findById(MONSTER_ID)).thenReturn(Optional.of(monster));
 
         when(myungwangStatTransferCalculator.computeReceivedTransfers(any(), any(), any(), any()))

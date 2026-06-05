@@ -6,7 +6,6 @@ import org.example.gersangtrade.catalog.repository.ItemRepository;
 import org.example.gersangtrade.catalog.repository.MaterialItemRepository;
 import org.example.gersangtrade.crawler.parser.GersangjjangParser;
 import org.example.gersangtrade.crawler.parser.GersangjjangParser.MaterialRow;
-import org.example.gersangtrade.crawler.service.S3ImageService;
 import org.example.gersangtrade.crawler.util.JsoupFetcher;
 import org.example.gersangtrade.domain.catalog.Item;
 import org.example.gersangtrade.domain.catalog.MaterialItem;
@@ -55,7 +54,6 @@ public class GersangjjangMaterialTasklet implements Tasklet {
     );
 
     private final JsoupFetcher jsoupFetcher;
-    private final S3ImageService s3ImageService;
     private final ItemRepository itemRepository;
     private final MaterialItemRepository materialItemRepository;
 
@@ -78,7 +76,7 @@ public class GersangjjangMaterialTasklet implements Tasklet {
                 }
 
                 for (MaterialRow row : rows) {
-                    boolean isNew = upsertMaterialItem(row.name(), row.imageUrl());
+                    boolean isNew = upsertMaterialItem(row.name());
                     if (isNew) savedCount++; else skippedCount++;
                 }
 
@@ -95,17 +93,8 @@ public class GersangjjangMaterialTasklet implements Tasklet {
         return RepeatStatus.FINISHED;
     }
 
-    /**
-     * 재료 아이템 UPSERT.
-     * <ul>
-     *   <li>items 테이블에 name이 없으면 신규 저장 후 imageUrl 설정</li>
-     *   <li>이미 존재하면 imageUrl만 갱신 (imageUrl이 null이 아닌 경우에만)</li>
-     *   <li>material_items 테이블에 항목이 없으면 신규 저장</li>
-     * </ul>
-     *
-     * @return true=신규 저장, false=기존 존재
-     */
-    private boolean upsertMaterialItem(String name, String imageUrl) {
+    /** @return true=신규 저장, false=기존 존재 */
+    private boolean upsertMaterialItem(String name) {
         boolean isNew = false;
 
         Item item = itemRepository.findByName(name).orElse(null);
@@ -116,12 +105,6 @@ public class GersangjjangMaterialTasklet implements Tasklet {
                     .build());
             isNew = true;
             log.debug("재료 아이템 신규 저장: {}", name);
-        }
-
-        // 이미지가 없을 때만 S3에 업로드 후 저장 (기존 S3 URL을 덮어쓰지 않음)
-        if (imageUrl != null && item.getImageUrl() == null) {
-            String uploaded = s3ImageService.uploadItemImageFromUrl(imageUrl);
-            if (uploaded != null) item.updateImageUrl(uploaded);
         }
 
         if (!materialItemRepository.existsByItemId(item.getId())) {

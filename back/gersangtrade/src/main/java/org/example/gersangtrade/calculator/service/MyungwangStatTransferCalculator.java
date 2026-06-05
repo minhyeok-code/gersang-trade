@@ -15,23 +15,27 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 명왕 스탯 이전 계산 서비스.
  *
  * <p>이전량 = 명왕 해당 스탯 × (기본 이전율% + 특성 레벨 이전율%)
  *
- * <p>이전 대상 우선순위 — 명왕당 동속성 대상 1명만 수신:
- *   1. 같은 속성 사천왕
- *   2. 같은 속성 주인공
- *   3. 같은 속성 전설장수
- *   4. 없으면 이전 X
- *
- * <p>부동명왕(EARTH)은 스탯 이전 없음 → 빈 Map 반환.
+ * <p>이전 규칙:
+ *   - 속성 제한 없음 — 임의의 명왕이 임의의 사천왕에게 이전 가능
+ *   - 사천왕 1명에 명왕 1명만 배정 (1:1 제약)
+ *   - 동속성 명왕·사천왕 쌍 우선 배정
+ *   - 동속성 없으면 사천왕의 스탯 중 이전 대상 스탯이 더 높은 명왕 우선
+ *   - 사천왕 배정 후 남은 명왕 → 주인공 → 전설장수 순으로 fallback
+ *   - 부동명왕(EARTH)은 스탯 이전 없음
  */
 @Service
 @RequiredArgsConstructor
@@ -74,7 +78,11 @@ public class MyungwangStatTransferCalculator {
 
     /**
      * 덱 내 모든 명왕의 스탯 이전을 계산한다.
-     * 각 명왕의 이전량은 우선순위에 따라 찾은 수신 멤버 1명에게만 합산된다.
+     *
+     * <p>배정 순서:
+     * 1. 동속성 명왕·사천왕 쌍 우선 배정 (1:1)
+     * 2. 미배정 사천왕 — 남은 명왕 중 해당 사천왕의 이전 스탯이 더 높은 명왕 배정
+     * 3. 미배정 명왕 — 주인공·전설장수 fallback (속성 무관, 선착순)
      */
     public ComputedTransfers computeReceivedTransfers(
             List<UserDeckMember> members,
@@ -85,62 +93,119 @@ public class MyungwangStatTransferCalculator {
         Map<Long, Map<StatType, Integer>> received = new HashMap<>();
         Map<Long, List<TransferDetail>> details = new HashMap<>();
 
-        for (UserDeckMember member : members) {
-            MercenaryCategory category = member.getMercenary().getCategory();
-            if (category != MercenaryCategory.MYEONG_KING
-                    && category != MercenaryCategory.MYEONG_KING_AWAKENING) {
-                continue;
-            }
+        // ── 명왕 이전 정보 수집 ──────────────────────────────────────────────────
+        record MyungwangInfo(UserDeckMember member, TransferConfig config, int transferAmount) {}
 
-            int transferLevel = resolveTransferLevel(member, charsByMemberId, charLevelsByCharId);
-            Map<StatType, Integer> myungwangStats =
-                    preTransferStatsByMemberId.getOrDefault(member.getId(), Map.of());
-            Map<StatType, Float> myungwangStatsFloat = new EnumMap<>(StatType.class);
-            myungwangStats.forEach((k, v) -> myungwangStatsFloat.put(k, v.floatValue()));
+        List<MyungwangInfo> myungwangs = new ArrayList<>();
+        for (UserDeckMember m : members) {
+            MercenaryCategory cat = m.getMercenary().getCategory();
+            if (cat != MercenaryCategory.MYEONG_KING && cat != MercenaryCategory.MYEONG_KING_AWAKENING) continue;
 
-            Map<StatType, Float> transferAmount =
-                    calculate(member.getMercenary(), transferLevel, myungwangStatsFloat);
-            if (transferAmount.isEmpty()) continue;
+            TransferConfig config = getConfig(m.getMercenary());
+            if (config == null) continue;
 
-            UserDeckMember target = findTransferTarget(members, member.getMercenary().getNature());
-            if (target == null) continue;
+            int level = resolveTransferLevel(m, charsByMemberId, charLevelsByCharId);
+            float additionalRate = getAdditionalRate(m.getMercenary().getId(), level);
+            float totalRate = (config.baseRate() + additionalRate) / 100f;
+            int statVal = preTransferStatsByMemberId.getOrDefault(m.getId(), Map.of())
+                    .getOrDefault(config.statType(), 0);
+            int amount = Math.round(statVal * totalRate);
 
-            String sourceName = member.getMercenary().getName();
-            transferAmount.forEach((statType, amount) -> {
-                int rounded = Math.round(amount);
-                received.computeIfAbsent(target.getId(), id -> new EnumMap<>(StatType.class))
-                        .merge(statType, rounded, Integer::sum);
-                details.computeIfAbsent(target.getId(), id -> new ArrayList<>())
-                        .add(new TransferDetail(sourceName, statType, rounded));
-            });
+            myungwangs.add(new MyungwangInfo(m, config, amount));
         }
+
+        if (myungwangs.isEmpty()) return new ComputedTransfers(received, details);
+
+        // ── 사천왕 목록 ──────────────────────────────────────────────────────────
+        List<UserDeckMember> heavenlyKings = members.stream()
+                .filter(m -> m.getMercenary().getCategory() == MercenaryCategory.FOUR_HEAVENLY_KINGS
+                        || m.getMercenary().getCategory() == MercenaryCategory.FOUR_HEAVENLY_KINGS_AWAKENING)
+                .collect(Collectors.toList());
+
+        Set<Long> usedMyungwangIds = new HashSet<>();
+        Map<Long, MyungwangInfo> assignment = new HashMap<>(); // 사천왕 memberId → 배정 명왕
+
+        // ── 1단계: 동속성 우선 배정 ────────────────────────────────────────────
+        for (UserDeckMember king : heavenlyKings) {
+            Nature kingNature = king.getMercenary().getNature();
+            for (MyungwangInfo info : myungwangs) {
+                if (usedMyungwangIds.contains(info.member().getId())) continue;
+                if (info.member().getMercenary().getNature() == kingNature) {
+                    assignment.put(king.getId(), info);
+                    usedMyungwangIds.add(info.member().getId());
+                    break;
+                }
+            }
+        }
+
+        // ── 2단계: 미배정 사천왕 — 천왕의 이전 대상 스탯이 더 높은 명왕 우선 ──
+        List<MyungwangInfo> remaining = myungwangs.stream()
+                .filter(info -> !usedMyungwangIds.contains(info.member().getId()))
+                .collect(Collectors.toList());
+
+        for (UserDeckMember king : heavenlyKings) {
+            if (assignment.containsKey(king.getId()) || remaining.isEmpty()) continue;
+
+            Map<StatType, Integer> kingStats = preTransferStatsByMemberId
+                    .getOrDefault(king.getId(), Map.of());
+
+            MyungwangInfo best = remaining.stream()
+                    .max(Comparator.comparingInt(
+                            info -> kingStats.getOrDefault(info.config().statType(), 0)))
+                    .orElse(null);
+
+            if (best != null) {
+                assignment.put(king.getId(), best);
+                usedMyungwangIds.add(best.member().getId());
+                remaining.remove(best);
+            }
+        }
+
+        // ── 배정 결과 적용 ───────────────────────────────────────────────────────
+        for (Map.Entry<Long, MyungwangInfo> entry : assignment.entrySet()) {
+            applyTransfer(entry.getKey(), entry.getValue().member().getMercenary().getName(),
+                    entry.getValue().config().statType(), entry.getValue().transferAmount(),
+                    received, details);
+        }
+
+        // ── 3단계: 사천왕에 배정되지 않은 명왕 → 주인공·전설장수 fallback ───────
+        List<MyungwangInfo> unassigned = myungwangs.stream()
+                .filter(info -> !usedMyungwangIds.contains(info.member().getId()))
+                .toList();
+
+        Set<Long> usedFallbackIds = new HashSet<>();
+        for (MyungwangInfo info : unassigned) {
+            UserDeckMember target = findFallbackTarget(members, usedFallbackIds);
+            if (target == null) continue;
+            usedFallbackIds.add(target.getId());
+            applyTransfer(target.getId(), info.member().getMercenary().getName(),
+                    info.config().statType(), info.transferAmount(), received, details);
+        }
+
         return new ComputedTransfers(received, details);
     }
 
-    /** 이전 대상 탐색 — 사천왕(동속성) → 주인공(동속성) → 전설장수(동속성). 명왕 본인은 제외. */
-    public static UserDeckMember findTransferTarget(List<UserDeckMember> members, Nature nature) {
+    private void applyTransfer(Long targetId, String sourceName, StatType statType, int amount,
+                                Map<Long, Map<StatType, Integer>> received,
+                                Map<Long, List<TransferDetail>> details) {
+        received.computeIfAbsent(targetId, id -> new EnumMap<>(StatType.class))
+                .merge(statType, amount, Integer::sum);
+        details.computeIfAbsent(targetId, id -> new ArrayList<>())
+                .add(new TransferDetail(sourceName, statType, amount));
+    }
+
+    /** 주인공 → 전설장수 순 fallback. 속성 무관, 아직 수신하지 않은 대상만. */
+    private static UserDeckMember findFallbackTarget(List<UserDeckMember> members,
+                                                      Set<Long> usedIds) {
         for (UserDeckMember m : members) {
             if (isMyungwangCategory(m.getMercenary().getCategory())) continue;
-            MercenaryCategory cat = m.getMercenary().getCategory();
-            if ((cat == MercenaryCategory.FOUR_HEAVENLY_KINGS
-                    || cat == MercenaryCategory.FOUR_HEAVENLY_KINGS_AWAKENING)
-                    && m.getMercenary().getNature() == nature) {
-                return m;
-            }
+            if (usedIds.contains(m.getId())) continue;
+            if (m.getMercenary().getCategory() == MercenaryCategory.PROTAGONIST) return m;
         }
         for (UserDeckMember m : members) {
             if (isMyungwangCategory(m.getMercenary().getCategory())) continue;
-            if (m.getMercenary().getCategory() == MercenaryCategory.PROTAGONIST
-                    && m.getMercenary().getNature() == nature) {
-                return m;
-            }
-        }
-        for (UserDeckMember m : members) {
-            if (isMyungwangCategory(m.getMercenary().getCategory())) continue;
-            if (m.getMercenary().getCategory() == MercenaryCategory.LEGENDARY_GENERAL
-                    && m.getMercenary().getNature() == nature) {
-                return m;
-            }
+            if (usedIds.contains(m.getId())) continue;
+            if (m.getMercenary().getCategory() == MercenaryCategory.LEGENDARY_GENERAL) return m;
         }
         return null;
     }

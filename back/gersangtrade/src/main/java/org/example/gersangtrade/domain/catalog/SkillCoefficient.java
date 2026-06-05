@@ -18,7 +18,7 @@ import org.example.gersangtrade.domain.catalog.enums.SkillType;
  *
  * <p>DPS 계산:
  * 원데미지 = coef_str×STR + coef_dex×DEX + coef_vit×VIT + coef_int×INT + coef_atk×ATK + coef_lvl×LVL
- * INSTANT:    DPS = 원데미지 × hitCount × castsPerSecond
+ * INSTANT:    DPS = 원데미지 × hitCount / castsPerSecond
  * PERSISTENT: DPS = 원데미지 / (tickIntervalMs / 1000.0)
  * TRIGGER:    trigger_every_n은 연결된 ItemSkill 또는 SetGrantedSkill에서 조회
  */

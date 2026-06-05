@@ -22,7 +22,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * 명왕 스탯 이전 계산기 단위 테스트.
- * 각 명왕의 이전량은 동속성 사천왕 → 주인공 → 전설장수 중 1명에게만 적용된다.
+ *
+ * <p>배정 규칙:
+ *   - 속성 제한 없음 (임의 명왕 → 임의 사천왕)
+ *   - 동속성 명왕·사천왕 쌍 우선 배정
+ *   - 동속성 없으면 사천왕의 이전 대상 스탯 값이 높은 명왕 우선
+ *   - 미배정 명왕 → 주인공·전설장수 fallback
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("MyungwangStatTransferCalculator")
@@ -38,147 +43,125 @@ class MyungwangStatTransferCalculatorTest {
     private MyungwangStatTransferCalculator calculator;
 
     @Nested
-    @DisplayName("findTransferTarget")
-    class FindTransferTarget {
-
-        @Test
-        @DisplayName("동속성 사천왕이 있으면 사천왕 1명만 수신")
-        void 동속성_사천왕_우선() {
-            UserDeckMember myungwang = member(1L, "항삼세명왕", MercenaryCategory.MYEONG_KING, Nature.FIRE);
-            UserDeckMember heavenlyKing = member(2L, "채염사천왕", MercenaryCategory.FOUR_HEAVENLY_KINGS, Nature.FIRE);
-            UserDeckMember protagonist = member(3L, "주인공", MercenaryCategory.PROTAGONIST, Nature.FIRE);
-            UserDeckMember legend = member(4L, "전설장수", MercenaryCategory.LEGENDARY_GENERAL, Nature.FIRE);
-
-            UserDeckMember target = MyungwangStatTransferCalculator.findTransferTarget(
-                    List.of(myungwang, heavenlyKing, protagonist, legend), Nature.FIRE);
-
-            assertThat(target.getId()).isEqualTo(2L);
-        }
-
-        @Test
-        @DisplayName("사천왕 없으면 동속성 주인공 수신")
-        void 사천왕_없으면_주인공() {
-            UserDeckMember myungwang = member(1L, "항삼세명왕", MercenaryCategory.MYEONG_KING, Nature.FIRE);
-            UserDeckMember protagonist = member(3L, "주인공", MercenaryCategory.PROTAGONIST, Nature.FIRE);
-            UserDeckMember legend = member(4L, "전설장수", MercenaryCategory.LEGENDARY_GENERAL, Nature.FIRE);
-
-            UserDeckMember target = MyungwangStatTransferCalculator.findTransferTarget(
-                    List.of(myungwang, protagonist, legend), Nature.FIRE);
-
-            assertThat(target.getId()).isEqualTo(3L);
-        }
-
-        @Test
-        @DisplayName("사천왕·주인공 없으면 동속성 전설장수 수신")
-        void 전설장수_수신() {
-            UserDeckMember myungwang = member(1L, "항삼세명왕", MercenaryCategory.MYEONG_KING, Nature.FIRE);
-            UserDeckMember legend = member(4L, "전설장수", MercenaryCategory.LEGENDARY_GENERAL, Nature.FIRE);
-
-            UserDeckMember target = MyungwangStatTransferCalculator.findTransferTarget(
-                    List.of(myungwang, legend), Nature.FIRE);
-
-            assertThat(target.getId()).isEqualTo(4L);
-        }
-
-        @Test
-        @DisplayName("다른 속성 사천왕은 대상에서 제외")
-        void 다른_속성_제외() {
-            UserDeckMember myungwang = member(1L, "항삼세명왕", MercenaryCategory.MYEONG_KING, Nature.FIRE);
-            UserDeckMember waterKing = member(2L, "수속 사천왕", MercenaryCategory.FOUR_HEAVENLY_KINGS, Nature.WATER);
-            UserDeckMember fireLegend = member(4L, "화속 전설", MercenaryCategory.LEGENDARY_GENERAL, Nature.FIRE);
-
-            UserDeckMember target = MyungwangStatTransferCalculator.findTransferTarget(
-                    List.of(myungwang, waterKing, fireLegend), Nature.FIRE);
-
-            assertThat(target.getId()).isEqualTo(4L);
-        }
-
-        @Test
-        @DisplayName("대상 없으면 null")
-        void 대상_없음() {
-            UserDeckMember myungwang = member(1L, "항삼세명왕", MercenaryCategory.MYEONG_KING, Nature.FIRE);
-
-            UserDeckMember target = MyungwangStatTransferCalculator.findTransferTarget(
-                    List.of(myungwang), Nature.FIRE);
-
-            assertThat(target).isNull();
-        }
-    }
-
-    @Nested
     @DisplayName("computeReceivedTransfers")
     class ComputeReceivedTransfers {
 
         @Test
-        @DisplayName("명왕 1명의 이전량은 수신 멤버 1명에만 합산")
-        void 단일_수신자() {
-            Mercenary myungwangMerc = mercenary("항삼세명왕", MercenaryCategory.MYEONG_KING, Nature.FIRE);
-            Mercenary heavenlyMerc = mercenary("채염사천왕", MercenaryCategory.FOUR_HEAVENLY_KINGS, Nature.FIRE);
+        @DisplayName("명왕 1명 → 동속성 사천왕 이전")
+        void 단일_동속성_이전() {
+            UserDeckMember myungwang = member(1L, "항삼세명왕", MercenaryCategory.MYEONG_KING, Nature.FIRE);
+            UserDeckMember king = member(2L, "채염사천왕", MercenaryCategory.FOUR_HEAVENLY_KINGS, Nature.FIRE);
 
-            UserDeckMember myungwang = UserDeckMember.builder().deck(null).mercenary(myungwangMerc).build();
-            UserDeckMember heavenlyKing = UserDeckMember.builder().deck(null).mercenary(heavenlyMerc).build();
-            setMemberId(myungwang, 1L);
-            setMemberId(heavenlyKing, 2L);
-
-            Map<Long, Map<StatType, Integer>> preTransfer = Map.of(
-                    1L, Map.of(StatType.STRENGTH, 1000));
-
-            MyungwangStatTransferCalculator.ComputedTransfers result =
-                    calculator.computeReceivedTransfers(
-                            List.of(myungwang, heavenlyKing),
-                            Map.of(),
-                            Map.of(),
-                            preTransfer);
+            var result = calculator.computeReceivedTransfers(
+                    List.of(myungwang, king), Map.of(), Map.of(),
+                    Map.of(1L, Map.of(StatType.STRENGTH, 1000)));
 
             // 화명왕 기본 이전율 10% → 1000 × 10% = 100
-            assertThat(result.receivedByMemberId()).containsKey(2L);
             assertThat(result.receivedByMemberId().get(2L)).containsEntry(StatType.STRENGTH, 100);
             assertThat(result.receivedByMemberId()).doesNotContainKey(1L);
-            assertThat(result.detailsByMemberId().get(2L)).hasSize(1);
-            assertThat(result.detailsByMemberId().get(2L).get(0).sourceMercenaryName()).isEqualTo("항삼세명왕");
         }
 
         @Test
         @DisplayName("부동명왕(EARTH)은 이전 없음")
         void 부동명왕_이전_없음() {
-            Mercenary earthMyungwang = mercenary("부동명왕", MercenaryCategory.MYEONG_KING, Nature.EARTH);
-            Mercenary heavenlyMerc = mercenary("사천왕", MercenaryCategory.FOUR_HEAVENLY_KINGS, Nature.EARTH);
+            UserDeckMember myungwang = member(1L, "부동명왕", MercenaryCategory.MYEONG_KING, Nature.EARTH);
+            UserDeckMember king = member(2L, "사천왕", MercenaryCategory.FOUR_HEAVENLY_KINGS, Nature.FIRE);
 
-            UserDeckMember myungwang = UserDeckMember.builder().deck(null).mercenary(earthMyungwang).build();
-            UserDeckMember heavenlyKing = UserDeckMember.builder().deck(null).mercenary(heavenlyMerc).build();
-            setMemberId(myungwang, 1L);
-            setMemberId(heavenlyKing, 2L);
-
-            MyungwangStatTransferCalculator.ComputedTransfers result =
-                    calculator.computeReceivedTransfers(
-                            List.of(myungwang, heavenlyKing),
-                            Map.of(),
-                            Map.of(),
-                            Map.of(1L, Map.of(StatType.STRENGTH, 5000)));
+            var result = calculator.computeReceivedTransfers(
+                    List.of(myungwang, king), Map.of(), Map.of(),
+                    Map.of(1L, Map.of(StatType.STRENGTH, 5000)));
 
             assertThat(result.receivedByMemberId()).isEmpty();
-            assertThat(result.detailsByMemberId()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("동속성 명왕이 동속성 사천왕에게 우선 배정 — 다른 속성 사천왕은 남은 명왕 배정")
+        void 동속성_우선_배정() {
+            // 화명왕(FIRE) + 뇌명왕(THUNDER), 화사천왕(FIRE) + 뇌사천왕(THUNDER)
+            UserDeckMember fireMw = member(1L, "화명왕", MercenaryCategory.MYEONG_KING, Nature.FIRE);
+            UserDeckMember thunderMw = member(2L, "뇌명왕", MercenaryCategory.MYEONG_KING, Nature.THUNDER);
+            UserDeckMember fireKing = member(3L, "화사천왕", MercenaryCategory.FOUR_HEAVENLY_KINGS, Nature.FIRE);
+            UserDeckMember thunderKing = member(4L, "뇌사천왕", MercenaryCategory.FOUR_HEAVENLY_KINGS, Nature.THUNDER);
+
+            var result = calculator.computeReceivedTransfers(
+                    List.of(fireMw, thunderMw, fireKing, thunderKing), Map.of(), Map.of(),
+                    Map.of(
+                            1L, Map.of(StatType.STRENGTH, 1000),  // 화명왕 STR
+                            2L, Map.of(StatType.DEXTERITY, 800)   // 뇌명왕 DEX
+                    ));
+
+            // 화명왕 → 화사천왕(STR 100), 뇌명왕 → 뇌사천왕(DEX 80)
+            assertThat(result.receivedByMemberId().get(3L)).containsEntry(StatType.STRENGTH, 100);
+            assertThat(result.receivedByMemberId().get(4L)).containsEntry(StatType.DEXTERITY, 80);
+        }
+
+        @Test
+        @DisplayName("동속성 없을 때 사천왕 스탯이 높은 명왕 우선 배정")
+        void 비동속성_스탯_기준_배정() {
+            // 화명왕(STR 이전), 뇌명왕(DEX 이전), 수사천왕 — 수사천왕의 DEX > STR
+            UserDeckMember fireMw = member(1L, "화명왕", MercenaryCategory.MYEONG_KING, Nature.FIRE);
+            UserDeckMember thunderMw = member(2L, "뇌명왕", MercenaryCategory.MYEONG_KING, Nature.THUNDER);
+            UserDeckMember waterKing = member(3L, "수사천왕", MercenaryCategory.FOUR_HEAVENLY_KINGS, Nature.WATER);
+
+            var result = calculator.computeReceivedTransfers(
+                    List.of(fireMw, thunderMw, waterKing), Map.of(), Map.of(),
+                    Map.of(
+                            1L, Map.of(StatType.STRENGTH, 1000),
+                            2L, Map.of(StatType.DEXTERITY, 900),
+                            3L, Map.of(StatType.STRENGTH, 200, StatType.DEXTERITY, 500) // DEX 높음
+                    ));
+
+            // 수사천왕 DEX(500) > STR(200) → 뇌명왕(DEX 이전) 배정
+            assertThat(result.receivedByMemberId().get(3L)).containsKey(StatType.DEXTERITY);
+        }
+
+        @Test
+        @DisplayName("사천왕 미배정 명왕은 주인공에게 fallback")
+        void 사천왕_없으면_주인공_fallback() {
+            UserDeckMember myungwang = member(1L, "화명왕", MercenaryCategory.MYEONG_KING, Nature.FIRE);
+            UserDeckMember protagonist = member(2L, "주인공", MercenaryCategory.PROTAGONIST, Nature.WATER);
+
+            var result = calculator.computeReceivedTransfers(
+                    List.of(myungwang, protagonist), Map.of(), Map.of(),
+                    Map.of(1L, Map.of(StatType.STRENGTH, 1000)));
+
+            assertThat(result.receivedByMemberId().get(2L)).containsEntry(StatType.STRENGTH, 100);
+        }
+
+        @Test
+        @DisplayName("2명왕 1사천왕 — 동속성 명왕 우선, 나머지 명왕은 주인공에게")
+        void 두명왕_한사천왕() {
+            UserDeckMember fireMw = member(1L, "화명왕", MercenaryCategory.MYEONG_KING, Nature.FIRE);
+            UserDeckMember thunderMw = member(2L, "뇌명왕", MercenaryCategory.MYEONG_KING, Nature.THUNDER);
+            UserDeckMember fireKing = member(3L, "화사천왕", MercenaryCategory.FOUR_HEAVENLY_KINGS, Nature.FIRE);
+            UserDeckMember protagonist = member(4L, "주인공", MercenaryCategory.PROTAGONIST, Nature.WATER);
+
+            var result = calculator.computeReceivedTransfers(
+                    List.of(fireMw, thunderMw, fireKing, protagonist), Map.of(), Map.of(),
+                    Map.of(
+                            1L, Map.of(StatType.STRENGTH, 1000),
+                            2L, Map.of(StatType.DEXTERITY, 800)
+                    ));
+
+            // 화명왕 → 화사천왕, 뇌명왕 → 주인공
+            assertThat(result.receivedByMemberId().get(3L)).containsEntry(StatType.STRENGTH, 100);
+            assertThat(result.receivedByMemberId().get(4L)).containsEntry(StatType.DEXTERITY, 80);
         }
     }
 
     private static UserDeckMember member(Long id, String name, MercenaryCategory category, Nature nature) {
-        UserDeckMember member = UserDeckMember.builder()
+        UserDeckMember m = UserDeckMember.builder()
                 .deck(null)
                 .mercenary(mercenary(name, category, nature))
                 .build();
-        setMemberId(member, id);
-        return member;
+        setMemberId(m, id);
+        return m;
     }
 
     private static Mercenary mercenary(String name, MercenaryCategory category, Nature nature) {
-        return Mercenary.builder()
-                .name(name)
-                .category(category)
-                .nature(nature)
-                .build();
+        return Mercenary.builder().name(name).category(category).nature(nature).build();
     }
 
-    /** 테스트용 member id 주입 */
     private static void setMemberId(UserDeckMember member, Long id) {
         try {
             var field = UserDeckMember.class.getDeclaredField("id");

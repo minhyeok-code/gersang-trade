@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.example.gersangtrade.domain.catalog.enums.StatType;
+import org.example.gersangtrade.domain.catalog.enums.ValueType;
 
 /**
  * 아이템 스킬의 대상 디버프 효과 엔티티.
@@ -41,11 +42,17 @@ public class ItemSkillEffect {
     @Column(name = "stat_value", nullable = false)
     private Integer statValue;
 
+    /** 수치 타입 — FLAT(고정값) 또는 PERCENT(퍼센트) */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "value_type", nullable = false, length = 10)
+    private ValueType valueType;
+
     @Builder
-    public ItemSkillEffect(ItemSkill skill, StatType statKey, Integer statValue) {
+    public ItemSkillEffect(ItemSkill skill, StatType statKey, Integer statValue, ValueType valueType) {
         this.skill = skill;
         this.statKey = statKey;
         this.statValue = statValue;
+        this.valueType = valueType != null ? valueType : ValueType.FLAT;
     }
 
     public void updateValue(int value) {

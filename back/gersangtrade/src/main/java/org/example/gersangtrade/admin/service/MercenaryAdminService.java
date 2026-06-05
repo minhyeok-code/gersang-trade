@@ -18,6 +18,7 @@ import org.example.gersangtrade.catalog.repository.MercenaryMaterialRepository;
 import org.example.gersangtrade.catalog.repository.MercenaryRepository;
 import org.example.gersangtrade.catalog.repository.MercenarySkillEffectRepository;
 import org.example.gersangtrade.catalog.repository.MercenarySkillRepository;
+import org.example.gersangtrade.catalog.repository.SkillCoefficientRepository;
 import org.example.gersangtrade.catalog.repository.MercenaryStatRepository;
 import org.example.gersangtrade.domain.catalog.Mercenary;
 import org.example.gersangtrade.domain.catalog.MercenaryCharacteristic;
@@ -41,6 +42,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -53,6 +55,7 @@ public class MercenaryAdminService {
     private final MercenaryStatRepository statRepository;
     private final MercenarySkillRepository skillRepository;
     private final MercenarySkillEffectRepository skillEffectRepository;
+    private final SkillCoefficientRepository skillCoefficientRepository;
     private final MercenaryMaterialRepository mercenaryMaterialRepository;
 
     // ── 용병 상세 조회 ───────────────────────────────────────────────────────────
@@ -102,24 +105,43 @@ public class MercenaryAdminService {
     // ── 용병 스킬 전체 교체 ─────────────────────────────────────────────────────
 
     /**
-     * 용병 스킬 목록을 PUT 의미론으로 교체한다.
-     * 기존 스킬을 전부 삭제하고 요청 목록으로 재적재한다.
+     * 용병 스킬 목록 upsert.
+     * - 요청에 있는 이름 중 기존에 없는 것만 INSERT
+     * - 요청에 없는 기존 스킬은 skill_coefficients가 없을 때만 삭제 (계수 보호)
      */
     @Transactional
     @CacheEvict(value = CacheConfig.MERCENARIES, allEntries = true)
     public MercenaryDetailAdminResponse replaceSkills(Long mercenaryId, SkillReplaceRequest req) {
         Mercenary mercenary = getMercenaryOrThrow(mercenaryId);
-        // 스킬 삭제 전 효과 먼저 삭제 (FK 제약)
-        skillEffectRepository.deleteBySkill_MercenaryId(mercenaryId);
-        skillRepository.deleteByMercenaryId(mercenaryId);
-        req.skills().stream()
+
+        Set<String> requestedNames = req.skills().stream()
                 .filter(s -> s != null && !s.isBlank())
                 .map(String::trim)
-                .distinct()
-                .forEach(s -> skillRepository.save(MercenarySkill.builder()
+                .collect(Collectors.toSet());
+
+        List<MercenarySkill> existing = skillRepository.findByMercenaryId(mercenaryId);
+        Set<String> existingNames = existing.stream()
+                .map(MercenarySkill::getSkillName)
+                .collect(Collectors.toSet());
+
+        // 새로 추가된 스킬만 INSERT
+        requestedNames.stream()
+                .filter(name -> !existingNames.contains(name))
+                .forEach(name -> skillRepository.save(MercenarySkill.builder()
                         .mercenary(mercenary)
-                        .skillName(s)
+                        .skillName(name)
                         .build()));
+
+        // 요청에 없는 스킬 — 계수가 없을 때만 삭제 (계수 있으면 보존)
+        existing.stream()
+                .filter(skill -> !requestedNames.contains(skill.getSkillName()))
+                .forEach(skill -> {
+                    if (!skillCoefficientRepository.existsByMercenarySkillId(skill.getId())) {
+                        skillEffectRepository.deleteBySkillId(skill.getId());
+                        skillRepository.delete(skill);
+                    }
+                });
+
         return buildDetail(mercenaryId);
     }
 
@@ -142,10 +164,11 @@ public class MercenaryAdminService {
                         .skill(skill)
                         .statKey(e.statKey())
                         .statValue(e.statValue())
+                        .valueType(e.valueType())
                         .build()))
                 .toList();
         List<MercenaryDetailAdminResponse.EffectEntry> effects = saved.stream()
-                .map(e -> new MercenaryDetailAdminResponse.EffectEntry(e.getStatKey(), e.getStatValue()))
+                .map(e -> new MercenaryDetailAdminResponse.EffectEntry(e.getStatKey(), e.getStatValue(), e.getValueType()))
                 .toList();
         return new MercenaryDetailAdminResponse.SkillEntry(skill.getId(), skill.getSkillName(), effects);
     }
@@ -160,8 +183,9 @@ public class MercenaryAdminService {
     @Transactional(readOnly = true)
     public Page<MercenaryAdminResponse> listMercenaries(MercenaryCategory category,
                                                         Nature nature, Nation nation,
-                                                        Pageable pageable) {
-        Page<Mercenary> page = mercenaryRepository.findByFilters(category, nature, nation, pageable);
+                                                        String name, Pageable pageable) {
+        String nameTrim = (name != null && !name.isBlank()) ? name.trim() : null;
+        Page<Mercenary> page = mercenaryRepository.findByFilters(category, nature, nation, nameTrim, pageable);
 
         List<Long> mercenaryIds = page.getContent().stream().map(Mercenary::getId).toList();
 

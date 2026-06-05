@@ -44,11 +44,13 @@ public interface MercenaryRepository extends JpaRepository<Mercenary, Long> {
             WHERE (:category IS NULL OR m.category = :category)
               AND (:nature IS NULL OR m.nature = :nature)
               AND (:nation IS NULL OR m.nation = :nation)
+              AND (:name IS NULL OR m.name LIKE %:name%)
             ORDER BY m.name
             """)
     Page<Mercenary> findByFilters(@Param("category") MercenaryCategory category,
                                   @Param("nature") Nature nature,
                                   @Param("nation") Nation nation,
+                                  @Param("name") String name,
                                   Pageable pageable);
 
     /**
