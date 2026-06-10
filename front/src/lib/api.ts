@@ -158,6 +158,8 @@ export const api = {
   getChatRoom: (id: number) => request<ChatRoomDetailDto>(`/api/chat-rooms/${id}`),
   markChatRoomRead: (roomId: number) =>
     request<void>(`/api/chat-rooms/${roomId}/read`, { method: 'POST' }),
+  markAllChatRoomsRead: () =>
+    request<void>('/api/chat-rooms/read-all', { method: 'POST' }),
   createChatRoom: (body: unknown) =>
     request<unknown>('/api/chat-rooms', { method: 'POST', body: JSON.stringify(body) }),
   sendMessage: (roomId: number, content: string) =>
@@ -302,10 +304,95 @@ export const api = {
   getMyReports: () => request<unknown[]>('/api/reports/me'),
   submitReview: (reviewId: number, body: { rating: string }) =>
     request<void>(`/api/reviews/${reviewId}`, { method: 'POST', body: JSON.stringify(body) }),
-  getPriceWatch: () => request<unknown[]>('/api/home/price-watch'),
+  getPriceWatch: (serverId: number) =>
+    request<PriceWatchResponse>(`/api/home/price-watch?serverId=${serverId}`),
+
+  // ── 관심목록 ──
+  getWatchlist: () => request<WatchTargetDto[]>('/api/watchlist'),
+  addWatchTarget: (body: WatchTargetAddBody) =>
+    request<WatchTargetDto>('/api/watchlist', { method: 'POST', body: JSON.stringify(body) }),
+  removeWatchTarget: (entryId: number) =>
+    request<void>(`/api/watchlist/${entryId}`, { method: 'DELETE' }),
 };
 
 // ── 타입 정의 ──
+
+export interface PriceWatchSellInfo {
+  avgPrice: number | null;
+  count: number;
+  listings: Array<{ listingId: number; price: number; createdAt: string }>;
+}
+
+export interface PriceWatchBuyInfo {
+  avgPrice: number | null;
+  count: number;
+  listings: Array<{ wantedId: number; offeredPrice: number; createdAt: string }>;
+}
+
+export interface PriceWatchTarget {
+  entryId: number;
+  targetType: 'ITEM' | 'SET';
+  watchKey: string;
+  displayLabel: string;
+  sell: PriceWatchSellInfo;
+  buy: PriceWatchBuyInfo;
+  completed: { count: number; dataQuality: 'OK' | 'LIMITED'; trades: Array<{ confirmedPrice: number; confirmedAt: string }> };
+}
+
+export interface PriceWatchResponse {
+  serverId: number;
+  serverName: string;
+  targets: PriceWatchTarget[];
+}
+
+export type WatchTargetType = 'ITEM' | 'SET';
+export type SetComposition = 'GAMTU' | 'BYEON' | 'BANSSANG' | 'FULL' | 'FULL_BANSSANG';
+
+export interface WatchTargetDto {
+  id: number;
+  targetType: WatchTargetType;
+  watchKey: string;
+  displayLabel: string;
+  itemId?: number | null;
+  setId?: number | null;
+  setName?: string | null;
+  composition?: SetComposition | null;
+  ritualCount?: number | null;
+  ritualMark?: string | null;
+  sortOrder?: number;
+  createdAt?: string;
+}
+
+export interface WatchTargetAddBody {
+  targetType: WatchTargetType;
+  itemId?: number;
+  ritualMark?: string | null;
+  setId?: number;
+  composition?: SetComposition;
+  ritualCount?: number;
+}
+
+/** watchlist API 오류 body 파싱 (request throw 메시지에서 JSON 추출) */
+export function parseApiErrorBody(err: unknown): {
+  errorCode?: string;
+  message?: string;
+  current?: number;
+  max?: number;
+} {
+  if (!(err instanceof Error)) return {};
+  const jsonStart = err.message.indexOf('{');
+  if (jsonStart < 0) return { message: err.message };
+  try {
+    return JSON.parse(err.message.slice(jsonStart)) as {
+      errorCode?: string;
+      message?: string;
+      current?: number;
+      max?: number;
+    };
+  } catch {
+    return { message: err.message };
+  }
+}
 
 export interface ServerDto {
   serverId: number;
@@ -363,6 +450,7 @@ export interface BundleDto {
 }
 
 export interface WantedDto {
+  displayTitle?: string | null;
   id: number;
   /** 목록 API — 구매자 닉네임 (flat) */
   buyerName?: string;
@@ -459,6 +547,7 @@ export interface ChatRoomSummaryDto {
   initiationType?: 'APPLY' | 'NEGOTIATE';
   partnerNickname: string;
   status: string;
+  listingPrice?: number;
   finalPrice?: number;
   createdAt: string;
   hasUnread?: boolean;
@@ -487,6 +576,7 @@ export interface ChatRoomDetailDto {
   partnerId?: number;
   partnerNickname?: string;
   status: string;
+  listingPrice?: number;
   finalPrice?: number;
   createdAt: string;
   posterNickname: string;

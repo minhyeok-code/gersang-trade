@@ -3,13 +3,8 @@
 import { useState, useEffect } from 'react';
 import { api, setServer, type UserDto, type GradeDto, type ServerDto } from '@/lib/api';
 import Link from 'next/link';
+import { formatPrice } from '@/lib/formatPrice';
 import { Edit2, Save, X, ChevronRight } from 'lucide-react';
-
-function formatPrice(price: number): string {
-  if (price >= 100_000_000) return `${(price / 100_000_000).toFixed(1)}억 전`;
-  if (price >= 10_000) return `${Math.floor(price / 10_000)}만 전`;
-  return `${price.toLocaleString()} 전`;
-}
 
 function relativeTime(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();

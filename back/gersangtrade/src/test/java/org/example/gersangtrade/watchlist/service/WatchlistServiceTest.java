@@ -170,6 +170,33 @@ class WatchlistServiceTest {
                 "SET:100:COMP:BANSSANG:RC:0:MARK:NONE");
     }
 
+    @Test
+    @DisplayName("add_SET타입_FULL_BANSSANG은_ritual_구분키_유지")
+    void add_SET_FULL_BANSSANG_ritual_구분() {
+        when(watchTargetRepository.countByUserId(1L)).thenReturn(0L);
+        when(equipmentSetRepository.findById(100L)).thenReturn(Optional.of(equipmentSet));
+        when(watchTargetRepository.existsByUserIdAndWatchKey(1L,
+                "SET:100:COMP:FULL_BANSSANG:RC:5:MARK:<천선>")).thenReturn(false);
+
+        UserWatchTarget saved = spy(UserWatchTarget.builder()
+                .user(user).targetType(WatchTargetType.SET)
+                .watchKey("SET:100:COMP:FULL_BANSSANG:RC:5:MARK:<천선>")
+                .equipmentSet(equipmentSet)
+                .composition(SetComposition.FULL_BANSSANG)
+                .ritualCount(5)
+                .ritualMark("<천선>")
+                .build());
+        doReturn(2L).when(saved).getId();
+        when(watchTargetRepository.save(any())).thenReturn(saved);
+
+        watchlistService.add(1L,
+                new WatchTargetAddRequest(WatchTargetType.SET, null, "<천선>", 100L,
+                        SetComposition.FULL_BANSSANG, 5));
+
+        verify(watchTargetRepository).existsByUserIdAndWatchKey(1L,
+                "SET:100:COMP:FULL_BANSSANG:RC:5:MARK:<천선>");
+    }
+
     // ── remove ────────────────────────────────────────────────────────────────
 
     @Test

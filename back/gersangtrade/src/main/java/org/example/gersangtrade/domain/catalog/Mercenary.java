@@ -157,4 +157,9 @@ public class Mercenary extends BaseEntity {
         }
         this.crawledAt = crawledAt;
     }
+
+    /** 관리자 직접 업로드 후 S3 URL 저장. */
+    public void updateImageUrl(String imageUrl) {
+        this.imageUrl = imageUrl;
+    }
 }

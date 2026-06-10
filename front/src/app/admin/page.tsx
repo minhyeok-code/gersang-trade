@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 const BASE = '';
 
@@ -1846,6 +1846,498 @@ function SetsTab({ notify }: { notify: (m: string) => void }) {
   );
 }
 
+// ───────────────────────── 이미지 관리 탭 ─────────────────────────
+
+type ItemImageTarget = {
+  id: number;
+  name: string;
+  type: 'MATERIAL' | 'EQUIPMENT';
+  imageUrl: string | null;
+};
+
+type GemImageTarget = {
+  id: number;
+  name: string;
+  gemGrade: string;
+  ritualId: number | null;
+  imageUrl: string | null;
+};
+
+type MercenaryImageTarget = {
+  id: number;
+  name: string;
+  category: string;
+  nature: string;
+  imageUrl: string | null;
+};
+
+/** multipart/form-data 업로드 전용 — Content-Type 미설정으로 브라우저가 boundary 자동 처리 */
+async function reqMultipart<T>(path: string, formData: FormData): Promise<T> {
+  const doFetch = (token: string | null) => {
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    return fetch(`${BASE}${path}`, { method: 'POST', headers, body: formData, credentials: 'include' });
+  };
+  let res = await doFetch(getToken());
+  if (res.status === 401 || res.status === 403) {
+    const newToken = await tryRefresh();
+    if (newToken) res = await doFetch(newToken);
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+const GEM_GRADE_LABEL: Record<string, string> = {
+  BASE: '기본', POLISHED: '세공됨', ENHANCED: '강화됨', BRILLIANT: '빛나는',
+};
+const NATURE_LABEL: Record<string, string> = {
+  FIRE: '화', WATER: '수', THUNDER: '뇌', WIND: '풍', EARTH: '토', NONE: '무',
+};
+const CATEGORY_LABEL: Record<string, string> = {
+  AWAKENED_HEAVENLY_KING: '각성사천왕', MYEONGWANG: '명왕', LEGENDARY_GENERAL: '명장',
+};
+
+function ImageCell({ url }: { url: string | null }) {
+  if (!url) return <span className="text-xs text-red-400">미등록</span>;
+  return (
+    <img
+      src={url}
+      alt=""
+      className="w-10 h-10 object-cover rounded border border-gray-600"
+      onError={(e) => { (e.target as HTMLImageElement).replaceWith(Object.assign(document.createElement('span'), { textContent: '오류', className: 'text-xs text-gray-500' })); }}
+    />
+  );
+}
+
+function ItemImageSection({ notify }: { notify: (m: string) => void }) {
+  const [name, setName] = useState('');
+  const [type, setType] = useState('');
+  const [mode, setMode] = useState<'idle' | 'search' | 'missing'>('idle');
+  const [results, setResults] = useState<ItemImageTarget[]>([]);
+  const [page, setPage] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [uploadingId, setUploadingId] = useState<number | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  async function search(p = 0) {
+    setLoading(true);
+    setMode('search');
+    try {
+      const sp = new URLSearchParams({ page: String(p), size: '30' });
+      if (name.trim()) sp.set('name', name.trim());
+      if (type) sp.set('type', type);
+      const data = await req<PageResponse<ItemImageTarget>>(`/admin/images/items?${sp}`);
+      setResults(data.content);
+      setPage(data.number);
+      setTotalPages(data.totalPages);
+    } catch (e) {
+      notify(`오류: ${e}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadMissing() {
+    setLoading(true);
+    setMode('missing');
+    try {
+      const data = await req<ItemImageTarget[]>('/admin/images/items/missing');
+      setResults(data);
+      setPage(0);
+      setTotalPages(1);
+    } catch (e) {
+      notify(`오류: ${e}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function openPicker(id: number) {
+    setUploadingId(id);
+    fileRef.current?.click();
+  }
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || uploadingId == null) return;
+    const id = uploadingId;
+    setUploadingId(id);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await reqMultipart<{ imageUrl: string }>(`/admin/images/items/${id}`, fd);
+      setResults(prev => prev.map(r => r.id === id ? { ...r, imageUrl: res.imageUrl } : r));
+      notify('이미지 등록 완료');
+    } catch (e) {
+      notify(`오류: ${e}`);
+    } finally {
+      setUploadingId(null);
+    }
+  }
+
+  return (
+    <Section title="아이템 이미지">
+      <div className="flex gap-2 flex-wrap items-end mb-3">
+        <div className="flex-1 min-w-40">
+          <Input value={name} onChange={setName} placeholder="아이템명 검색" />
+        </div>
+        <select value={type} onChange={(e) => setType(e.target.value)} className={inputClass('w-28')}>
+          <option value="">전체</option>
+          <option value="MATERIAL">재료</option>
+          <option value="EQUIPMENT">장비</option>
+        </select>
+        <Btn onClick={() => search(0)} disabled={loading}>검색</Btn>
+        <Btn color="blue" onClick={loadMissing} disabled={loading}>거래 있는데 이미지 없는 장비</Btn>
+      </div>
+
+      {mode === 'missing' && results.length > 0 && (
+        <p className="text-xs text-yellow-400 mb-2">거래 이력 있으나 이미지 없는 장비 {results.length}개</p>
+      )}
+
+      <input type="file" ref={fileRef} accept="image/*" className="hidden" onChange={handleFile} />
+
+      {loading ? (
+        <p className="text-gray-400 text-sm py-4">불러오는 중...</p>
+      ) : mode === 'idle' ? (
+        <p className="text-gray-500 text-sm py-4">검색하거나 누락 목록을 조회하세요</p>
+      ) : results.length === 0 ? (
+        <p className="text-gray-500 text-sm py-4">결과 없음</p>
+      ) : (
+        <>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-gray-400 text-left border-b border-gray-700">
+                <th className="py-1.5 pr-3 w-12">ID</th>
+                <th className="py-1.5 pr-3">이름</th>
+                <th className="py-1.5 pr-3 w-14">타입</th>
+                <th className="py-1.5 pr-3 w-14">이미지</th>
+                <th className="py-1.5 w-20"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {results.map(r => (
+                <tr key={r.id} className="border-b border-gray-700/40 hover:bg-gray-700/30">
+                  <td className="py-1.5 pr-3 text-gray-400 text-xs">{r.id}</td>
+                  <td className="py-1.5 pr-3">{r.name}</td>
+                  <td className="py-1.5 pr-3 text-xs text-gray-400">{r.type === 'MATERIAL' ? '재료' : '장비'}</td>
+                  <td className="py-1.5 pr-3"><ImageCell url={r.imageUrl} /></td>
+                  <td className="py-1.5">
+                    <Btn color="green" onClick={() => openPicker(r.id)} disabled={uploadingId === r.id}>
+                      {uploadingId === r.id ? '업로드 중' : '등록'}
+                    </Btn>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {mode === 'search' && totalPages > 1 && (
+            <div className="flex items-center gap-2 mt-2">
+              <Btn color="gray" disabled={page === 0} onClick={() => search(page - 1)}>이전</Btn>
+              <span className="text-xs text-gray-400">{page + 1} / {totalPages}</span>
+              <Btn color="gray" disabled={page + 1 >= totalPages} onClick={() => search(page + 1)}>다음</Btn>
+            </div>
+          )}
+        </>
+      )}
+    </Section>
+  );
+}
+
+function GemImageSection({ notify }: { notify: (m: string) => void }) {
+  const [name, setName] = useState('');
+  const [mode, setMode] = useState<'idle' | 'search' | 'missing'>('idle');
+  const [results, setResults] = useState<GemImageTarget[]>([]);
+  const [page, setPage] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [uploadingId, setUploadingId] = useState<number | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  async function search(p = 0) {
+    setLoading(true);
+    setMode('search');
+    try {
+      const sp = new URLSearchParams({ page: String(p), size: '30' });
+      if (name.trim()) sp.set('name', name.trim());
+      const data = await req<PageResponse<GemImageTarget>>(`/admin/images/gems?${sp}`);
+      setResults(data.content);
+      setPage(data.number);
+      setTotalPages(data.totalPages);
+    } catch (e) {
+      notify(`오류: ${e}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadMissing() {
+    setLoading(true);
+    setMode('missing');
+    try {
+      const data = await req<GemImageTarget[]>('/admin/images/gems/missing');
+      setResults(data);
+      setPage(0);
+      setTotalPages(1);
+    } catch (e) {
+      notify(`오류: ${e}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function openPicker(id: number) {
+    setUploadingId(id);
+    fileRef.current?.click();
+  }
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || uploadingId == null) return;
+    const id = uploadingId;
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await reqMultipart<{ imageUrl: string }>(`/admin/images/gems/${id}`, fd);
+      setResults(prev => prev.map(r => r.id === id ? { ...r, imageUrl: res.imageUrl } : r));
+      notify('이미지 등록 완료');
+    } catch (e) {
+      notify(`오류: ${e}`);
+    } finally {
+      setUploadingId(null);
+    }
+  }
+
+  return (
+    <Section title="보석 이미지">
+      <div className="flex gap-2 flex-wrap items-end mb-3">
+        <div className="flex-1 min-w-40">
+          <Input value={name} onChange={setName} placeholder="보석명 검색" />
+        </div>
+        <Btn onClick={() => search(0)} disabled={loading}>검색</Btn>
+        <Btn color="blue" onClick={loadMissing} disabled={loading}>이미지 없는 보석 목록</Btn>
+      </div>
+
+      {mode === 'missing' && results.length > 0 && (
+        <p className="text-xs text-yellow-400 mb-2">이미지 미등록 보석 {results.length}개</p>
+      )}
+
+      <input type="file" ref={fileRef} accept="image/*" className="hidden" onChange={handleFile} />
+
+      {loading ? (
+        <p className="text-gray-400 text-sm py-4">불러오는 중...</p>
+      ) : mode === 'idle' ? (
+        <p className="text-gray-500 text-sm py-4">검색하거나 누락 목록을 조회하세요</p>
+      ) : results.length === 0 ? (
+        <p className="text-gray-500 text-sm py-4">결과 없음</p>
+      ) : (
+        <>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-gray-400 text-left border-b border-gray-700">
+                <th className="py-1.5 pr-3 w-12">ID</th>
+                <th className="py-1.5 pr-3">이름</th>
+                <th className="py-1.5 pr-3 w-20">등급</th>
+                <th className="py-1.5 pr-3 w-14">이미지</th>
+                <th className="py-1.5 w-20"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {results.map(r => (
+                <tr key={r.id} className="border-b border-gray-700/40 hover:bg-gray-700/30">
+                  <td className="py-1.5 pr-3 text-gray-400 text-xs">{r.id}</td>
+                  <td className="py-1.5 pr-3">
+                    {r.name}
+                    {r.ritualId && <span className="ml-1 text-xs text-purple-400">(주술)</span>}
+                  </td>
+                  <td className="py-1.5 pr-3 text-xs text-gray-400">{GEM_GRADE_LABEL[r.gemGrade] ?? r.gemGrade}</td>
+                  <td className="py-1.5 pr-3"><ImageCell url={r.imageUrl} /></td>
+                  <td className="py-1.5">
+                    <Btn color="green" onClick={() => openPicker(r.id)} disabled={uploadingId === r.id}>
+                      {uploadingId === r.id ? '업로드 중' : '등록'}
+                    </Btn>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {mode === 'search' && totalPages > 1 && (
+            <div className="flex items-center gap-2 mt-2">
+              <Btn color="gray" disabled={page === 0} onClick={() => search(page - 1)}>이전</Btn>
+              <span className="text-xs text-gray-400">{page + 1} / {totalPages}</span>
+              <Btn color="gray" disabled={page + 1 >= totalPages} onClick={() => search(page + 1)}>다음</Btn>
+            </div>
+          )}
+        </>
+      )}
+    </Section>
+  );
+}
+
+function MercenaryImageSection({ notify }: { notify: (m: string) => void }) {
+  const [name, setName] = useState('');
+  const [mode, setMode] = useState<'idle' | 'search' | 'missing'>('idle');
+  const [results, setResults] = useState<MercenaryImageTarget[]>([]);
+  const [page, setPage] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [uploadingId, setUploadingId] = useState<number | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  async function search(p = 0) {
+    setLoading(true);
+    setMode('search');
+    try {
+      const sp = new URLSearchParams({ page: String(p), size: '30' });
+      if (name.trim()) sp.set('name', name.trim());
+      const data = await req<PageResponse<MercenaryImageTarget>>(`/admin/images/mercenaries?${sp}`);
+      setResults(data.content);
+      setPage(data.number);
+      setTotalPages(data.totalPages);
+    } catch (e) {
+      notify(`오류: ${e}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadMissing() {
+    setLoading(true);
+    setMode('missing');
+    try {
+      const data = await req<MercenaryImageTarget[]>('/admin/images/mercenaries/missing');
+      setResults(data);
+      setPage(0);
+      setTotalPages(1);
+    } catch (e) {
+      notify(`오류: ${e}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function openPicker(id: number) {
+    setUploadingId(id);
+    fileRef.current?.click();
+  }
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || uploadingId == null) return;
+    const id = uploadingId;
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await reqMultipart<{ imageUrl: string }>(`/admin/images/mercenaries/${id}`, fd);
+      setResults(prev => prev.map(r => r.id === id ? { ...r, imageUrl: res.imageUrl } : r));
+      notify('이미지 등록 완료');
+    } catch (e) {
+      notify(`오류: ${e}`);
+    } finally {
+      setUploadingId(null);
+    }
+  }
+
+  return (
+    <Section title="용병 이미지">
+      <div className="flex gap-2 flex-wrap items-end mb-3">
+        <div className="flex-1 min-w-40">
+          <Input value={name} onChange={setName} placeholder="용병명 검색" />
+        </div>
+        <Btn onClick={() => search(0)} disabled={loading}>검색</Btn>
+        <Btn color="blue" onClick={loadMissing} disabled={loading}>이미지 없는 용병 목록</Btn>
+      </div>
+
+      {mode === 'missing' && results.length > 0 && (
+        <p className="text-xs text-yellow-400 mb-2">이미지 미등록 용병 {results.length}명</p>
+      )}
+
+      <input type="file" ref={fileRef} accept="image/*" className="hidden" onChange={handleFile} />
+
+      {loading ? (
+        <p className="text-gray-400 text-sm py-4">불러오는 중...</p>
+      ) : mode === 'idle' ? (
+        <p className="text-gray-500 text-sm py-4">검색하거나 누락 목록을 조회하세요</p>
+      ) : results.length === 0 ? (
+        <p className="text-gray-500 text-sm py-4">결과 없음</p>
+      ) : (
+        <>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-gray-400 text-left border-b border-gray-700">
+                <th className="py-1.5 pr-3 w-12">ID</th>
+                <th className="py-1.5 pr-3">이름</th>
+                <th className="py-1.5 pr-3 w-20">분류</th>
+                <th className="py-1.5 pr-3 w-12">속성</th>
+                <th className="py-1.5 pr-3 w-14">이미지</th>
+                <th className="py-1.5 w-20"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {results.map(r => (
+                <tr key={r.id} className="border-b border-gray-700/40 hover:bg-gray-700/30">
+                  <td className="py-1.5 pr-3 text-gray-400 text-xs">{r.id}</td>
+                  <td className="py-1.5 pr-3">{r.name}</td>
+                  <td className="py-1.5 pr-3 text-xs text-gray-400">{CATEGORY_LABEL[r.category] ?? r.category}</td>
+                  <td className="py-1.5 pr-3 text-xs text-gray-400">{NATURE_LABEL[r.nature] ?? r.nature}</td>
+                  <td className="py-1.5 pr-3"><ImageCell url={r.imageUrl} /></td>
+                  <td className="py-1.5">
+                    <Btn color="green" onClick={() => openPicker(r.id)} disabled={uploadingId === r.id}>
+                      {uploadingId === r.id ? '업로드 중' : '등록'}
+                    </Btn>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {mode === 'search' && totalPages > 1 && (
+            <div className="flex items-center gap-2 mt-2">
+              <Btn color="gray" disabled={page === 0} onClick={() => search(page - 1)}>이전</Btn>
+              <span className="text-xs text-gray-400">{page + 1} / {totalPages}</span>
+              <Btn color="gray" disabled={page + 1 >= totalPages} onClick={() => search(page + 1)}>다음</Btn>
+            </div>
+          )}
+        </>
+      )}
+    </Section>
+  );
+}
+
+function ImageTab({ notify }: { notify: (m: string) => void }) {
+  const [subTab, setSubTab] = useState<'items' | 'gems' | 'mercenaries'>('items');
+  const subTabs = [
+    { id: 'items' as const, label: '아이템' },
+    { id: 'gems' as const, label: '보석' },
+    { id: 'mercenaries' as const, label: '용병' },
+  ];
+  return (
+    <div>
+      <div className="flex gap-2 mb-4">
+        {subTabs.map(t => (
+          <button
+            key={t.id}
+            onClick={() => setSubTab(t.id)}
+            className={`px-3 py-1.5 text-sm rounded font-medium transition-colors ${
+              subTab === t.id ? 'bg-yellow-500 text-black' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {subTab === 'items' && <ItemImageSection notify={notify} />}
+      {subTab === 'gems' && <GemImageSection notify={notify} />}
+      {subTab === 'mercenaries' && <MercenaryImageSection notify={notify} />}
+    </div>
+  );
+}
+
 // ───────────────────────── 메인 관리자 페이지 ─────────────────────────
 
 const TABS = [
@@ -1855,6 +2347,7 @@ const TABS = [
   { id: 'items', label: '아이템' },
   { id: 'mercenaries', label: '용병' },
   { id: 'sets', label: '세트' },
+  { id: 'images', label: '이미지 등록' },
 ];
 
 export default function AdminPage() {
@@ -1890,6 +2383,7 @@ export default function AdminPage() {
       {tab === 'items' && <ItemsTab notify={notify} />}
       {tab === 'mercenaries' && <MercenariesTab notify={notify} />}
       {tab === 'sets' && <SetsTab notify={notify} />}
+      {tab === 'images' && <ImageTab notify={notify} />}
 
       {toast && <Toast msg={toast} onClose={() => setToast('')} />}
     </div>

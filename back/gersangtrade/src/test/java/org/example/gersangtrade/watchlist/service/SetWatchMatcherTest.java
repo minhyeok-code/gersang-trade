@@ -5,9 +5,6 @@ import org.example.gersangtrade.listing.service.SetTitleGenerator;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.util.List;
-import java.util.Set;
-
 import static org.assertj.core.api.Assertions.assertThat;
 
 class SetWatchMatcherTest {
@@ -16,7 +13,7 @@ class SetWatchMatcherTest {
         return new SetTitleGenerator.WatchInfo(comp, rc, mark);
     }
 
-    // ── matchesSell ───────────────────────────────────────────────────────────
+    // ── matchesSell / matchesBuy (동일 규칙) ─────────────────────────────────
 
     @Test
     @DisplayName("matchesSell_구성일치_주술없음_일치")
@@ -79,33 +76,17 @@ class SetWatchMatcherTest {
                 .isFalse();
     }
 
-    // ── matchesBuy ────────────────────────────────────────────────────────────
-
     @Test
-    @DisplayName("matchesBuy_피스포함_true")
-    void matchesBuy_피스포함_true() {
-        assertThat(SetWatchMatcher.matchesBuy(Set.of(10L, 20L, 30L), List.of(20L, 99L)))
+    @DisplayName("matchesBuy_GAMTU와FULL_BANSSANG_구분")
+    void matchesBuy_GAMTU와FULL_BANSSANG_구분() {
+        assertThat(SetWatchMatcher.matchesBuy(
+                SetComposition.GAMTU, 2, "<북두칠성_천선>",
+                info(SetComposition.FULL_BANSSANG, 0, null)))
+                .isFalse();
+
+        assertThat(SetWatchMatcher.matchesBuy(
+                SetComposition.GAMTU, 2, "<북두칠성_천선>",
+                info(SetComposition.GAMTU, 2, "<북두칠성_천선>")))
                 .isTrue();
-    }
-
-    @Test
-    @DisplayName("matchesBuy_피스미포함_false")
-    void matchesBuy_피스미포함_false() {
-        assertThat(SetWatchMatcher.matchesBuy(Set.of(10L, 20L), List.of(99L, 88L)))
-                .isFalse();
-    }
-
-    @Test
-    @DisplayName("matchesBuy_빈listingIds_false")
-    void matchesBuy_빈listingIds_false() {
-        assertThat(SetWatchMatcher.matchesBuy(Set.of(10L), List.of()))
-                .isFalse();
-    }
-
-    @Test
-    @DisplayName("matchesBuy_null_false")
-    void matchesBuy_null이면_false() {
-        assertThat(SetWatchMatcher.matchesBuy(null, List.of(10L))).isFalse();
-        assertThat(SetWatchMatcher.matchesBuy(Set.of(10L), null)).isFalse();
     }
 }

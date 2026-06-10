@@ -82,6 +82,14 @@ public class ChatController {
         return ResponseEntity.noContent().build();
     }
 
+    /** 참여 중인 모든 채팅방 읽음 처리 */
+    @PostMapping("/read-all")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Void> markAllChatRoomsRead(@AuthenticationPrincipal Long userId) {
+        chatService.markAllChatRoomsRead(userId);
+        return ResponseEntity.noContent().build();
+    }
+
     /**
      * 채팅 메시지를 전송한다.
      */

@@ -71,4 +71,18 @@ public interface TradeConfirmedRepository extends JpaRepository<TradeConfirmed, 
             @Param("statKeys") List<String> statKeys,
             @Param("server") String server,
             @Param("limit") int limit);
+
+    /**
+     * SET statKey prefix(LIKE) 기반 최근 거래 조회 — exact watchKey 불일치 보완용.
+     */
+    @Query("SELECT t FROM TradeConfirmed t " +
+           "WHERE t.cancelled = false " +
+           "AND t.statKeySnapshot LIKE CONCAT(:prefix, '%') " +
+           "AND t.serverSnapshot = :server " +
+           "ORDER BY t.confirmedAt DESC " +
+           "LIMIT :limit")
+    List<TradeConfirmed> findRecentByStatKeyPrefixAndServer(
+            @Param("prefix") String prefix,
+            @Param("server") String server,
+            @Param("limit") int limit);
 }

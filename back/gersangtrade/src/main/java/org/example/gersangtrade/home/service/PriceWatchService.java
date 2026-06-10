@@ -36,16 +36,20 @@ import org.example.gersangtrade.listing.repository.ListingQueryRepository;
 import org.example.gersangtrade.listing.service.SetTitleGenerator;
 import org.example.gersangtrade.trade.repository.TradeConfirmedRepository;
 import org.example.gersangtrade.user.repository.UserWatchTargetRepository;
-import org.example.gersangtrade.wanted.repository.WantedItemRepository;
 import org.example.gersangtrade.wanted.repository.WantedListingQueryRepository;
+import org.example.gersangtrade.watchlist.service.CompletedTradeMatcher;
+import org.example.gersangtrade.watchlist.service.ItemWatchMatcher;
 import org.example.gersangtrade.watchlist.service.SetWatchMatcher;
+import org.example.gersangtrade.wanted.service.WantedSetTitleResolver;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -69,9 +73,15 @@ public class PriceWatchService {
     private final BundleEquipmentDetailRepository bundleEquipmentDetailRepository;
     private final BundleEquipmentRitualRepository bundleEquipmentRitualRepository;
     private final EquipmentItemRepository equipmentItemRepository;
-    private final WantedItemRepository wantedItemRepository;
+    private final WantedBuyMatchContext wantedBuyMatchContext;
+    private final ListingSellMatchContext listingSellMatchContext;
 
-    @Cacheable(value = CacheConfig.PRICE_WATCH, key = "#userId + ':' + #serverId")
+    @Cacheable(
+            value = CacheConfig.PRICE_WATCH,
+            key = "#userId + ':' + #serverId",
+            // 매물 등록 직후 빈 시세가 2분간 고정되는 것을 방지 — 가격 데이터가 없으면 캐시하지 않음
+            unless = "@priceWatchCachePolicy.shouldNotCache(#result)"
+    )
     public PriceWatchResponse getPriceWatch(Long userId, Integer serverId) {
         Server server = serverRepository.findById(serverId)
                 .orElseThrow(() -> new PriceWatchException(
@@ -94,12 +104,46 @@ public class PriceWatchService {
     private List<PriceWatchTargetResponse> buildTargetResponses(
             List<UserWatchTarget> targets, String serverName) {
 
-        // 거래완료: watchKey IN 배치 1쿼리 → 앱에서 key별 top RESULT_CAP 슬라이스
-        List<String> watchKeys = targets.stream().map(UserWatchTarget::getWatchKey).toList();
+        // 거래완료: ITEM은 ITEM statKey만, SET은 prefix·composition 유연 매칭
+        LinkedHashMap<String, String> exactKeyDedup = new LinkedHashMap<>();
+        for (UserWatchTarget target : targets) {
+            exactKeyDedup.put(target.getWatchKey(), target.getWatchKey());
+            for (String key : CompletedTradeMatcher.additionalExactKeys(target, equipmentItemRepository)) {
+                exactKeyDedup.put(key, key);
+            }
+        }
+        List<String> exactKeys = new ArrayList<>(exactKeyDedup.keySet());
         Map<String, List<TradeConfirmed>> completedByKey = groupTopN(
-                tradeConfirmedRepository.findRecentByStatKeysAndServer(watchKeys, serverName, watchKeys.size() * RESULT_CAP),
+                exactKeys.isEmpty()
+                        ? List.of()
+                        : tradeConfirmedRepository.findRecentByStatKeysAndServer(
+                                exactKeys, serverName, exactKeys.size() * RESULT_CAP),
                 TradeConfirmed::getStatKeySnapshot
         );
+
+        Set<String> setPrefixes = CompletedTradeMatcher.collectSetPrefixes(targets);
+        Map<Long, TradeConfirmed> setPrefixTradeById = new LinkedHashMap<>();
+        for (String prefix : setPrefixes) {
+            for (TradeConfirmed trade : tradeConfirmedRepository.findRecentByStatKeyPrefixAndServer(
+                    prefix, serverName, RESULT_CAP * 4)) {
+                setPrefixTradeById.putIfAbsent(trade.getId(), trade);
+            }
+        }
+        Collection<TradeConfirmed> setPrefixTrades = setPrefixTradeById.values();
+
+        Set<Long> setIdsForPieces = targets.stream()
+                .filter(t -> t.getTargetType() == WatchTargetType.SET && t.getEquipmentSet() != null)
+                .map(t -> t.getEquipmentSet().getId())
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        Map<Long, List<EquipmentItem>> piecesBySetId =
+                CompletedTradeMatcher.loadPiecesBySetId(setIdsForPieces, equipmentItemRepository);
+
+        Map<Long, List<String>> extraExactKeysByTargetId = new LinkedHashMap<>();
+        for (UserWatchTarget target : targets) {
+            extraExactKeysByTargetId.put(
+                    target.getId(),
+                    CompletedTradeMatcher.additionalExactKeys(target, equipmentItemRepository));
+        }
 
         // ITEM 타입 배치
         List<UserWatchTarget> itemTargets = targets.stream()
@@ -115,11 +159,28 @@ public class PriceWatchService {
                     serverName, WantedStatus.OPEN, itemIds, CANDIDATE_FETCH);
         }
 
+        List<Long> buyListingIds = buyByItemId.values().stream()
+                .flatMap(List::stream)
+                .map(WantedListing::getId)
+                .distinct()
+                .toList();
+        WantedBuyMatchContext.Loaded wantedBuyContext = wantedBuyMatchContext.load(buyListingIds);
+
+        List<Long> sellListingIds = sellByItemId.values().stream()
+                .flatMap(List::stream)
+                .map(TradeListing::getId)
+                .distinct()
+                .toList();
+        ListingSellMatchContext.Loaded listingSellContext = listingSellMatchContext.load(sellListingIds);
+
         List<PriceWatchTargetResponse> result = new ArrayList<>();
         for (UserWatchTarget target : targets) {
             result.add(target.getTargetType() == WatchTargetType.ITEM
-                    ? buildItemResponse(target, serverName, sellByItemId, buyByItemId, completedByKey)
-                    : buildSetResponse(target, serverName, completedByKey));
+                    ? buildItemResponse(target, sellByItemId, buyByItemId, listingSellContext, wantedBuyContext,
+                    completedByKey, setPrefixTrades, piecesBySetId,
+                    extraExactKeysByTargetId.getOrDefault(target.getId(), List.of()))
+                    : buildSetResponse(target, serverName, completedByKey, setPrefixTrades,
+                    piecesBySetId, extraExactKeysByTargetId.getOrDefault(target.getId(), List.of())));
         }
         return result;
     }
@@ -128,30 +189,43 @@ public class PriceWatchService {
 
     private PriceWatchTargetResponse buildItemResponse(
             UserWatchTarget target,
-            String serverName,
             Map<Long, List<TradeListing>> sellByItemId,
             Map<Long, List<WantedListing>> buyByItemId,
-            Map<String, List<TradeConfirmed>> completedByKey) {
+            ListingSellMatchContext.Loaded listingSellContext,
+            WantedBuyMatchContext.Loaded wantedBuyContext,
+            Map<String, List<TradeConfirmed>> completedByKey,
+            Collection<TradeConfirmed> setPrefixTrades,
+            Map<Long, List<EquipmentItem>> piecesBySetId,
+            List<String> extraExactKeys) {
 
         Long itemId = target.getItem().getId();
         String ritualMark = target.getRitualMark();
 
         List<TradeListing> sellFiltered = sellByItemId.getOrDefault(itemId, List.of())
                 .stream()
+                .filter(l -> ItemWatchMatcher.matchesSell(
+                        itemId,
+                        ritualMark,
+                        listingSellContext.linesFor(l.getId()),
+                        listingSellContext.detailByLineId(),
+                        listingSellContext.ritualsByLineId()))
                 .limit(RESULT_CAP)
                 .toList();
 
-        // ritual 있으면 ListingBundle 로드 없이 watchKey 정확 일치 우선 — 단품 ITEM은 BundleLine 단위 ritual 마크가 있어야 함
-        // 단순화: ITEM watch의 ritualMark 2차 필터는 MVP에서 생략 (단품 DB 필터로 충분히 근사)
         List<WantedListing> buyFiltered = buyByItemId.getOrDefault(itemId, List.of())
                 .stream()
+                .filter(l -> ItemWatchMatcher.matchesBuy(
+                        itemId,
+                        ritualMark,
+                        wantedBuyContext.itemsFor(l.getId()),
+                        wantedBuyContext.conditionByWantedItemId(),
+                        wantedBuyContext.ritualsByWantedItemId(),
+                        wantedBuyContext.equipmentByCatalogItemId()))
                 .limit(RESULT_CAP)
                 .toList();
 
-        List<TradeConfirmed> completed = completedByKey.getOrDefault(target.getWatchKey(), List.of());
-
-        // 주술 필터링이 실제로 적용되지 않으므로, ritualMark가 있으면 정확도 경고
-        String dataQuality = ritualMark != null ? "LIMITED" : "OK";
+        List<TradeConfirmed> completed = CompletedTradeMatcher.resolveForTarget(
+                target, extraExactKeys, completedByKey, setPrefixTrades, piecesBySetId);
 
         return new PriceWatchTargetResponse(
                 target.getId(),
@@ -160,7 +234,7 @@ public class PriceWatchService {
                 buildDisplayLabel(target),
                 toSellSummary(sellFiltered),
                 toBuySummary(buyFiltered),
-                toCompletedSummary(completed, dataQuality)
+                toCompletedSummary(completed, "OK")
         );
     }
 
@@ -169,13 +243,17 @@ public class PriceWatchService {
     private PriceWatchTargetResponse buildSetResponse(
             UserWatchTarget target,
             String serverName,
-            Map<String, List<TradeConfirmed>> completedByKey) {
+            Map<String, List<TradeConfirmed>> completedByKey,
+            Collection<TradeConfirmed> setPrefixTrades,
+            Map<Long, List<EquipmentItem>> piecesBySetId,
+            List<String> extraExactKeys) {
 
         Long setId = target.getEquipmentSet().getId();
 
         SellSummary sell = buildSetSellSummary(target, serverName, setId);
         BuySummary buy = buildSetBuySummary(target, serverName, setId);
-        List<TradeConfirmed> completed = completedByKey.getOrDefault(target.getWatchKey(), List.of());
+        List<TradeConfirmed> completed = CompletedTradeMatcher.resolveForTarget(
+                target, extraExactKeys, completedByKey, setPrefixTrades, piecesBySetId);
 
         return new PriceWatchTargetResponse(
                 target.getId(),
@@ -184,7 +262,7 @@ public class PriceWatchService {
                 buildDisplayLabel(target),
                 sell,
                 buy,
-                toCompletedSummary(completed, "LIMITED")
+                toCompletedSummary(completed, "OK")
         );
     }
 
@@ -201,7 +279,7 @@ public class PriceWatchService {
         // 번들·라인·상세·주술 배치 로드
         List<Long> listingIds = candidates.stream().map(TradeListing::getId).toList();
         List<ListingBundle> bundles = listingBundleRepository
-                .findByListingIdInAndBundleTypeAndEquipmentSet_Id(listingIds, BundleType.EQUIPMENT_SET, setId);
+                .findByListingIdInAndBundleType(listingIds, BundleType.EQUIPMENT_SET);
 
         List<Long> bundleIds = bundles.stream().map(ListingBundle::getId).toList();
         List<BundleLine> lines = bundleLineRepository.findByBundleIdIn(bundleIds);
@@ -260,19 +338,25 @@ public class PriceWatchService {
             return toBuySummary(List.of());
         }
 
-        // WantedItem 배치 로드 (N+1 방지)
         List<Long> listingIds = candidates.stream().map(WantedListing::getId).toList();
-        List<WantedItem> allItems = wantedItemRepository.findByWantedListingIdIn(listingIds);
-        Map<Long, List<Long>> itemIdsByListingId = allItems.stream()
-                .collect(Collectors.groupingBy(
-                        wi -> wi.getWantedListing().getId(),
-                        Collectors.mapping(wi -> wi.getItem().getId(), Collectors.toList())
-                ));
+        WantedBuyMatchContext.Loaded wantedBuyContext = wantedBuyMatchContext.load(listingIds);
 
-        Set<Long> pieceIdSet = Set.copyOf(setPieceItemIds);
+        int watchRitualCount = target.getRitualCount() != null ? target.getRitualCount() : 0;
         List<WantedListing> matched = candidates.stream()
-                .filter(l -> SetWatchMatcher.matchesBuy(
-                        pieceIdSet, itemIdsByListingId.getOrDefault(l.getId(), List.of())))
+                .filter(l -> {
+                    List<WantedItem> items = wantedBuyContext.itemsFor(l.getId());
+                    return WantedSetTitleResolver.resolveWatchInfo(
+                            items,
+                            wantedBuyContext.conditionByWantedItemId(),
+                            wantedBuyContext.ritualsByWantedItemId(),
+                            wantedBuyContext.equipmentByCatalogItemId()
+                    ).map(info -> SetWatchMatcher.matchesBuy(
+                            target.getComposition(),
+                            watchRitualCount,
+                            target.getRitualMark(),
+                            info))
+                    .orElse(false);
+                })
                 .limit(RESULT_CAP)
                 .toList();
 
@@ -306,7 +390,7 @@ public class PriceWatchService {
     private String buildDisplayLabel(UserWatchTarget w) {
         if (w.getTargetType() == WatchTargetType.ITEM) {
             String name = w.getItem() != null ? w.getItem().getName() : "알 수 없는 아이템";
-            return w.getRitualMark() != null ? name + " " + w.getRitualMark() : name;
+            return w.getRitualMark() != null ? w.getRitualMark() + name : name;
         }
         if (w.getEquipmentSet() == null || w.getComposition() == null) return w.getWatchKey();
         return SetTitleGenerator.generateByKind(
@@ -317,15 +401,21 @@ public class PriceWatchService {
     }
 
     private SellSummary toSellSummary(List<TradeListing> listings) {
-        Long avg = toAvg(listings.stream().map(TradeListing::getPrice).toList());
-        return new SellSummary(avg, listings.size(),
-                listings.stream().map(ListingSnapshot::from).toList());
+        List<TradeListing> activeOnly = listings.stream()
+                .filter(l -> l.getStatus() == ListingStatus.ACTIVE)
+                .toList();
+        Long avg = toAvg(activeOnly.stream().map(TradeListing::getPrice).toList());
+        return new SellSummary(avg, activeOnly.size(),
+                activeOnly.stream().map(ListingSnapshot::from).toList());
     }
 
     private BuySummary toBuySummary(List<WantedListing> listings) {
-        Long avg = toAvg(listings.stream().map(WantedListing::getOfferedPrice).toList());
-        return new BuySummary(avg, listings.size(),
-                listings.stream().map(WantedSnapshot::from).toList());
+        List<WantedListing> openOnly = listings.stream()
+                .filter(l -> l.getStatus() == WantedStatus.OPEN)
+                .toList();
+        Long avg = toAvg(openOnly.stream().map(WantedListing::getOfferedPrice).toList());
+        return new BuySummary(avg, openOnly.size(),
+                openOnly.stream().map(WantedSnapshot::from).toList());
     }
 
     private CompletedSummary toCompletedSummary(List<TradeConfirmed> trades, String dataQuality) {

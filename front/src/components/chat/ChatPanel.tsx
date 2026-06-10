@@ -46,6 +46,7 @@ export default function ChatPanel({ room, onClose }: ChatPanelProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const prevCountRef = useRef(0);
+  const priceInitializedRef = useRef(false);
 
 
 
@@ -67,6 +68,13 @@ export default function ChatPanel({ room, onClose }: ChatPanelProps) {
 
       setMessages(sortChatMessages(data.messages ?? []));
 
+      const defaultPrice = data.finalPrice ?? data.listingPrice ?? room.listingPrice;
+
+      if (!priceInitializedRef.current && defaultPrice != null) {
+        setFinalPrice(String(defaultPrice));
+        priceInitializedRef.current = true;
+      }
+
       if (!silent) setError('');
 
     } catch (e: unknown) {
@@ -75,15 +83,15 @@ export default function ChatPanel({ room, onClose }: ChatPanelProps) {
 
     }
 
-  }, [room.id]);
+  }, [room.id, room.listingPrice]);
 
 
 
   useEffect(() => {
-
+    priceInitializedRef.current = false;
     load();
-
-  }, [load]);
+    api.markChatRoomRead(room.id).catch(() => {});
+  }, [load, room.id]);
 
 
 
@@ -356,6 +364,8 @@ export default function ChatPanel({ room, onClose }: ChatPanelProps) {
 
           <div className="flex gap-2 items-center">
 
+            <label className="text-xs shrink-0" style={{ color: 'var(--text-muted)' }}>거래가</label>
+
             <input
 
               type="number"
@@ -364,9 +374,9 @@ export default function ChatPanel({ room, onClose }: ChatPanelProps) {
 
               onChange={(e) => setFinalPrice(e.target.value)}
 
-              placeholder="최종가 (선택)"
+              placeholder="가격 입력"
 
-              className="w-28 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-[var(--brown)]"
+              className="flex-1 min-w-0 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-[var(--brown)]"
 
               style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
 

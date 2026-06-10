@@ -87,7 +87,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           setUnreadCount(
             list.filter(
               (n) =>
-                (n.isRead === false || n.read === false) && n.type !== 'CHAT_MESSAGE'
+                (n.isRead === false || n.read === false)
+                && n.type !== 'CHAT_MESSAGE'
+                && n.type !== 'CHAT_OPENED'
             ).length
           )
         )
@@ -131,6 +133,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   useEffect(() => {
     if (isLoggedIn) refreshChatUnread();
   }, [activeChatRoom, isLoggedIn]);
+
+  useEffect(() => {
+    function handleOpenChatRoom(e: Event) {
+      const room = (e as CustomEvent<ChatRoomSummaryDto>).detail;
+      if (!room?.id) return;
+      setActiveChatRoom(room);
+      setChatOpen(false);
+      refreshChatUnread();
+    }
+    window.addEventListener('open-chat-room', handleOpenChatRoom);
+    return () => window.removeEventListener('open-chat-room', handleOpenChatRoom);
+  }, []);
 
   // 바깥 클릭 시 드롭다운 닫기
   useEffect(() => {

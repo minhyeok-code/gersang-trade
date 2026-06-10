@@ -3,7 +3,6 @@ package org.example.gersangtrade.watchlist.service;
 import org.example.gersangtrade.domain.user.enums.SetComposition;
 import org.example.gersangtrade.listing.service.SetTitleGenerator;
 
-import java.util.Collection;
 import java.util.Objects;
 
 /**
@@ -45,19 +44,15 @@ public final class SetWatchMatcher {
     }
 
     /**
-     * 구매 희망 등록글의 아이템 ID 목록이 관심 SET의 피스 중 하나 이상을 포함하는지 판단 (MVP 느슨한 매칭).
-     *
-     * @param setPieceItemIds 관심 SET의 피스 itemId 집합
-     * @param listingItemIds  WantedListing에 포함된 WantedItem의 itemId 목록
-     * @return 하나 이상 피스가 포함되면 true
+     * 구매 희망 등록글의 WatchInfo(displayName 구성)가 관심 SET와 일치하는지 판단.
+     * 판매 매칭({@link #matchesSell})과 동일한 composition·주술 규칙을 적용한다.
      */
     public static boolean matchesBuy(
-            Collection<Long> setPieceItemIds,
-            Collection<Long> listingItemIds) {
+            SetComposition watchComposition,
+            int watchRitualCount,
+            String watchRitualMark,
+            SetTitleGenerator.WatchInfo wantedInfo) {
 
-        if (setPieceItemIds == null || listingItemIds == null) {
-            return false;
-        }
-        return listingItemIds.stream().anyMatch(setPieceItemIds::contains);
+        return matchesSell(watchComposition, watchRitualCount, watchRitualMark, wantedInfo);
     }
 }

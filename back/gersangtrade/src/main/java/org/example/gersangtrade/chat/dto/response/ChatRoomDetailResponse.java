@@ -25,6 +25,8 @@ public record ChatRoomDetailResponse(
         String posterNickname,
         String counterpartyNickname,
         ChatRoomStatus status,
+        /** 게시물 등록 가격 (거래가 입력 기본값) */
+        Long listingPrice,
         Long finalPrice,
         LocalDateTime posterConfirmedAt,
         LocalDateTime counterpartyConfirmedAt,
@@ -40,6 +42,7 @@ public record ChatRoomDetailResponse(
             ChatRoom room,
             Long viewerId,
             String listingDisplayName,
+            Long listingPrice,
             List<ChatMessageResponse> messages
     ) {
         boolean isPoster = room.getPoster().getId().equals(viewerId);
@@ -68,6 +71,7 @@ public record ChatRoomDetailResponse(
                 room.getPoster().getNickname(),
                 room.getCounterparty().getNickname(),
                 room.getStatus(),
+                listingPrice,
                 room.getFinalPrice(),
                 room.getPosterConfirmedAt(),
                 room.getCounterpartyConfirmedAt(),

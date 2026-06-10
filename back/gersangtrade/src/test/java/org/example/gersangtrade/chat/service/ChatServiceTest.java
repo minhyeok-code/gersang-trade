@@ -40,6 +40,7 @@ import org.example.gersangtrade.catalog.repository.ServerRepository;
 import org.example.gersangtrade.domain.catalog.Server;
 import org.example.gersangtrade.trade.repository.TradeConfirmedRepository;
 import org.example.gersangtrade.trade.repository.TradeReviewRepository;
+import org.example.gersangtrade.home.service.PriceWatchCacheEvictor;
 import org.example.gersangtrade.trade.service.TradeStatService;
 import org.example.gersangtrade.wanted.repository.WantedItemRepository;
 import org.example.gersangtrade.wanted.repository.WantedListingRepository;
@@ -93,6 +94,7 @@ class ChatServiceTest {
     @Mock private NotificationService notificationService;
     @Mock private KeywordDetectionService keywordDetectionService;
     @Mock private SimpMessagingTemplate messagingTemplate;
+    @Mock private PriceWatchCacheEvictor priceWatchCacheEvictor;
 
     @InjectMocks
     private ChatService chatService;
@@ -156,8 +158,8 @@ class ChatServiceTest {
     // ──────────────────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("createChatRoom_정상_판매게시물_채팅방생성및알림저장")
-    void createChatRoom_정상_판매게시물_채팅방생성및알림저장() {
+    @DisplayName("createChatRoom_정상_판매게시물_채팅방생성")
+    void createChatRoom_정상_판매게시물_채팅방생성() {
         ChatRoomCreateRequest request = new ChatRoomCreateRequest(
                 ListingType.SELL, 1L, InitiationType.NEGOTIATE);
 
@@ -180,12 +182,12 @@ class ChatServiceTest {
 
         ChatRoomSummaryResponse response = chatService.createChatRoom(2L, request);
 
-        // 채팅방 저장, 시스템 메시지 저장, 알림 저장 각 1회 확인
+        // 채팅방 저장, 시스템 메시지 저장 확인 (채팅 알림은 알림 센터에 저장하지 않음)
         assertThat(response).isNotNull();
         assertThat(response.status()).isEqualTo(ChatRoomStatus.OPEN);
         verify(chatRoomRepository).save(any(ChatRoom.class));
         verify(chatMessageRepository).save(any(ChatMessage.class)); // 시스템 메시지
-        verify(notificationService).send(any(), any(), any(), any()); // 게시자 알림
+        verify(notificationService, never()).send(any(), any(), any(), any());
     }
 
     @Test

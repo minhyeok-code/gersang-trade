@@ -58,7 +58,7 @@ public class NotificationService {
             emitter.send(SseEmitter.event().name("connect").data("connected"));
             List<Notification> unread = notificationRepository.findUnreadByUserId(userId);
             for (Notification n : unread) {
-                if (n.getType() == NotificationType.CHAT_MESSAGE) {
+                if (isChatRelated(n.getType())) {
                     continue;
                 }
                 emitter.send(SseEmitter.event().name("notification").data(NotificationResponse.of(n)));
@@ -103,10 +103,15 @@ public class NotificationService {
     // 알림 조회·읽음 처리
     // ──────────────────────────────────────────────────────────────────────
 
+    /** 채팅 관련 알림은 알림 센터가 아닌 채팅 아이콘 미읽음으로 처리한다 */
+    private boolean isChatRelated(NotificationType type) {
+        return type == NotificationType.CHAT_MESSAGE || type == NotificationType.CHAT_OPENED;
+    }
+
     @Transactional(readOnly = true)
     public List<NotificationResponse> getUnread(Long userId) {
         return notificationRepository.findUnreadByUserId(userId).stream()
-                .filter(n -> n.getType() != NotificationType.CHAT_MESSAGE)
+                .filter(n -> !isChatRelated(n.getType()))
                 .map(NotificationResponse::of)
                 .toList();
     }
@@ -114,7 +119,7 @@ public class NotificationService {
     @Transactional(readOnly = true)
     public List<NotificationResponse> getAll(Long userId) {
         return notificationRepository.findTop50ByUserId(userId).stream()
-                .filter(n -> n.getType() != NotificationType.CHAT_MESSAGE)
+                .filter(n -> !isChatRelated(n.getType()))
                 .map(NotificationResponse::of)
                 .toList();
     }

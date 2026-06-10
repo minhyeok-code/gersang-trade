@@ -30,6 +30,17 @@ public interface EquipmentItemRepository extends JpaRepository<EquipmentItem, Lo
     Optional<EquipmentItem> findWithItemByItemId(@Param("itemId") Long itemId);
 
     /**
+     * 아이템 ID 목록으로 장비·세트 정보 일괄 조회 (구매 희망 세트 제목 산출용).
+     */
+    @Query("""
+            SELECT ei FROM EquipmentItem ei
+            JOIN FETCH ei.item
+            LEFT JOIN FETCH ei.equipmentSet
+            WHERE ei.itemId IN :itemIds
+            """)
+    List<EquipmentItem> findWithItemAndSetByItemIdIn(@Param("itemIds") List<Long> itemIds);
+
+    /**
      * 아이템 ID로 장비 상세 정보 존재 여부 확인.
      * 매물 등록 시 장비 타입 검증에 사용된다.
      */

@@ -30,4 +30,10 @@ public interface ListingBundleRepository extends JpaRepository<ListingBundle, Lo
      */
     List<ListingBundle> findByListingIdInAndBundleTypeAndEquipmentSet_Id(
             List<Long> listingIds, BundleType bundleType, Long equipmentSetId);
+
+    /**
+     * 여러 등록글의 특정 번들 유형만 일괄 조회.
+     * equipment_set_id 미저장 레거시 번들 포함 시세 2차 필터용.
+     */
+    List<ListingBundle> findByListingIdInAndBundleType(List<Long> listingIds, BundleType bundleType);
 }

@@ -30,6 +30,7 @@ import org.example.gersangtrade.wanted.repository.WantedEquipmentConditionReposi
 import org.example.gersangtrade.wanted.repository.WantedItemRepository;
 import org.example.gersangtrade.wanted.repository.WantedListingQueryRepository;
 import org.example.gersangtrade.wanted.repository.WantedListingRepository;
+import org.example.gersangtrade.home.service.PriceWatchCacheEvictor;
 import org.example.gersangtrade.wanted.repository.WantedRitualConditionRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -59,6 +60,7 @@ public class WantedListingService {
     private final ItemRepository itemRepository;
     private final EquipmentItemRepository equipmentItemRepository;
     private final RitualApplicabilityRepository ritualApplicabilityRepository;
+    private final PriceWatchCacheEvictor priceWatchCacheEvictor;
 
     // ── 등록 ────────────────────────────────────────────────────────────────
 
@@ -232,16 +234,44 @@ public class WantedListingService {
 
         List<Long> listingIds = listings.stream().map(WantedListing::getId).toList();
 
-        Map<Long, List<WantedItem>> itemsByListingId = wantedItemRepository
-                .findByWantedListingIdIn(listingIds)
-                .stream()
+        List<WantedItem> allItems = wantedItemRepository.findByWantedListingIdIn(listingIds);
+        Map<Long, List<WantedItem>> itemsByListingId = allItems.stream()
                 .collect(Collectors.groupingBy(wi -> wi.getWantedListing().getId()));
 
+        List<Long> wantedItemIds = allItems.stream().map(WantedItem::getId).toList();
+        List<Long> catalogItemIds = allItems.stream()
+                .map(wi -> wi.getItem().getId())
+                .distinct()
+                .toList();
+
+        Map<Long, WantedEquipmentCondition> conditionByWantedItemId =
+                wantedItemIds.isEmpty() ? Map.of()
+                        : wantedEquipmentConditionRepository.findByWantedItemIdIn(wantedItemIds)
+                        .stream()
+                        .collect(Collectors.toMap(c -> c.getWantedItem().getId(), Function.identity()));
+
+        Map<Long, List<WantedRitualCondition>> ritualsByWantedItemId =
+                wantedItemIds.isEmpty() ? Map.of()
+                        : wantedRitualConditionRepository.findWithRitualByWantedItemIdIn(wantedItemIds)
+                        .stream()
+                        .collect(Collectors.groupingBy(r -> r.getWantedItem().getId()));
+
+        Map<Long, EquipmentItem> equipmentByCatalogItemId =
+                catalogItemIds.isEmpty() ? Map.of()
+                        : equipmentItemRepository.findWithItemAndSetByItemIdIn(catalogItemIds)
+                        .stream()
+                        .collect(Collectors.toMap(EquipmentItem::getItemId, Function.identity()));
+
         return listings.stream()
-                .map(listing -> WantedListingSummaryResponse.from(
-                        listing,
-                        itemsByListingId.getOrDefault(listing.getId(), List.of())
-                ))
+                .map(listing -> {
+                    List<WantedItem> items = itemsByListingId.getOrDefault(listing.getId(), List.of());
+                    String displayTitle = resolveDisplayTitle(
+                            items,
+                            conditionByWantedItemId,
+                            ritualsByWantedItemId,
+                            equipmentByCatalogItemId);
+                    return WantedListingSummaryResponse.from(listing, items, displayTitle);
+                })
                 .toList();
     }
 
@@ -285,6 +315,28 @@ public class WantedListingService {
         return WantedListingDetailResponse.from(listing, assemblies);
     }
 
+    private String resolveDisplayTitle(
+            List<WantedItem> items,
+            Map<Long, WantedEquipmentCondition> conditionByWantedItemId,
+            Map<Long, List<WantedRitualCondition>> ritualsByWantedItemId,
+            Map<Long, EquipmentItem> equipmentByCatalogItemId) {
+
+        if (items.size() == 1) {
+            WantedItem only = items.get(0);
+            return WantedSingleItemTitleResolver.resolve(
+                    only,
+                    conditionByWantedItemId.get(only.getId()),
+                    ritualsByWantedItemId.getOrDefault(only.getId(), List.of())
+            ).orElse(null);
+        }
+        return WantedSetTitleResolver.resolve(
+                items,
+                conditionByWantedItemId,
+                ritualsByWantedItemId,
+                equipmentByCatalogItemId
+        ).orElse(null);
+    }
+
     // ── 취소 ────────────────────────────────────────────────────────────────
 
     /**
@@ -314,5 +366,7 @@ public class WantedListingService {
 
         listing.cancel();
         listing.softDelete();
+        // 취소된 삽니다 글은 관심 시세 캐시에서 제외되어야 한다
+        priceWatchCacheEvictor.evictAll();
     }
 }

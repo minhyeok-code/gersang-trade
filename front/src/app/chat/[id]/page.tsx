@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { api, sortChatMessages, type ChatMessageDto, type ChatRoomDetailDto, type PublicUserDto } from '@/lib/api';
+import { formatChatRoomStatus } from '@/lib/chatLabels';
 import { isMyMessage, isSystemMessage } from '@/lib/chatUtils';
 import { useWs } from '@/lib/useWs';
 import type { ChatMessageWsEvent, RoomStatusWsEvent } from '@/lib/wsTypes';
@@ -26,6 +27,8 @@ export default function ChatRoomPage() {
       const data = await api.getChatRoom(roomId);
       setRoom(data);
       setMessages(sortChatMessages(data.messages ?? []));
+      const defaultPrice = data.finalPrice ?? data.listingPrice;
+      if (defaultPrice != null) setFinalPrice(String(defaultPrice));
       if (!silent) setError('');
     } catch (e: unknown) {
       if (!silent) setError(String(e));
@@ -115,7 +118,7 @@ export default function ChatRoomPage() {
 
       {room && (
         <div className="bg-gray-800 rounded p-3 text-sm text-gray-300 flex gap-6 items-center">
-          <span>상태: <b className="text-white">{String(room.status ?? '-')}</b></span>
+          <span>상태: <b className="text-white">{formatChatRoomStatus(room.status) || '-'}</b></span>
           <span>등록글: {String(room.listingId ?? '-')}</span>
           {room.partnerNickname && (
             <button
@@ -180,8 +183,9 @@ export default function ChatRoomPage() {
               <p className="text-sm text-yellow-300">상대방이 거래완료를 확인했습니다. 확인해주세요.</p>
             )}
           <div className="flex gap-2 items-center flex-wrap">
+            <label className="text-sm text-gray-400">거래가</label>
             <input type="number" value={finalPrice} onChange={(e) => setFinalPrice(e.target.value)}
-              placeholder="최종 가격 (선택)"
+              placeholder="가격 입력"
               className="bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm w-40" />
             {canConfirm && (
               <button onClick={tradeConfirm} className="bg-green-700 hover:bg-green-600 px-4 py-2 rounded text-sm">

@@ -91,6 +91,10 @@ public class ListingBundleTitleService {
             return SetTitleResolver.resolve(lines, detailByLineId, ritualsByLineId)
                     .orElseGet(() -> fallbackTitle(bundle, lines));
         }
+        if (bundle.getBundleType() == BundleType.EQUIPMENT_SINGLE) {
+            return SingleItemTitleResolver.resolve(lines, detailByLineId, ritualsByLineId)
+                    .orElseGet(() -> singleItemFallback(lines));
+        }
         return fallbackTitle(bundle, lines);
     }
 
@@ -105,7 +109,20 @@ public class ListingBundleTitleService {
                     .map(title -> new BundleSummary(bundle.getBundleType(), title))
                     .orElseGet(() -> BundleSummary.from(bundle, lines));
         }
+        if (bundle.getBundleType() == BundleType.EQUIPMENT_SINGLE) {
+            return SingleItemTitleResolver.resolve(lines, detailByLineId, ritualsByLineId)
+                    .map(title -> new BundleSummary(bundle.getBundleType(), title))
+                    .orElseGet(() -> new BundleSummary(bundle.getBundleType(), singleItemFallback(lines)));
+        }
         return BundleSummary.from(bundle, lines);
+    }
+
+    /** 단품 번들 — titleOverride 무시, 아이템명만 폴백 */
+    private String singleItemFallback(List<BundleLine> lines) {
+        if (!lines.isEmpty()) {
+            return lines.get(0).getItem().getName();
+        }
+        return BundleType.EQUIPMENT_SINGLE.name();
     }
 
     private String fallbackTitle(ListingBundle bundle, List<BundleLine> lines) {

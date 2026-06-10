@@ -40,6 +40,8 @@ import org.example.gersangtrade.listing.repository.BundleLineRepository;
 import org.example.gersangtrade.listing.repository.ListingBundleRepository;
 import org.example.gersangtrade.listing.repository.TradeListingRepository;
 import org.example.gersangtrade.listing.service.SetTitleGenerator;
+import org.example.gersangtrade.home.event.TradeConfirmedEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.example.gersangtrade.watchlist.service.WatchKeyBuilder;
 import org.example.gersangtrade.notification.service.NotificationService;
 import org.example.gersangtrade.report.service.KeywordDetectionService;
@@ -93,6 +95,7 @@ public class ChatService {
     private final NotificationService notificationService;
     private final KeywordDetectionService keywordDetectionService;
     private final SimpMessagingTemplate messagingTemplate;
+    private final ApplicationEventPublisher eventPublisher;
 
     // ──────────────────────────────────────────────────────────────────────
     // 채팅방 생성
@@ -103,7 +106,7 @@ public class ChatService {
      *
      * - 본인 게시물에 채팅 시도 시 예외 발생
      * - 동일 게시물에 이미 OPEN 상태의 채팅방이 있으면 기존 채팅방 반환
-     * - 채팅방 생성 후 게시자에게 CHAT_OPENED 알림 저장
+     * - 채팅 요청은 알림 센터가 아닌 채팅방 미읽음·목록으로만 표시
      */
     @Transactional
     public ChatRoomSummaryResponse createChatRoom(Long userId, ChatRoomCreateRequest request) {
@@ -148,9 +151,7 @@ public class ChatService {
         // 입장 시스템 메시지 저장
         saveSystemMessage(room, "채팅방이 개설되었습니다. 서로 존중하는 거래 문화를 만들어 주세요.");
 
-        // 게시자에게 알림
-        saveNotification(poster, NotificationType.CHAT_OPENED, room.getId(),
-                counterparty.getNickname() + "님이 채팅을 요청했습니다.");
+        // 채팅 요청은 알림 센터가 아닌 채팅방 미읽음·목록으로만 표시한다
 
         return toSummary(room, userId);
     }
@@ -196,7 +197,8 @@ public class ChatService {
                 .map(ChatMessageResponse::of)
                 .collect(Collectors.toList());
 
-        return ChatRoomDetailResponse.of(room, userId, resolveListingDisplayName(room), msgResponses);
+        return ChatRoomDetailResponse.of(
+                room, userId, resolveListingDisplayName(room), resolveListingPrice(room), msgResponses);
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -432,6 +434,9 @@ public class ChatService {
                 counterparty.getNickname() + "님과의 거래를 평가해주세요.");
         saveNotification(counterparty, NotificationType.REVIEW_REQUESTED, chatRoomId,
                 poster.getNickname() + "님과의 거래를 평가해주세요.");
+
+        // 트랜잭션 커밋 후 캐시 무효화 (커밋 전 evict 시 stale 재캐싱 방지)
+        eventPublisher.publishEvent(new TradeConfirmedEvent());
     }
 
     /** 채팅방 읽음 처리 — 패널 열람 중 실시간 메시지 수신 시 호출 */
@@ -442,6 +447,22 @@ public class ChatService {
         room.markReadBy(userId);
     }
 
+    /** 참여 중인 모든 채팅방 읽음 처리 */
+    @Transactional
+    public void markAllChatRoomsRead(Long userId) {
+        java.util.Set<Long> seen = new java.util.HashSet<>();
+        for (ChatRoom room : chatRoomRepository.findByPosterId(userId)) {
+            if (seen.add(room.getId())) {
+                room.markReadBy(userId);
+            }
+        }
+        for (ChatRoom room : chatRoomRepository.findByCounterpartyId(userId)) {
+            if (seen.add(room.getId())) {
+                room.markReadBy(userId);
+            }
+        }
+    }
+
     // ──────────────────────────────────────────────────────────────────────
     // private 헬퍼
     // ──────────────────────────────────────────────────────────────────────
@@ -449,7 +470,8 @@ public class ChatService {
     /** 채팅방 목록 DTO 변환 (미읽음 여부 포함) */
     private ChatRoomSummaryResponse toSummary(ChatRoom room, Long viewerId) {
         boolean hasUnread = hasUnreadMessages(room, viewerId);
-        return ChatRoomSummaryResponse.of(room, viewerId, resolveListingDisplayName(room), hasUnread);
+        return ChatRoomSummaryResponse.of(
+                room, viewerId, resolveListingDisplayName(room), resolveListingPrice(room), hasUnread);
     }
 
     /** 상대방 TEXT 메시지 미읽음 여부 */
@@ -583,6 +605,18 @@ public class ChatService {
         pushRoomStatus(room);
     }
 
+    /** 게시물 등록 가격 조회 (채팅 거래가 입력 기본값) */
+    private Long resolveListingPrice(ChatRoom room) {
+        if (room.getListingType() == ListingType.SELL) {
+            return tradeListingRepository.findById(room.getListingId())
+                    .map(TradeListing::getPrice)
+                    .orElse(null);
+        }
+        return wantedListingRepository.findById(room.getListingId())
+                .map(WantedListing::getOfferedPrice)
+                .orElse(null);
+    }
+
     /** 거래 확정 가격 결정 (finalPrice 없으면 게시물 원래 가격) */
     private long resolveConfirmedPrice(ChatRoom room) {
         if (room.getFinalPrice() != null) {
@@ -673,21 +707,30 @@ public class ChatService {
 
         var firstBundle = bundles.get(0);
 
-        if (firstBundle.getBundleType() == BundleType.EQUIPMENT_SET
-                && firstBundle.getEquipmentSet() != null) {
+        if (firstBundle.getBundleType() == BundleType.EQUIPMENT_SET) {
             return resolveSetStatKey(firstBundle);
         }
 
         // 단품·재료
         var lines = bundleLineRepository.findByBundleIdOrderBySortOrderAsc(firstBundle.getId());
         if (lines.isEmpty()) return null;
-        return WatchKeyBuilder.itemKey(lines.get(0).getItem().getId());
+        var line = lines.get(0);
+        Long itemId = line.getItem().getId();
+        var details = bundleEquipmentDetailRepository.findByBundleLineIdIn(List.of(line.getId()));
+        if (!details.isEmpty() && details.get(0).isHasRitual()) {
+            var rituals = bundleEquipmentRitualRepository.findWithRitualByBundleLineIdIn(List.of(line.getId()));
+            if (!rituals.isEmpty()) {
+                BundleEquipmentRitual r = rituals.get(0);
+                String mark = SetTitleGenerator.buildTitleMark(r.getRitual(), r.getOutcome());
+                return WatchKeyBuilder.itemKey(itemId, mark);
+            }
+        }
+        return WatchKeyBuilder.itemKey(itemId);
     }
 
     private String resolveSetStatKey(org.example.gersangtrade.domain.listing.ListingBundle bundle) {
-        Long setId = bundle.getEquipmentSet().getId();
         var lines = bundleLineRepository.findByBundleIdOrderBySortOrderAsc(bundle.getId());
-        if (lines.isEmpty()) return WatchKeyBuilder.itemKey(setId); // fallback
+        if (lines.isEmpty()) return null;
 
         var lineIds = lines.stream().map(l -> l.getId()).toList();
         var detailMap = bundleEquipmentDetailRepository.findWithEquipmentSetByBundleLineIdIn(lineIds)
@@ -714,7 +757,17 @@ public class ChatService {
                 .toList();
 
         SetTitleGenerator.WatchInfo info = SetTitleGenerator.resolveWatchInfo(pieces);
-        if (info == null) return WatchKeyBuilder.itemKey(setId); // fallback
+        if (info == null) return null;
+
+        Long setId = bundle.getEquipmentSet() != null
+                ? bundle.getEquipmentSet().getId()
+                : detailMap.values().stream()
+                .map(d -> d.getEquipmentItem().getEquipmentSet())
+                .filter(java.util.Objects::nonNull)
+                .map(s -> s.getId())
+                .findFirst()
+                .orElse(null);
+        if (setId == null) return null;
         return WatchKeyBuilder.setKey(setId, info.composition(), info.ritualCount(), info.mark());
     }
 

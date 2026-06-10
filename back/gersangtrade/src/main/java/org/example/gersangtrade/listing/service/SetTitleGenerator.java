@@ -72,7 +72,20 @@ public class SetTitleGenerator {
 
     private SetTitleGenerator() {}
 
-
+    /** 구성별 포함 슬롯 — 거래완료 statKey 매칭에 사용 */
+    public static Set<EquipmentSlot> compositionSlots(SetComposition composition) {
+        return switch (composition) {
+            case GAMTU -> EnumSet.copyOf(GAMTU_SLOTS);
+            case BYEON -> EnumSet.copyOf(BYEON_SLOTS);
+            case BANSSANG -> EnumSet.of(EquipmentSlot.RING);
+            case FULL -> EnumSet.copyOf(FULL_ARMOR_SLOTS);
+            case FULL_BANSSANG -> {
+                Set<EquipmentSlot> slots = EnumSet.copyOf(FULL_ARMOR_SLOTS);
+                slots.add(EquipmentSlot.RING);
+                yield slots;
+            }
+        };
+    }
 
     /**
 
@@ -281,12 +294,7 @@ public class SetTitleGenerator {
             return SetComposition.BANSSANG;
         }
 
-        if (included.stream().anyMatch(FULL_ARMOR_SLOTS::contains)) {
-
-            return included.contains(EquipmentSlot.RING) ? SetComposition.FULL_BANSSANG : SetComposition.FULL;
-
-        }
-
+        // 규칙 외 슬롯 조합(부분 세트 등)은 null 반환 — resolveWatchInfo/statKey에서 오분류 방지
         return null;
 
     }

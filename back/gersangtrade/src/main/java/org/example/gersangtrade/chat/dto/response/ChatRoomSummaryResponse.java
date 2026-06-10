@@ -23,6 +23,8 @@ public record ChatRoomSummaryResponse(
         String partnerNickname,
 
         ChatRoomStatus status,
+        /** 게시물 등록 가격 (거래가 입력 기본값) */
+        Long listingPrice,
         Long finalPrice,
         LocalDateTime createdAt,
 
@@ -39,7 +41,7 @@ public record ChatRoomSummaryResponse(
      * viewerId를 기준으로 상대방 닉네임을 결정한다.
      */
     public static ChatRoomSummaryResponse of(ChatRoom room, Long viewerId, String listingDisplayName,
-                                             boolean hasUnread) {
+                                             Long listingPrice, boolean hasUnread) {
         boolean isViewerPoster = room.getPoster().getId().equals(viewerId);
         String partnerNickname = isViewerPoster
                 ? room.getCounterparty().getNickname()
@@ -59,6 +61,7 @@ public record ChatRoomSummaryResponse(
                 room.getInitiationType(),
                 partnerNickname,
                 room.getStatus(),
+                listingPrice,
                 room.getFinalPrice(),
                 room.getCreatedAt(),
                 hasUnread,

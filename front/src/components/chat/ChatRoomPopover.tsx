@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { api, type ChatRoomSummaryDto } from '@/lib/api';
+import { formatChatRoomStatus } from '@/lib/chatLabels';
 import { useWs } from '@/lib/useWs';
 
 interface ChatRoomPopoverProps {
@@ -31,20 +32,35 @@ export default function ChatRoomPopover({ onOpenRoom, onUnreadChange }: ChatRoom
   useWs({
     chat_message: () => loadRooms(),
     room_status: () => loadRooms(),
-    notification: (data) => {
-      const n = data as { type?: string };
-      if (n.type === 'CHAT_OPENED') loadRooms();
-    },
   });
+
+  async function handleMarkAllRead() {
+    try {
+      await api.markAllChatRoomsRead();
+      loadRooms();
+    } catch (e: unknown) {
+      setError(String(e));
+    }
+  }
 
   return (
     <div
       className="absolute right-0 top-full mt-2 w-80 rounded-xl overflow-hidden shadow-xl"
       style={{ background: 'var(--card)', border: '1px solid var(--border)', zIndex: 350 }}
     >
-      <div style={{ borderBottom: '1px solid var(--border)' }} className="px-4 py-3">
-        <h2 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>채팅</h2>
-        <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>거래자 / 아이템</p>
+      <div style={{ borderBottom: '1px solid var(--border)' }} className="flex items-center justify-between px-4 py-3">
+        <div>
+          <h2 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>채팅</h2>
+          <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>거래자 / 아이템</p>
+        </div>
+        <button
+          type="button"
+          onClick={handleMarkAllRead}
+          className="text-xs shrink-0"
+          style={{ color: 'var(--brown)' }}
+        >
+          전체 읽음
+        </button>
       </div>
 
       <div className="max-h-80 overflow-y-auto p-2">
@@ -80,7 +96,7 @@ export default function ChatRoomPopover({ onOpenRoom, onUnreadChange }: ChatRoom
                   </div>
                 </div>
                 <span className="text-[11px] shrink-0" style={{ color: 'var(--text-disabled)' }}>
-                  {room.status}
+                  {formatChatRoomStatus(room.status)}
                 </span>
               </div>
             </button>

@@ -2,6 +2,8 @@ package org.example.gersangtrade.catalog.repository;
 
 import org.example.gersangtrade.domain.catalog.Gem;
 import org.example.gersangtrade.domain.catalog.enums.GemGrade;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -40,4 +42,8 @@ public interface GemRepository extends JpaRepository<Gem, Long> {
 
     /** 이미지 URL이 아직 없는 보석 목록 조회 — 이미지 수집 Batch Job에서 대상 선정에 사용된다 */
     List<Gem> findByImageUrlIsNull();
+
+    /** 이름 필터 + 페이징 조회 — 관리자 이미지 등록 대상 검색에 사용된다. */
+    @Query("SELECT g FROM Gem g LEFT JOIN FETCH g.ritual WHERE (:name IS NULL OR g.name LIKE %:name%)")
+    Page<Gem> findByNameFilter(@Param("name") String name, Pageable pageable);
 }

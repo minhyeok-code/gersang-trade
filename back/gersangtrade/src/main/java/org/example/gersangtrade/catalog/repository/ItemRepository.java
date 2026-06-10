@@ -37,6 +37,24 @@ public interface ItemRepository extends JpaRepository<Item, Long> {
     /** imageUrl이 null인 아이템 전체 조회 — ItemDetailStep의 처리 대상 선정에 사용된다 */
     List<Item> findByImageUrlIsNull();
 
+    /**
+     * 거래 이력(BundleLine 또는 TradeConfirmed)이 있으나 이미지가 없는 장비 아이템 조회.
+     * 우선순위 높은 이미지 등록 대상 파악에 사용된다.
+     */
+    @Query(value = """
+            SELECT DISTINCT i.* FROM items i
+            WHERE i.image_url IS NULL
+              AND i.type = 'EQUIPMENT'
+              AND (
+                EXISTS (SELECT 1 FROM bundle_lines bl WHERE bl.item_id = i.id)
+                OR EXISTS (SELECT 1 FROM trade_confirmed tc
+                           WHERE tc.stat_key_snapshot = CONCAT('ITEM:', i.id)
+                             AND tc.cancelled = 0)
+              )
+            ORDER BY i.name
+            """, nativeQuery = true)
+    List<Item> findEquipmentWithTradeAndNoImage();
+
     // ── JPQL ────────────────────────────────────────────────────────────────
 
     /**

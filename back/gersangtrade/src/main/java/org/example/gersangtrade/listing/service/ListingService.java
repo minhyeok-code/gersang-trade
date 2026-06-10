@@ -5,6 +5,7 @@ import org.example.gersangtrade.catalog.repository.EquipmentItemRepository;
 import org.example.gersangtrade.catalog.repository.ItemRepository;
 import org.example.gersangtrade.catalog.repository.RitualApplicabilityRepository;
 import org.example.gersangtrade.domain.catalog.EquipmentItem;
+import org.example.gersangtrade.domain.catalog.EquipmentSet;
 import org.example.gersangtrade.domain.catalog.Item;
 import org.example.gersangtrade.domain.catalog.Ritual;
 import org.example.gersangtrade.domain.catalog.RitualApplicability;
@@ -38,6 +39,7 @@ import org.example.gersangtrade.listing.repository.BundleEquipmentRitualReposito
 import org.example.gersangtrade.listing.repository.BundleLineRepository;
 import org.example.gersangtrade.listing.repository.ListingBundleRepository;
 import org.example.gersangtrade.listing.repository.ListingQueryRepository;
+import org.example.gersangtrade.home.service.PriceWatchCacheEvictor;
 import org.example.gersangtrade.listing.repository.TradeListingRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -70,6 +72,7 @@ public class ListingService {
     private final EquipmentItemRepository equipmentItemRepository;
     private final RitualApplicabilityRepository ritualApplicabilityRepository;
     private final ListingBundleTitleService listingBundleTitleService;
+    private final PriceWatchCacheEvictor priceWatchCacheEvictor;
 
     // ── 등록 ────────────────────────────────────────────────────────────────
 
@@ -139,10 +142,16 @@ public class ListingService {
             throw new IllegalArgumentException("번들 내 라인의 sortOrder 값이 중복되어 있습니다.");
         }
 
+        // EQUIPMENT_SET 번들은 시세·검색 조회를 위해 equipment_set_id FK를 반드시 저장한다
+        EquipmentSet equipmentSet = bundleReq.bundleType() == BundleType.EQUIPMENT_SET
+                ? resolveEquipmentSetForBundle(bundleReq)
+                : null;
+
         ListingBundle bundle = listingBundleRepository.save(
                 ListingBundle.builder()
                         .listing(listing)
                         .bundleType(bundleReq.bundleType())
+                        .equipmentSet(equipmentSet)
                         .titleOverride(bundleReq.titleOverride())
                         .build()
         );
@@ -164,6 +173,36 @@ public class ListingService {
                 bundle.updateTitle(SetTitleGenerator.generate(setName, inputs));
             }
         }
+    }
+
+    /**
+     * 세트 번들의 소속 장비 세트를 첫 라인 기준으로 검증·결정한다.
+     * 모든 장비 라인이 동일 세트에 속해야 한다.
+     */
+    private EquipmentSet resolveEquipmentSetForBundle(BundleCreateRequest bundleReq) {
+        EquipmentSet resolved = null;
+        for (BundleLineCreateRequest lineReq : bundleReq.lines()) {
+            if (!lineReq.isEquipment()) {
+                throw new IllegalArgumentException("세트 번들은 장비 라인만 포함할 수 있습니다.");
+            }
+            EquipmentItem equipmentItem = equipmentItemRepository.findWithItemByItemId(lineReq.itemId())
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "장비 아이템 상세가 존재하지 않습니다. itemId=" + lineReq.itemId()));
+            EquipmentSet set = equipmentItem.getEquipmentSet();
+            if (set == null) {
+                throw new IllegalArgumentException(
+                        "세트 번들에 세트 미소속 장비가 포함되어 있습니다. itemId=" + lineReq.itemId());
+            }
+            if (resolved == null) {
+                resolved = set;
+            } else if (!resolved.getId().equals(set.getId())) {
+                throw new IllegalArgumentException("세트 번들의 모든 피스는 동일한 세트에 속해야 합니다.");
+            }
+        }
+        if (resolved == null) {
+            throw new IllegalArgumentException("세트 번들에는 최소 1개의 장비 라인이 필요합니다.");
+        }
+        return resolved;
     }
 
     /**
@@ -493,5 +532,7 @@ public class ListingService {
 
         listing.cancel();
         listing.softDelete();
+        // 취소된 판매글은 관심 시세 캐시에서 제외되어야 한다
+        priceWatchCacheEvictor.evictAll();
     }
 }

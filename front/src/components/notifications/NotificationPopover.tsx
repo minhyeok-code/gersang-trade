@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { api, type NotificationDto, type PendingReviewDto } from '@/lib/api';
+import { formatNotificationType } from '@/lib/chatLabels';
 import { useWs } from '@/lib/useWs';
 
 type RatingValue = 'GOOD' | 'NEUTRAL' | 'BAD';
@@ -16,9 +17,13 @@ interface NotificationPopoverProps {
   onUnreadChange?: (count: number) => void;
 }
 
+function isChatNotification(notification: NotificationDto) {
+  return notification.type === 'CHAT_MESSAGE' || notification.type === 'CHAT_OPENED';
+}
+
 function isUnread(notification: NotificationDto) {
   return (notification.isRead === false || notification.read === false)
-    && notification.type !== 'CHAT_MESSAGE';
+    && !isChatNotification(notification);
 }
 
 function getTitle(notification: NotificationDto) {
@@ -49,7 +54,7 @@ export default function NotificationPopover({ onUnreadChange }: NotificationPopo
     setError('');
     try {
       const list = await api.getNotifications();
-      const visible = list.filter((n) => n.type !== 'CHAT_MESSAGE');
+      const visible = list.filter((n) => !isChatNotification(n));
       setNotifications(visible);
     } catch (e: unknown) {
       setError(String(e));
@@ -63,7 +68,7 @@ export default function NotificationPopover({ onUnreadChange }: NotificationPopo
   useWs({
     notification: (data) => {
       const incoming = data as NotificationDto;
-      if (incoming.type === 'CHAT_MESSAGE') return;
+      if (isChatNotification(incoming)) return;
       setNotifications((prev) => {
         if (prev.some((n) => n.id === incoming.id)) return prev;
         return [incoming, ...prev];
@@ -158,7 +163,8 @@ export default function NotificationPopover({ onUnreadChange }: NotificationPopo
                   <div className="min-w-0">
                     <p className="text-sm truncate" style={{ color: 'var(--text)' }}>{getTitle(notification)}</p>
                     <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                      {notification.type}
+                      {formatNotificationType(notification.type)
+                        || new Date(notification.createdAt).toLocaleString()}
                     </p>
                   </div>
                 </div>

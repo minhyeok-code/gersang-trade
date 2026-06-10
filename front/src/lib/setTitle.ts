@@ -266,6 +266,22 @@ export function initSetPieces(pieces: SetPieceDto[], ritualByItemId: Map<number,
   }));
 }
 
+/** 백엔드 SetTitleGenerator.buildTitleMark와 동일한 표시 마크 생성 */
+export function buildTitleMarkFromRitual(
+  ritual: RitualDto,
+  outcome: 'SUCCESS' | 'GREAT_SUCCESS',
+): string {
+  const strip = (s: string) => s.replace(/[<>]/g, '');
+  if (outcome === 'GREAT_SUCCESS' && ritual.greatSuccessMark) {
+    const gs = strip(ritual.greatSuccessMark);
+    const s = strip(ritual.successMark ?? ritual.displayName);
+    return `<${gs}_${s}>`;
+  }
+  if (ritual.successMark) return ritual.successMark;
+  if (ritual.displayName) return `<${strip(ritual.displayName)}>`;
+  return '';
+}
+
 export function buildRitualMarkOptions(perPieceRituals: RitualDto[][]): RitualMarkOption[] {
   const seen = new Set<number>();
   const opts: RitualMarkOption[] = [];
@@ -273,12 +289,15 @@ export function buildRitualMarkOptions(perPieceRituals: RitualDto[][]): RitualMa
     for (const r of rituals) {
       if (seen.has(r.id)) continue;
       seen.add(r.id);
-      const mark = r.successMark || r.displayName;
-      if (mark) opts.push({ mark, label: mark, ritualId: r.id, outcome: 'SUCCESS' });
+      const successMark = buildTitleMarkFromRitual(r, 'SUCCESS');
+      if (successMark) {
+        opts.push({ mark: successMark, label: successMark, ritualId: r.id, outcome: 'SUCCESS' });
+      }
       if (r.greatSuccessMark) {
+        const combinedMark = buildTitleMarkFromRitual(r, 'GREAT_SUCCESS');
         opts.push({
-          mark: r.greatSuccessMark,
-          label: `<${r.greatSuccessMark.replace(/[<>]/g, '')}_${(r.successMark ?? r.displayName).replace(/[<>]/g, '')}>`,
+          mark: combinedMark,
+          label: combinedMark,
           ritualId: r.id,
           outcome: 'GREAT_SUCCESS',
         });

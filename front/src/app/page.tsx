@@ -2,45 +2,22 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api, getToken, getServer } from '@/lib/api';
+import { getToken, getServer } from '@/lib/api';
 import Link from 'next/link';
-import { TrendingUp, Sword, Users, BarChart2, Clock } from 'lucide-react';
+import { Sword, Users, Clock } from 'lucide-react';
 import SearchBar from '@/components/common/SearchBar';
-
-interface PriceWatchItem {
-  itemId: number;
-  itemName: string;
-  recentAvg: number;
-  prevAvg: number;
-  changeRate: number;
-}
-
-function formatPrice(price: number): string {
-  if (price >= 100_000_000) {
-    const v = price / 100_000_000;
-    return `${v % 1 === 0 ? v : v.toFixed(1)}억 전`;
-  }
-  if (price >= 10_000) return `${Math.floor(price / 10_000)}만 전`;
-  return `${price.toLocaleString()} 전`;
-}
+import InterestPriceWatchPanel from '@/components/home/InterestPriceWatchPanel';
 
 export default function Home() {
   const router = useRouter();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [priceWatch, setPriceWatch] = useState<PriceWatchItem[]>([]);
-  const [watchLoading, setWatchLoading] = useState(false);
   const [noServerWarning, setNoServerWarning] = useState(false);
 
   useEffect(() => {
-    const logged = !!getToken();
-    setIsLoggedIn(logged);
-    if (logged) {
-      setWatchLoading(true);
-      api.getPriceWatch()
-        .then((items) => setPriceWatch(items as PriceWatchItem[]))
-        .catch(() => {})
-        .finally(() => setWatchLoading(false));
-    }
+    setIsLoggedIn(!!getToken());
+    const onAuth = () => setIsLoggedIn(!!getToken());
+    window.addEventListener('auth-changed', onAuth);
+    return () => window.removeEventListener('auth-changed', onAuth);
   }, []);
 
   function handleSearch(query: string, itemId: number | null) {
@@ -66,7 +43,6 @@ export default function Home() {
           아이템 거래 · 시세 조회 · DPS 계산기
         </p>
 
-        {/* 서버 미선택 경고 */}
         {noServerWarning && (
           <div
             className="mb-3 px-4 py-2 rounded text-sm font-medium"
@@ -76,7 +52,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* 검색창 */}
         <div className="w-full max-w-xl" onClick={() => setNoServerWarning(false)}>
           <SearchBar
             showSubmitButton
@@ -122,62 +97,8 @@ export default function Home() {
 
       {isLoggedIn ? (
         <div className="grid lg:grid-cols-2 gap-6">
-          {/* 관심목록 시세 */}
-          <div
-            style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-            className="rounded-xl p-5"
-          >
-            <div className="flex items-center gap-2 mb-4">
-              <TrendingUp style={{ color: 'var(--brown)', width: 18, height: 18 }} />
-              <h2 className="font-semibold" style={{ color: 'var(--text)' }}>관심 아이템 시세</h2>
-            </div>
-            {watchLoading ? (
-              <div className="space-y-2">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} style={{ background: 'var(--bg)' }} className="h-12 rounded animate-pulse" />
-                ))}
-              </div>
-            ) : priceWatch.length === 0 ? (
-              <div className="text-center py-8" style={{ color: 'var(--text-muted)' }}>
-                <BarChart2 style={{ width: 36, height: 36, margin: '0 auto 8px', opacity: 0.4 }} />
-                <p className="text-sm">등록된 관심 아이템이 없습니다</p>
-                <Link
-                  href="/trade"
-                  style={{ color: 'var(--brown)' }}
-                  className="text-xs mt-2 inline-block hover:underline"
-                >
-                  거래 페이지에서 아이템을 검색해보세요 →
-                </Link>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {priceWatch.map((item) => (
-                  <div
-                    key={item.itemId}
-                    style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}
-                    className="flex items-center justify-between px-4 py-3 rounded-lg"
-                  >
-                    <span className="text-sm font-medium" style={{ color: 'var(--text)' }}>{item.itemName}</span>
-                    <div className="flex items-center gap-3">
-                      <span className="font-serif text-sm font-bold" style={{ color: 'var(--brown)' }}>
-                        {formatPrice(item.recentAvg)}
-                      </span>
-                      {item.changeRate !== undefined && (
-                        <span
-                          className="text-xs font-medium"
-                          style={{ color: item.changeRate >= 0 ? '#C24A4A' : '#3A4F6B' }}
-                        >
-                          {item.changeRate >= 0 ? '+' : ''}{item.changeRate.toFixed(1)}%
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <InterestPriceWatchPanel />
 
-          {/* 스펙업 추천 */}
           <div
             style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
             className="rounded-xl p-5"
@@ -200,22 +121,21 @@ export default function Home() {
           </div>
         </div>
       ) : (
-        /* 비로그인 소개 */
         <div className="grid lg:grid-cols-3 gap-5">
           {[
             {
-              icon: <TrendingUp style={{ width: 28, height: 28, color: 'var(--brown)' }} />,
+              icon: <TrendingUpPlaceholder />,
               title: '실시간 거래',
               desc: '팝니다·삽니다 등록글을 서버별로 조회하고 채팅으로 바로 거래하세요.',
               href: '/trade',
               label: '거래 보기',
             },
             {
-              icon: <BarChart2 style={{ width: 28, height: 28, color: 'var(--brown)' }} />,
+              icon: <BarChartPlaceholder />,
               title: '시세 조회',
-              desc: '아이템별 최근 5·10·15일 실거래가를 확인하고 적정 가격을 판단하세요.',
-              href: '/trade',
-              label: '시세 조회',
+              desc: '관심 매물의 판매·구매·거래완료 시세를 한눈에 확인하세요.',
+              href: '/login',
+              label: '로그인하기',
             },
             {
               icon: <Sword style={{ width: 28, height: 28, color: 'var(--brown)' }} />,
@@ -250,7 +170,7 @@ export default function Home() {
             <div>
               <h3 className="font-semibold" style={{ color: 'var(--text)' }}>로그인하면 더 많은 기능을 사용할 수 있어요</h3>
               <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
-                관심 아이템 시세 알림 · 거래 등록 · 채팅 · 덱 저장
+                관심 아이템 시세 · 거래 등록 · 채팅 · 덱 저장
               </p>
             </div>
             <Link
@@ -264,5 +184,24 @@ export default function Home() {
         </div>
       )}
     </div>
+  );
+}
+
+function TrendingUpPlaceholder() {
+  return (
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--brown)" strokeWidth="2">
+      <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
+      <polyline points="17 6 23 6 23 12" />
+    </svg>
+  );
+}
+
+function BarChartPlaceholder() {
+  return (
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--brown)" strokeWidth="2">
+      <line x1="12" y1="20" x2="12" y2="10" />
+      <line x1="18" y1="20" x2="18" y2="4" />
+      <line x1="6" y1="20" x2="6" y2="16" />
+    </svg>
   );
 }

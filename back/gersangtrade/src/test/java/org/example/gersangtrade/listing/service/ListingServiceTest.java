@@ -23,6 +23,7 @@ import org.example.gersangtrade.domain.user.enums.UserStatus;
 import org.example.gersangtrade.listing.dto.request.*;
 import org.example.gersangtrade.listing.dto.response.ListingDetailResponse;
 import org.example.gersangtrade.listing.dto.response.ListingSummaryResponse;
+import org.example.gersangtrade.home.service.PriceWatchCacheEvictor;
 import org.example.gersangtrade.listing.repository.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -75,6 +76,8 @@ class ListingServiceTest {
     private RitualApplicabilityRepository ritualApplicabilityRepository;
     @Mock
     private ListingBundleTitleService listingBundleTitleService;
+    @Mock
+    private PriceWatchCacheEvictor priceWatchCacheEvictor;
 
     @InjectMocks
     private ListingService listingService;

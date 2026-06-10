@@ -35,6 +35,9 @@ public interface MercenaryRepository extends JpaRepository<Mercenary, Long> {
      */
     List<Mercenary> findByCrawledAtIsNull();
 
+    /** 이미지 URL이 없는 용병 목록 — 관리자 이미지 등록 대상 파악에 사용된다. */
+    List<Mercenary> findByImageUrlIsNull();
+
     /**
      * 관리자 목록: category + nature + nation 복합 필터 — 페이징.
      * null 파라미터는 조건에서 제외된다.

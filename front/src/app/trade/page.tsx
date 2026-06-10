@@ -1,15 +1,13 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import SearchBar from '@/components/common/SearchBar';
-import { api, getSelectedServerName, sortChatMessages, type ChatMessageDto, type ChatRoomDetailDto, type ListingDto, type WantedDto, type ServerDto, type PublicUserDto, type SetSummaryDto, type SetDetailDto, type RitualDto } from '@/lib/api';
+import { api, getSelectedServerName, type ChatRoomSummaryDto, type ListingDto, type WantedDto, type ServerDto, type PublicUserDto, type SetSummaryDto, type SetDetailDto, type RitualDto } from '@/lib/api';
 import { parseApiError } from '@/lib/parseApiError';
-import { isMyMessage, isSystemMessage } from '@/lib/chatUtils';
-import { useWs } from '@/lib/useWs';
-import type { ChatMessageWsEvent, RoomStatusWsEvent } from '@/lib/wsTypes';
 import { BarChart2, Plus } from 'lucide-react';
 import CreateListingModal from '@/components/trade/CreateListingModal';
+import { formatPrice } from '@/lib/formatPrice';
 import SetPieceConfigurator from '@/components/value-test/SetPieceConfigurator';
 import {
   applyBundleKindToPieces,
@@ -56,15 +54,6 @@ interface Filters {
 
 // ══════════ 헬퍼 ══════════
 
-function formatPrice(price: number): string {
-  if (price >= 100_000_000) {
-    const v = price / 100_000_000;
-    return `${v % 1 === 0 ? v : v.toFixed(1)}억 전`;
-  }
-  if (price >= 10_000) return `${Math.floor(price / 10_000)}만 전`;
-  return `${price.toLocaleString()} 전`;
-}
-
 function relativeTime(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const min = Math.floor(diff / 60_000);
@@ -106,11 +95,9 @@ function mapWanted(w: WantedDto): TradeItem {
     : w.itemName
       ? [w.itemName]
       : [];
-  const displayName = w.setName
-    ? `${w.setName} 구매 희망`
-    : names.length > 0
-      ? `${names.join(', ')} 구매 희망`
-      : `구매희망 #${w.id}`;
+  const displayName = w.displayTitle
+    ?? (w.setName
+      ?? (names.length > 0 ? names.join(', ') : `#${w.id}`));
   const buyerName = w.buyer?.nickname ?? w.buyerName ?? '알 수 없음';
   return {
     id: w.id,
@@ -552,8 +539,8 @@ function TradeList({ items, sort, onSortChange, title, showBadge, onCardClick, l
 
 // ══════════ 상세 모달 ══════════
 
-function DetailModal({ item, onClose, onChat }: {
-  item: TradeItem; onClose: () => void; onChat: () => void;
+function DetailModal({ item, onClose, onDeleted, onChat, chatLoading }: {
+  item: TradeItem; onClose: () => void; onDeleted: () => void; onChat: () => void; chatLoading?: boolean;
 }) {
   const isSell = item.listingType === 'SELL';
   const [reporting, setReporting] = useState(false);
@@ -587,7 +574,7 @@ function DetailModal({ item, onClose, onChat }: {
     try {
       if (isSell) await api.deleteListing(item.id);
       else await api.deleteWanted(item.id);
-      onClose();
+      onDeleted();
     } catch {
       alert('삭제 중 오류가 발생했습니다.');
     }
@@ -739,10 +726,11 @@ function DetailModal({ item, onClose, onChat }: {
           </button>
           <button
             onClick={onChat}
+            disabled={chatLoading}
             style={{ background: 'var(--brown)', color: 'var(--beige)' }}
-            className="px-5 py-2 rounded-lg text-sm font-semibold hover:bg-[var(--brown-dark)] transition-colors"
+            className="px-5 py-2 rounded-lg text-sm font-semibold hover:bg-[var(--brown-dark)] transition-colors disabled:opacity-50"
           >
-            채팅하기
+            {chatLoading ? '연결 중…' : '채팅하기'}
           </button>
         </div>
       </div>
@@ -750,292 +738,6 @@ function DetailModal({ item, onClose, onChat }: {
   );
 }
 
-// ══════════ 채팅 모달 ══════════
-
-interface ChatMsg { id: number; content: string; type: 'TEXT' | 'SYSTEM'; mine: boolean; }
-
-function mapApiMessage(message: ChatMessageDto, myNickname: string | null): ChatMsg {
-  const system = isSystemMessage(message);
-  return {
-    id: message.id,
-    content: message.content,
-    type: system ? 'SYSTEM' : 'TEXT',
-    mine: !system && isMyMessage(message, myNickname),
-  };
-}
-
-function ChatModal({ item, onClose }: { item: TradeItem; onClose: () => void }) {
-  const [msgs, setMsgs] = useState<ChatMsg[]>([]);
-  const [detail, setDetail] = useState<ChatRoomDetailDto | null>(null);
-  const [input, setInput] = useState('');
-  const [finalPrice, setFinalPrice] = useState('');
-  const [started, setStarted] = useState(false);
-  const [roomId, setRoomId] = useState<number | null>(null);
-  const [myNickname, setMyNickname] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [confirming, setConfirming] = useState(false);
-  const [error, setError] = useState('');
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const prevCountRef = useRef(0);
-
-  useEffect(() => {
-    api.getMe().then((u) => setMyNickname(u.nickname)).catch(() => {});
-  }, []);
-
-  const loadMessages = useCallback(async () => {
-    if (!roomId || roomId <= 0) return;
-    try {
-      const data = await api.getChatRoom(roomId);
-      setDetail(data);
-      setMsgs(sortChatMessages(data.messages ?? []).map((m) => mapApiMessage(m, myNickname)));
-    } catch {
-      // 초기 로드 실패는 UI 유지
-    }
-  }, [roomId, myNickname]);
-
-  useEffect(() => {
-    if (!started || !roomId || roomId <= 0 || myNickname == null) return;
-    loadMessages();
-  }, [started, roomId, myNickname, loadMessages]);
-
-  const myNicknameRef = useRef<string | null>(null);
-  myNicknameRef.current = myNickname;
-
-  const isCompleted = detail?.status === 'COMPLETED';
-  const isClosedOnly = detail?.status === 'CLOSED';
-  const isTerminated = isCompleted || isClosedOnly;
-  const canConfirm = detail && !isTerminated && !detail.myTradeConfirmed;
-  const waitingPartner = detail?.myTradeConfirmed && !detail?.partnerTradeConfirmed && !isTerminated;
-  const needsMyConfirm = detail?.partnerTradeConfirmed && !detail?.myTradeConfirmed && !isTerminated;
-  const bothConfirmed = detail?.myTradeConfirmed && detail?.partnerTradeConfirmed && !isTerminated;
-
-  useWs({
-    chat_message: (data) => {
-      const event = data as ChatMessageWsEvent;
-      if (!roomId || event.chatRoomId !== roomId) return;
-      const mapped = mapApiMessage(event.message, myNicknameRef.current);
-      setMsgs((prev) => (prev.some((m) => m.id === mapped.id) ? prev : [...prev, mapped]));
-    },
-    room_status: (data) => {
-      const event = data as RoomStatusWsEvent;
-      if (!roomId || event.chatRoomId !== roomId) return;
-      setDetail((prev) =>
-        prev
-          ? {
-              ...prev,
-              status: event.status,
-              myTradeConfirmed: event.myTradeConfirmed ?? prev.myTradeConfirmed,
-              partnerTradeConfirmed: event.partnerTradeConfirmed ?? prev.partnerTradeConfirmed,
-            }
-          : prev,
-      );
-    },
-  });
-
-  useEffect(() => {
-    if (!waitingPartner && !needsMyConfirm && !bothConfirmed) return;
-    const timer = setInterval(() => loadMessages(), 3000);
-    return () => clearInterval(timer);
-  }, [waitingPartner, needsMyConfirm, bothConfirmed, loadMessages]);
-
-  async function handleTradeConfirm() {
-    if (confirming || !roomId || roomId <= 0) return;
-    setError('');
-    setConfirming(true);
-    try {
-      const summary = await api.confirmTrade(roomId, finalPrice ? Number(finalPrice) : undefined);
-      await loadMessages();
-      setDetail((prev) =>
-        prev
-          ? {
-              ...prev,
-              status: (summary as ChatRoomDetailDto | undefined)?.status ?? prev.status,
-              myTradeConfirmed: (summary as ChatRoomDetailDto | undefined)?.myTradeConfirmed ?? prev.myTradeConfirmed,
-              partnerTradeConfirmed: (summary as ChatRoomDetailDto | undefined)?.partnerTradeConfirmed ?? prev.partnerTradeConfirmed,
-            }
-          : prev,
-      );
-      const status = (summary as ChatRoomDetailDto | undefined)?.status ?? detail?.status;
-      if (status === 'CLOSED') {
-        setError('이 채팅방에서는 거래가 확정되지 않았습니다. 게시물이 이미 처리되었거나 채팅방이 종료되었습니다.');
-      }
-    } catch (e: unknown) {
-      setError(parseApiError(e));
-    } finally {
-      setConfirming(false);
-    }
-  }
-
-  useEffect(() => {
-    if (msgs.length > prevCountRef.current) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-    prevCountRef.current = msgs.length;
-  }, [msgs]);
-
-  async function handleStart(type: 'APPLY' | 'NEGOTIATE') {
-    setLoading(true);
-    try {
-      const res = await api.createChatRoom({
-        listingId: item.id,
-        listingType: item.listingType,
-        initiationType: type,
-      }) as { id?: number; chatRoomId?: number };
-      const id = Number(res.id ?? res.chatRoomId ?? 0);
-      setRoomId(id);
-      setStarted(true);
-      if (id > 0) {
-        const data = await api.getChatRoom(id);
-        const me = await api.getMe().catch(() => null);
-        const nickname = me?.nickname ?? myNickname;
-        if (nickname) setMyNickname(nickname);
-        setDetail(data);
-        setMsgs(sortChatMessages(data.messages ?? []).map((m) => mapApiMessage(m, nickname ?? null)));
-      }
-    } catch {
-      setRoomId(-1);
-      setStarted(true);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleSend() {
-    const content = input.trim();
-    if (!content || !roomId || roomId <= 0) return;
-    setInput('');
-    try {
-      const msg = await api.sendMessage(roomId, content);
-      setMsgs((prev) => {
-        const mapped = mapApiMessage(msg, myNickname);
-        if (prev.some((m) => m.id === mapped.id)) return prev;
-        return [...prev, mapped];
-      });
-    } catch {
-      setInput(content);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 flex items-center justify-center z-[500] p-4" style={{ background: 'rgba(0,0,0,0.65)' }} onClick={onClose}>
-      <div
-        style={{ background: 'var(--card)', border: '1px solid var(--border)', boxShadow: '0 24px 60px rgba(0,0,0,0.3)' }}
-        className="rounded-xl w-full max-w-md flex flex-col h-[580px]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div style={{ borderBottom: '1px solid var(--border)' }} className="flex items-center justify-between px-4 py-3 shrink-0">
-          <h2 className="font-semibold text-sm" style={{ color: 'var(--text)' }}>채팅</h2>
-          <button onClick={onClose} style={{ color: 'var(--text-muted)' }} className="text-xl hover:text-[var(--text)]">×</button>
-        </div>
-        <div style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }} className="flex items-center gap-3 px-4 py-2.5 shrink-0">
-          <div style={{ background: 'var(--beige)', fontSize: 20 }} className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0">⚔️</div>
-          <div className="min-w-0">
-            <p className="text-xs font-semibold truncate" style={{ color: 'var(--text)' }}>{item.displayName}</p>
-            <p className="text-xs font-serif font-bold" style={{ color: 'var(--brown)' }}>{formatPrice(item.price)}</p>
-          </div>
-        </div>
-
-        {!started ? (
-          <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6">
-            <p className="text-sm text-center" style={{ color: 'var(--text-muted)' }}>
-              <span className="font-medium" style={{ color: 'var(--text)' }}>{item.nickname}</span>님과 어떻게 연락할까요?
-            </p>
-            <div className="flex gap-3">
-              <button onClick={() => handleStart('NEGOTIATE')} disabled={loading}
-                style={{ border: '1px solid var(--border)', color: 'var(--text)' }}
-                className="px-5 py-2.5 rounded-lg text-sm hover:bg-[var(--bg)] transition-colors disabled:opacity-50">
-                흥정하기
-              </button>
-              <button onClick={() => handleStart('APPLY')} disabled={loading}
-                style={{ background: 'var(--brown)', color: 'var(--beige)' }}
-                className="px-5 py-2.5 rounded-lg text-sm font-semibold hover:bg-[var(--brown-dark)] transition-colors disabled:opacity-50">
-                거래신청
-              </button>
-            </div>
-          </div>
-        ) : (
-          <>
-            <div className="flex-1 overflow-y-auto p-4 space-y-2">
-              {msgs.map((msg) => (
-                <div key={msg.id} className={msg.type === 'SYSTEM' ? 'flex justify-center' : msg.mine ? 'flex justify-end' : 'flex justify-start'}>
-                  {msg.type === 'SYSTEM' ? (
-                    <span style={{ background: 'var(--bg)', color: 'var(--text-muted)' }} className="text-xs px-3 py-1 rounded-full">{msg.content}</span>
-                  ) : msg.mine ? (
-                    <div style={{ background: 'var(--brown)', color: 'var(--beige)' }} className="text-sm px-3 py-2 rounded-2xl rounded-tr-sm max-w-[75%]">{msg.content}</div>
-                  ) : (
-                    <div style={{ background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)' }} className="text-sm px-3 py-2 rounded-2xl rounded-tl-sm max-w-[75%]">{msg.content}</div>
-                  )}
-                </div>
-              ))}
-              <div ref={bottomRef} />
-            </div>
-            {error && (
-              <div className="px-4 py-2 text-xs shrink-0" style={{ color: 'var(--danger)', borderTop: '1px solid var(--border)' }}>
-                {error}
-              </div>
-            )}
-            {isTerminated ? (
-              <div style={{ borderTop: '1px solid var(--border)' }} className="px-4 py-3 shrink-0">
-                <p className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>
-                  {isCompleted ? '거래가 확정되었습니다.' : '채팅방이 종료되었습니다.'}
-                </p>
-              </div>
-            ) : (
-              <div style={{ borderTop: '1px solid var(--border)' }} className="p-3 space-y-2 shrink-0">
-                {detail && (
-                  <div className="flex flex-col gap-1.5">
-                    {needsMyConfirm && (
-                      <p className="text-xs px-1" style={{ color: 'var(--brown)' }}>
-                        상대방이 거래완료를 확인했습니다. 아래 버튼으로 확인해주세요.
-                      </p>
-                    )}
-                    <div className="flex gap-2 items-center">
-                      <input
-                        type="number"
-                        value={finalPrice}
-                        onChange={(e) => setFinalPrice(e.target.value)}
-                        placeholder="최종가 (선택)"
-                        className="w-28 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-[var(--brown)]"
-                        style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
-                      />
-                      {canConfirm && (
-                        <button
-                          onClick={handleTradeConfirm}
-                          disabled={confirming}
-                          className="flex-1 px-2.5 py-1.5 rounded text-xs font-semibold disabled:opacity-50"
-                          style={{ background: 'var(--brown)', color: 'var(--beige)' }}
-                        >
-                          {confirming ? '처리 중…' : needsMyConfirm ? '거래 완료 확인' : '거래 완료'}
-                        </button>
-                      )}
-                      {waitingPartner && (
-                        <p className="flex-1 text-xs text-right" style={{ color: 'var(--text-muted)' }}>
-                          상대방 확인 대기 중…
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                )}
-                <div className="flex gap-2">
-                  <input value={input} onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                    placeholder="메시지 입력..."
-                    style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
-                    className="flex-1 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--brown)]" />
-                  <button onClick={handleSend} disabled={!input.trim()}
-                    style={{ background: input.trim() ? 'var(--brown)' : 'var(--border)', color: input.trim() ? 'var(--beige)' : 'var(--text-disabled)' }}
-                    className="px-4 py-2 rounded-lg text-sm font-semibold transition-colors">
-                    전송
-                  </button>
-                </div>
-              </div>
-            )}
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
 
 // ══════════ 시세 드로어 ══════════
 
@@ -1159,6 +861,7 @@ function PriceDrawer({ onClose }: { onClose: () => void }) {
 // ══════════ 메인 ══════════
 
 function TradePageInner() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const initialQ = searchParams.get('q') ?? '';
   const initialItemId = searchParams.get('itemId') ? Number(searchParams.get('itemId')) : null;
@@ -1179,7 +882,7 @@ function TradePageInner() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [selectedItem, setSelectedItem] = useState<TradeItem | null>(null);
-  const [chatItem, setChatItem] = useState<TradeItem | null>(null);
+  const [chatStarting, setChatStarting] = useState(false);
   const [showPrice, setShowPrice] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
 
@@ -1236,6 +939,23 @@ function TradePageInner() {
 
   const filteredSell = applyFilters(sellItems);
   const filteredBuy = applyFilters(buyItems);
+
+  async function handleDirectChat(item: TradeItem) {
+    setSelectedItem(null);
+    setChatStarting(true);
+    try {
+      const res = await api.createChatRoom({
+        listingId: item.id,
+        listingType: item.listingType === 'SELL' ? 'SELL' : 'WANTED',
+        initiationType: 'APPLY',
+      }) as ChatRoomSummaryDto;
+      window.dispatchEvent(new CustomEvent('open-chat-room', { detail: res }));
+    } catch (e: unknown) {
+      setError(parseApiError(e));
+    } finally {
+      setChatStarting(false);
+    }
+  }
 
   return (
     <div className="flex" style={{ height: 'calc(100vh - 76px)' }}>
@@ -1302,8 +1022,22 @@ function TradePageInner() {
         </div>
       </div>
 
-      {selectedItem && <DetailModal item={selectedItem} onClose={() => setSelectedItem(null)} onChat={() => { setChatItem(selectedItem); setSelectedItem(null); }} />}
-      {chatItem && <ChatModal item={chatItem} onClose={() => setChatItem(null)} />}
+      {selectedItem && (
+        <DetailModal
+          item={selectedItem}
+          onClose={() => setSelectedItem(null)}
+          onDeleted={() => {
+            const deletedId = selectedItem.id;
+            setSelectedItem(null);
+            setSellItems((prev) => prev.filter((i) => i.id !== deletedId));
+            setBuyItems((prev) => prev.filter((i) => i.id !== deletedId));
+            loadListings(filters.selectedItemId);
+            router.refresh();
+          }}
+          onChat={() => handleDirectChat(selectedItem)}
+          chatLoading={chatStarting}
+        />
+      )}
       {showPrice && <PriceDrawer onClose={() => setShowPrice(false)} />}
       {showCreate && (
         <CreateListingModal

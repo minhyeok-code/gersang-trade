@@ -15,7 +15,7 @@ interface SearchBarProps {
   initialValue?: string;
   initialItemId?: number | null;
   initialItemName?: string;
-  onSearch: (query: string, itemId: number | null, itemName: string) => void;
+  onSearch: (query: string, itemId: number | null, itemName: string, itemType?: string) => void;
   showSubmitButton?: boolean;
   size?: 'sm' | 'md';
 }
@@ -71,7 +71,7 @@ export default function SearchBar({
     setSelectedId(item.id);
     setQuery(item.name);
     setDropOpen(false);
-    onSearch(item.name, item.id, item.name);
+    onSearch(item.name, item.id, item.name, item.type);
   }
 
   function handleClear() {

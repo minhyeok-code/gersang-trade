@@ -22,6 +22,7 @@ import org.example.gersangtrade.domain.wanted.enums.WantedStatus;
 import org.example.gersangtrade.wanted.dto.request.*;
 import org.example.gersangtrade.wanted.dto.response.WantedListingDetailResponse;
 import org.example.gersangtrade.wanted.dto.response.WantedListingSummaryResponse;
+import org.example.gersangtrade.home.service.PriceWatchCacheEvictor;
 import org.example.gersangtrade.wanted.repository.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -71,6 +72,8 @@ class WantedListingServiceTest {
     private EquipmentItemRepository equipmentItemRepository;
     @Mock
     private RitualApplicabilityRepository ritualApplicabilityRepository;
+    @Mock
+    private PriceWatchCacheEvictor priceWatchCacheEvictor;
 
     @InjectMocks
     private WantedListingService wantedListingService;
@@ -140,6 +143,11 @@ class WantedListingServiceTest {
         appearanceEquipmentItem = mock(EquipmentItem.class);
         when(appearanceEquipmentItem.getItemId()).thenReturn(3L);
         when(appearanceEquipmentItem.getEquipmentKind()).thenReturn(EquipmentKind.APPEARANCE);
+
+        // 목록 조회 시 세트 제목 산출용 배치 조회 기본값
+        when(wantedEquipmentConditionRepository.findByWantedItemIdIn(anyList())).thenReturn(List.of());
+        when(wantedRitualConditionRepository.findWithRitualByWantedItemIdIn(anyList())).thenReturn(List.of());
+        when(equipmentItemRepository.findWithItemAndSetByItemIdIn(anyList())).thenReturn(List.of());
     }
 
     // ── createWantedListing 테스트 ──────────────────────────────────────────
@@ -407,8 +415,11 @@ class WantedListingServiceTest {
         when(mockItem.getName()).thenReturn("마력의 결정");
 
         WantedItem wantedItem = mock(WantedItem.class);
+        when(wantedItem.getId()).thenReturn(10L);
+        when(wantedItem.getSortOrder()).thenReturn(0);
         when(wantedItem.getWantedListing()).thenReturn(listing);
         when(wantedItem.getItem()).thenReturn(mockItem);
+        when(mockItem.getId()).thenReturn(1L);
 
         when(wantedListingQueryRepository.search(cond)).thenReturn(List.of(listing));
         when(wantedItemRepository.findByWantedListingIdIn(List.of(1L))).thenReturn(List.of(wantedItem));

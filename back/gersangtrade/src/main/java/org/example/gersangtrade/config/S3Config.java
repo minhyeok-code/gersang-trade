@@ -1,6 +1,7 @@
 package org.example.gersangtrade.config;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
@@ -22,16 +23,18 @@ import software.amazon.awssdk.services.s3.S3Client;
 @Configuration
 public class S3Config {
 
-    @Value("${aws.access-key}")
+    @Value("${aws.access-key:}")
     private String accessKey;
 
-    @Value("${aws.secret-key}")
+    @Value("${aws.secret-key:}")
     private String secretKey;
 
-    @Value("${aws.region}")
+    @Value("${aws.region:ap-northeast-2}")
     private String region;
 
+    /** aws.access-key가 설정된 경우에만 S3Client 빈을 생성한다. 로컬 환경에서는 생성되지 않는다. */
     @Bean
+    @ConditionalOnProperty(name = "aws.access-key")
     public S3Client s3Client() {
         return S3Client.builder()
                 .region(Region.of(region))

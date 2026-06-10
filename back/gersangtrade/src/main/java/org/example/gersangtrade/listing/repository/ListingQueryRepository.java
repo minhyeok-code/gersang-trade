@@ -14,6 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import static org.example.gersangtrade.domain.catalog.QEquipmentItem.equipmentItem;
 import static org.example.gersangtrade.domain.listing.QBundleLine.bundleLine;
 import static org.example.gersangtrade.domain.listing.QListingBundle.listingBundle;
 import static org.example.gersangtrade.domain.listing.QTradeListing.tradeListing;
@@ -108,13 +109,17 @@ public class ListingQueryRepository {
                 .from(tradeListing)
                 .leftJoin(tradeListing.seller).fetchJoin()
                 .leftJoin(listingBundle).on(listingBundle.listing.eq(tradeListing))
+                .leftJoin(bundleLine).on(bundleLine.bundle.eq(listingBundle))
+                .leftJoin(equipmentItem).on(equipmentItem.itemId.eq(bundleLine.item.id))
                 .where(
                         isNotDeleted(),
                         isNotHidden(),
                         serverEq(server),
                         statusEq(status),
                         listingBundle.bundleType.eq(BundleType.EQUIPMENT_SET),
+                        // 번들 FK 또는 라인 장비의 set_id — 기존 데이터( FK 미저장) 호환
                         listingBundle.equipmentSet.id.eq(setId)
+                                .or(equipmentItem.equipmentSet.id.eq(setId))
                 )
                 .orderBy(tradeListing.createdAt.desc())
                 .limit(limit)

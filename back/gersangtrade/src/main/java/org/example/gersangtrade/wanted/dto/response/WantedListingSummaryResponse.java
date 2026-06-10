@@ -15,6 +15,7 @@ import java.util.List;
  * @param server      거래 서버
  * @param status      등록글 상태
  * @param offeredPrice 제시 가격
+ * @param displayTitle 세트 구성 표기 제목 (풀 XX 세트명 등). 산출 불가 시 null
  * @param itemNames   구매 희망 아이템명 목록 (미리보기용)
  * @param createdAt   등록 일시
  */
@@ -24,11 +25,13 @@ public record WantedListingSummaryResponse(
         String server,
         WantedStatus status,
         Long offeredPrice,
+        String displayTitle,
         List<String> itemNames,
         LocalDateTime createdAt
 ) {
     public static WantedListingSummaryResponse from(WantedListing listing,
-                                                     List<WantedItem> items) {
+                                                     List<WantedItem> items,
+                                                     String displayTitle) {
         List<String> names = items.stream()
                 .map(item -> item.getItem().getName())
                 .toList();
@@ -38,6 +41,7 @@ public record WantedListingSummaryResponse(
                 listing.getServer(),
                 listing.getStatus(),
                 listing.getOfferedPrice(),
+                displayTitle,
                 names,
                 listing.getCreatedAt()
         );

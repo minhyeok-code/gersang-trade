@@ -151,7 +151,7 @@ public class WatchlistService {
     private String buildDisplayLabel(UserWatchTarget w) {
         if (w.getTargetType() == WatchTargetType.ITEM) {
             String name = w.getItem() != null ? w.getItem().getName() : "알 수 없는 아이템";
-            return w.getRitualMark() != null ? name + " " + w.getRitualMark() : name;
+            return w.getRitualMark() != null ? w.getRitualMark() + name : name;
         }
         // SET
         if (w.getEquipmentSet() == null || w.getComposition() == null) return w.getWatchKey();

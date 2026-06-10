@@ -22,6 +22,15 @@ import {
   type SetPieceState,
   validateSetBundleSelection,
 } from '@/lib/setTitle';
+import { formatPrice } from '@/lib/formatPrice';
+
+const RADIO_BASE = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '6px',
+  cursor: 'pointer',
+  fontSize: '0.875rem',
+} as const;
 
 interface CreateListingModalProps {
   onClose: () => void;
@@ -37,10 +46,6 @@ function parseEokPrice(value: string) {
   const amount = Number(value);
   if (!Number.isFinite(amount) || amount <= 0) return 0;
   return Math.round(amount * EOK);
-}
-
-function formatJeon(value: number) {
-  return `${value.toLocaleString()} 전`;
 }
 
 export default function CreateListingModal({ onClose, onCreated }: CreateListingModalProps) {
@@ -59,6 +64,8 @@ export default function CreateListingModal({ onClose, onCreated }: CreateListing
   const [selectedItem, setSelectedItem] = useState<ItemSearchResult | null>(null);
   const [itemDropOpen, setItemDropOpen] = useState(false);
   const itemSearchRef = useRef<HTMLDivElement>(null);
+  const [singleRitualOptions, setSingleRitualOptions] = useState<RitualMarkOption[]>([]);
+  const [singleRitualMark, setSingleRitualMark] = useState<RitualMarkOption | null>(null);
 
   // 세트 상태
   const [setQuery, setSetQuery] = useState('');
@@ -121,6 +128,16 @@ export default function CreateListingModal({ onClose, onCreated }: CreateListing
     return () => clearTimeout(t);
   }, [itemQuery, selectedItem]);
 
+  // 단품 장비 선택 시 주술 목록 로드
+  useEffect(() => {
+    setSingleRitualMark(null);
+    setSingleRitualOptions([]);
+    if (!selectedItem || selectedItem.type !== 'EQUIPMENT') return;
+    api.getItemRituals(selectedItem.id)
+      .then((rituals) => setSingleRitualOptions(buildRitualMarkOptions([rituals])))
+      .catch(() => setSingleRitualOptions([]));
+  }, [selectedItem]);
+
   // 세트명 검색
   useEffect(() => {
     if (!setQuery.trim() || selectedSet) { setSetResults([]); return; }
@@ -163,9 +180,12 @@ export default function CreateListingModal({ onClose, onCreated }: CreateListing
     });
   }, [selectedSet]);
 
-  // 세트 모드 해제 시 세트 상태 초기화
+  // 모드 전환 시 상태 초기화
   useEffect(() => {
-    if (!isSetMode) {
+    if (isSetMode) {
+      setSingleRitualMark(null);
+      setSingleRitualOptions([]);
+    } else {
       setSelectedSet(null);
       setSetQuery('');
       setUniqueRituals([]);
@@ -223,7 +243,9 @@ export default function CreateListingModal({ onClose, onCreated }: CreateListing
               equipmentCondition: {
                 minEnhanceLevel: null,
                 hasRitual: p.hasRitual && ritualMark != null,
-                ritualConditions: (p.hasRitual && ritualMark) ? [{ ritualId: ritualMark.ritualId, outcome: ritualMark.outcome }] : [],
+                ritualConditions: (p.hasRitual && ritualMark)
+                  ? [{ ritualId: ritualMark.ritualId, preferredOutcome: ritualMark.outcome }]
+                  : [],
               },
             })),
           });
@@ -239,7 +261,13 @@ export default function CreateListingModal({ onClose, onCreated }: CreateListing
             quantity: 1,
             sortOrder: 0,
             equipmentCondition: selectedItem.type === 'EQUIPMENT'
-              ? { minEnhanceLevel: null, hasRitual: false, ritualConditions: [] }
+              ? {
+                  minEnhanceLevel: null,
+                  hasRitual: singleRitualMark !== null,
+                  ritualConditions: singleRitualMark
+                    ? [{ ritualId: singleRitualMark.ritualId, preferredOutcome: singleRitualMark.outcome }]
+                    : [],
+                }
               : null,
           }],
         });
@@ -251,13 +279,20 @@ export default function CreateListingModal({ onClose, onCreated }: CreateListing
           note: note.trim() || null,
           bundles: [{
             bundleType: selectedItem.type === 'EQUIPMENT' ? 'EQUIPMENT_SINGLE' : 'MATERIAL_BUNDLE',
-            titleOverride: selectedItem.name,
+            // 장비 단품은 주술·아이템명으로 서버가 표시 제목을 계산한다
+            titleOverride: selectedItem.type === 'EQUIPMENT' ? null : selectedItem.name,
             lines: [{
               itemId: selectedItem.id,
               quantity: 1,
               sortOrder: 0,
               equipmentDetail: selectedItem.type === 'EQUIPMENT'
-                ? { enhanceLevel: null, hasRitual: false, rituals: [] }
+                ? {
+                    enhanceLevel: null,
+                    hasRitual: singleRitualMark !== null,
+                    rituals: singleRitualMark
+                      ? [{ ritualId: singleRitualMark.ritualId, outcome: singleRitualMark.outcome }]
+                      : [],
+                  }
                 : null,
             }],
           }],
@@ -381,12 +416,50 @@ export default function CreateListingModal({ onClose, onCreated }: CreateListing
                     {itemResults.map((item) => (
                       <li key={item.id}
                         onMouseDown={() => { setSelectedItem(item); setItemQuery(item.name); setItemDropOpen(false); }}
-                        className="px-3 py-2 text-sm cursor-pointer hover:bg-[var(--bg)]">
-                        <span style={{ color: 'var(--text)' }}>{item.name}</span>
+                        className="px-3 py-2 text-sm cursor-pointer hover:bg-[var(--bg)]"
+                        style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ color: 'var(--text)', flex: 1 }}>{item.name}</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded shrink-0" style={{
+                          background: item.type === 'EQUIPMENT' ? 'var(--brown)' : 'var(--border)',
+                          color: item.type === 'EQUIPMENT' ? 'var(--beige)' : 'var(--text-muted)',
+                        }}>
+                          {item.type === 'EQUIPMENT' ? '장비' : '재료'}
+                        </span>
                       </li>
                     ))}
                   </ul>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* 단품 장비 주술 선택 */}
+          {!isSetMode && selectedItem?.type === 'EQUIPMENT' && (
+            <div>
+              <label className="block text-xs mb-2 font-medium" style={{ color: 'var(--text-muted)' }}>주술</label>
+              <div className="flex flex-wrap gap-x-4 gap-y-2">
+                <label style={RADIO_BASE}>
+                  <input
+                    type="radio"
+                    name="single-ritual"
+                    checked={singleRitualMark === null}
+                    onChange={() => setSingleRitualMark(null)}
+                    style={{ accentColor: 'var(--brown)' }}
+                  />
+                  <span style={{ color: 'var(--text)' }}>없음</span>
+                </label>
+                {singleRitualOptions.map((r) => (
+                  <label key={r.label} style={RADIO_BASE}>
+                    <input
+                      type="radio"
+                      name="single-ritual"
+                      checked={singleRitualMark?.label === r.label}
+                      onChange={() => setSingleRitualMark(r)}
+                      style={{ accentColor: 'var(--brown)' }}
+                    />
+                    <span style={{ color: 'var(--text)' }}>{r.label}</span>
+                  </label>
+                ))}
               </div>
             </div>
           )}
@@ -454,7 +527,7 @@ export default function CreateListingModal({ onClose, onCreated }: CreateListing
               style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
             />
             <p className="text-xs mt-1" style={{ color: priceInJeon > 0 ? 'var(--brown)' : 'var(--text-disabled)' }}>
-              {priceInJeon > 0 ? formatJeon(priceInJeon) : '예: 7 입력 시 700,000,000 전'}
+              {priceInJeon > 0 ? formatPrice(priceInJeon) : '예: 7 입력 시 7억'}
             </p>
           </div>
 
