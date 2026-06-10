@@ -26,8 +26,9 @@ public final class WatchKeyBuilder {
     }
 
     public static String setKey(Long setId, SetComposition composition, int ritualCount, String mark) {
-        // BANSSANG·FULL_BANSSANG은 주술 접두가 제목에 반영되지 않으므로 ritual 필드 강제 초기화
-        if (composition == SetComposition.BANSSANG || composition == SetComposition.FULL_BANSSANG) {
+        // BANSSANG(반지쌍 단독)은 반지에 주술이 없으므로 RC:0 강제
+        // FULL_BANSSANG(5피스+반지쌍)은 갑옷 주술이 제목에 반영되므로 강제하지 않는다
+        if (composition == SetComposition.BANSSANG) {
             ritualCount = 0;
             mark = null;
         }

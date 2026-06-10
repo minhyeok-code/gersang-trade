@@ -148,7 +148,70 @@ Base URL: `/` (로컬 `http://localhost:8080`)
 
 ---
 
-## 9. 계산기 (Calculator)
+## 9. 홈 (Home)
+
+| Method | Path | Auth | 설명 |
+|--------|------|------|------|
+| GET | `/api/home/price-watch` | 🔒 | 관심 아이템 시세 조회 (`serverId` 필수) |
+
+**응답 형태 (`PriceWatchResponse`)**
+
+```
+{
+  serverId: number,
+  serverName: string,
+  targets: [
+    {
+      entryId: number,
+      targetType: "ITEM" | "SET",
+      watchKey: string,
+      displayLabel: string,
+      sell: { avgPrice, count, listings: [{ listingId, price, createdAt }] },
+      buy:  { avgPrice, count, listings: [{ wantedId, offeredPrice, createdAt }] },
+      completed: { count, dataQuality: "OK" | "LIMITED", trades: [{ confirmedPrice, confirmedAt }] }
+    }
+  ]
+}
+```
+
+> `dataQuality`: ITEM에 ritualMark가 있거나 SET 타입이면 `"LIMITED"` (주술 필터 미적용 근사값)
+
+---
+
+## 10. 관심목록 (Watchlist)
+
+| Method | Path | Auth | 설명 |
+|--------|------|------|------|
+| GET | `/api/watchlist` | 🔒 | 관심 항목 목록 조회 (최대 5개, sort_order·created_at 정렬) |
+| POST | `/api/watchlist` | 🔒 | 관심 항목 추가 |
+| DELETE | `/api/watchlist/{entryId}` | 🔒 | 관심 항목 삭제 |
+
+**POST 요청 바디 (`WatchTargetAddRequest`)**
+
+```
+{
+  targetType: "ITEM" | "SET",
+  itemId?: number,          // ITEM 타입 필수
+  ritualMark?: string,      // ITEM: 주술 마크 (재료 아이템 불가)
+  setId?: number,           // SET 타입 필수
+  composition?: string,     // SET 타입 필수 — "GAMTU" | "BYEON" | "BANSSANG" | "FULL" | "FULL_BANSSANG"
+  ritualCount?: number,     // SET 타입 선택 — BANSSANG·FULL_BANSSANG은 무시됨
+}
+```
+
+**에러 코드**
+
+| 코드 | 상태 | 설명 |
+|------|------|------|
+| `WATCH_LIMIT_EXCEEDED` | 422 | 관심목록 5개 초과 |
+| `DUPLICATE_WATCH_ITEM` | 409 | 동일 watchKey 중복 |
+| `INVALID_WATCH_TARGET` | 400 | 잘못된 대상 (존재하지 않는 아이템/세트, 재료에 주술 등) |
+| `WATCH_TARGET_NOT_FOUND` | 404 | 항목 없음 |
+| `WATCH_FORBIDDEN` | 403 | 타인 항목 삭제 시도 |
+
+---
+
+## 11. 계산기 (Calculator)
 
 | Method | Path | Auth | 설명 |
 |--------|------|------|------|
@@ -165,7 +228,7 @@ Base URL: `/` (로컬 `http://localhost:8080`)
 
 ---
 
-## 10. 덱 (Deck)
+## 12. 덱 (Deck)
 
 | Method | Path | Auth | 설명 |
 |--------|------|------|------|
@@ -192,7 +255,7 @@ Base URL: `/` (로컬 `http://localhost:8080`)
 
 ---
 
-## 11. 헌팅 허브 (Hunt Hub)
+## 13. 헌팅 허브 (Hunt Hub)
 
 | Method | Path | Auth | 설명 |
 |--------|------|------|------|
@@ -202,7 +265,7 @@ Base URL: `/` (로컬 `http://localhost:8080`)
 
 ---
 
-## 12. 신고 (Report)
+## 14. 신고 (Report)
 
 | Method | Path | Auth | 설명 |
 |--------|------|------|------|
@@ -211,7 +274,7 @@ Base URL: `/` (로컬 `http://localhost:8080`)
 
 ---
 
-## 13. 관리자 (Admin)
+## 15. 관리자 (Admin)
 
 ### 거래 등록 관리
 
@@ -318,7 +381,7 @@ Base URL: `/` (로컬 `http://localhost:8080`)
 
 ---
 
-## 14. 로컬 테스트 전용
+## 16. 로컬 테스트 전용
 
 | Method | Path | Auth | 설명 |
 |--------|------|------|------|

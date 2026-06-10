@@ -66,9 +66,16 @@ class WatchKeyBuilderTest {
     }
 
     @Test
-    @DisplayName("setKey_FULL_BANSSANG이면_ritual_강제초기화")
-    void setKey_FULL_BANSSANG_ritual_초기화() {
-        assertThat(WatchKeyBuilder.setKey(5L, SetComposition.FULL_BANSSANG, 2, "<개양>"))
+    @DisplayName("setKey_FULL_BANSSANG은_ritual_유지")
+    void setKey_FULL_BANSSANG_ritual_유지() {
+        assertThat(WatchKeyBuilder.setKey(5L, SetComposition.FULL_BANSSANG, 3, "<북두칠성_개양>"))
+                .isEqualTo("SET:5:COMP:FULL_BANSSANG:RC:3:MARK:<북두칠성_개양>");
+    }
+
+    @Test
+    @DisplayName("setKey_FULL_BANSSANG_주술없음_MARK:NONE")
+    void setKey_FULL_BANSSANG_주술없음() {
+        assertThat(WatchKeyBuilder.setKey(5L, SetComposition.FULL_BANSSANG, 0, null))
                 .isEqualTo("SET:5:COMP:FULL_BANSSANG:RC:0:MARK:NONE");
     }
 }
