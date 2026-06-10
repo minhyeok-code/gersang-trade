@@ -63,4 +63,25 @@ public interface ItemStatRepository extends JpaRepository<ItemStat, Long> {
     List<ItemStat> findByItemIdIn(@Param("itemIds") List<Long> itemIds);
 
     void deleteByItemId(Long itemId);
+
+    /**
+     * 명왕 전용 무기(WEAPON)에 잘못 적재된 SELF scope 속성값 스탯 조회.
+     * 부동명왕월(명왕월)은 제외한다.
+     */
+    @Query("""
+            SELECT ist FROM ItemStat ist
+            JOIN FETCH ist.item i
+            JOIN EquipmentItem ei ON ei.itemId = i.id
+            WHERE ei.slot = org.example.gersangtrade.domain.catalog.enums.EquipmentSlot.WEAPON
+              AND ist.statType = org.example.gersangtrade.domain.catalog.enums.StatType.ELEMENT_VALUE
+              AND ist.scope = org.example.gersangtrade.domain.catalog.enums.BuffTarget.SELF
+              AND (
+                   i.name LIKE '%명왕검%' OR i.name LIKE '%명왕장%' OR i.name LIKE '%명왕궁%'
+                OR i.name LIKE '%명왕극%' OR i.name LIKE '%명왕갑%' OR i.name LIKE '%명왕혼겸%'
+                OR i.name LIKE '%명왕비%' OR i.name LIKE '%명왕주%'
+                OR i.name LIKE '%고급명왕%' OR i.name LIKE '%각성명왕%' OR i.name LIKE '%진각명왕%'
+              )
+              AND i.name NOT LIKE '%명왕월%'
+            """)
+    List<ItemStat> findMyeongwangWeaponSelfElementValueStats();
 }

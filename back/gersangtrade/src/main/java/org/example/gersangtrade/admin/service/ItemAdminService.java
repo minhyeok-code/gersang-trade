@@ -1,15 +1,20 @@
 package org.example.gersangtrade.admin.service;
 
 import lombok.RequiredArgsConstructor;
+import org.example.gersangtrade.admin.dto.enums.ItemCleanupCriterion;
 import org.example.gersangtrade.admin.dto.request.EquipmentDetailUpdateRequest;
+import org.example.gersangtrade.admin.dto.request.ItemBulkDeleteRequest;
 import org.example.gersangtrade.admin.dto.request.ItemStatReplaceRequest;
 import org.example.gersangtrade.admin.dto.request.ItemUpdateRequest;
 import org.example.gersangtrade.admin.dto.request.SkillEffectReplaceRequest;
 import org.example.gersangtrade.admin.dto.request.SkillReplaceRequest;
 import org.example.gersangtrade.admin.dto.response.ItemAdminResponse;
+import org.example.gersangtrade.admin.dto.response.ItemBulkDeleteResponse;
+import org.example.gersangtrade.admin.dto.response.ItemCleanupCandidateResponse;
 import org.example.gersangtrade.admin.dto.response.ItemDetailAdminResponse;
 import org.example.gersangtrade.admin.dto.request.ItemRestrictionAddRequest;
 import org.example.gersangtrade.admin.dto.response.ItemRestrictionResponse;
+import org.example.gersangtrade.catalog.repository.ItemCleanupQueryRepository;
 import org.example.gersangtrade.catalog.repository.EquipmentItemRepository;
 import org.example.gersangtrade.catalog.repository.EquipmentSetRepository;
 import org.example.gersangtrade.catalog.repository.EquipmentSetPieceRepository;
@@ -31,7 +36,9 @@ import org.example.gersangtrade.domain.catalog.ItemSkillEffect;
 import org.example.gersangtrade.domain.catalog.ItemSkillMapping;
 import org.example.gersangtrade.domain.catalog.ItemStat;
 import org.example.gersangtrade.domain.catalog.Mercenary;
+import org.example.gersangtrade.domain.catalog.enums.BuffTarget;
 import org.example.gersangtrade.domain.catalog.enums.Element;
+import org.example.gersangtrade.domain.catalog.enums.StatUnit;
 import org.example.gersangtrade.domain.catalog.enums.ItemType;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
@@ -44,6 +51,8 @@ import org.springframework.cache.annotation.Caching;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -64,6 +73,7 @@ public class ItemAdminService {
     private final EquipmentSetPieceRepository equipmentSetPieceRepository;
     private final ItemMercenaryRestrictionRepository itemMercenaryRestrictionRepository;
     private final MercenaryRepository mercenaryRepository;
+    private final ItemCleanupQueryRepository itemCleanupQueryRepository;
 
     // ── 아이템 목록 조회 ─────────────────────────────────────────────────────────
 
@@ -114,7 +124,8 @@ public class ItemAdminService {
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
                             "존재하지 않는 세트 ID입니다: " + req.setId()));
         }
-        eq.updateInfo(req.slot(), req.equipmentKind(), req.ritualApplicable(), req.hasSlotOption(), set, req.equipSlot(), null, req.sainSword());
+        eq.updateInfo(req.slot(), req.equipmentKind(), req.ritualApplicable(), req.hasSlotOption(),
+                set, req.equipSlot(), eq.getMercenary(), null, req.sainSword());
         return buildDetail(itemId);
     }
 
@@ -163,6 +174,8 @@ public class ItemAdminService {
                         .statType(e.statType())
                         .element(e.element() != null ? e.element() : Element.NONE)
                         .value(e.value())
+                        .statUnit(StatUnit.FLAT)
+                        .scope(e.scope() != null ? e.scope() : BuffTarget.SELF)
                         .build()))
                 .toList();
         return buildDetail(itemId);
@@ -192,6 +205,77 @@ public class ItemAdminService {
                     }
                 });
         return buildDetail(itemId);
+    }
+
+    // ── 크롤링 정리 후보 · 일괄 삭제 ────────────────────────────────────────────
+
+    /**
+     * 선택한 기준(OR)에 해당하는 정리 후보를 조회한다.
+     * criteria가 비어 있으면 기본 프리셋을 사용한다.
+     */
+    @Transactional(readOnly = true)
+    public List<ItemCleanupCandidateResponse> findCleanupCandidates(List<ItemCleanupCriterion> criteria) {
+        EnumSet<ItemCleanupCriterion> selected = resolveCleanupCriteria(criteria);
+        List<ItemCleanupQueryRepository.CandidateWithReasons> rows =
+                itemCleanupQueryRepository.findByCriteria(selected);
+
+        List<Long> itemIds = rows.stream()
+                .map(r -> r.candidate().id())
+                .toList();
+        Map<Long, Long> statCounts = itemIds.isEmpty() ? Map.of() :
+                itemStatRepository.findByItemIdIn(itemIds).stream()
+                        .collect(Collectors.groupingBy(s -> s.getItem().getId(), Collectors.counting()));
+
+        return rows.stream()
+                .map(r -> new ItemCleanupCandidateResponse(
+                        r.candidate().id(),
+                        r.candidate().name(),
+                        r.candidate().type(),
+                        r.candidate().slot(),
+                        r.candidate().setName(),
+                        statCounts.getOrDefault(r.candidate().id(), 0L).intValue(),
+                        List.copyOf(r.matchedCriteria())
+                ))
+                .toList();
+    }
+
+    /**
+     * 아이템을 일괄 삭제한다. 개별 실패는 failed 목록에 담고 나머지는 계속 처리한다.
+     */
+    @Transactional
+    @Caching(evict = {
+            @CacheEvict(value = CacheConfig.EQUIPMENT_SLOT, allEntries = true),
+            @CacheEvict(value = CacheConfig.RITUALS_BY_ITEM, allEntries = true)
+    })
+    public ItemBulkDeleteResponse bulkDeleteItems(ItemBulkDeleteRequest req) {
+        List<Long> deletedIds = new ArrayList<>();
+        List<ItemBulkDeleteResponse.FailedEntry> failed = new ArrayList<>();
+
+        for (Long itemId : req.itemIds()) {
+            try {
+                deleteItem(itemId);
+                deletedIds.add(itemId);
+            } catch (ResponseStatusException e) {
+                failed.add(new ItemBulkDeleteResponse.FailedEntry(itemId, e.getReason()));
+            } catch (DataIntegrityViolationException e) {
+                failed.add(new ItemBulkDeleteResponse.FailedEntry(itemId,
+                        "다른 데이터에서 참조 중인 아이템은 삭제할 수 없습니다."));
+            }
+        }
+
+        return new ItemBulkDeleteResponse(deletedIds.size(), List.copyOf(deletedIds), List.copyOf(failed));
+    }
+
+    /** 기본 프리셋 — 크롤링 잔여물 검토에 자주 쓰이는 기준 */
+    private EnumSet<ItemCleanupCriterion> resolveCleanupCriteria(List<ItemCleanupCriterion> criteria) {
+        if (criteria == null || criteria.isEmpty()) {
+            return EnumSet.of(
+                    ItemCleanupCriterion.UNSUPPORTED_SLOT,
+                    ItemCleanupCriterion.NO_EQUIP_SLOT,
+                    ItemCleanupCriterion.UNREFERENCED
+            );
+        }
+        return EnumSet.copyOf(criteria);
     }
 
     // ── 아이템 하드 삭제 ────────────────────────────────────────────────────────

@@ -1,9 +1,9 @@
 package org.example.gersangtrade.trade.service;
 
+import org.example.gersangtrade.domain.catalog.Server;
 import org.example.gersangtrade.domain.trade.TradeStatDaily;
 import org.example.gersangtrade.trade.dto.response.DailyPriceHistoryResponse;
 import org.example.gersangtrade.trade.repository.TradeStatDailyRepository;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -14,11 +14,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
@@ -36,15 +34,17 @@ class TradeStatServiceTest {
 
     private static final String STAT_KEY = "ITEM:1";
     private static final LocalDate TODAY = LocalDate.of(2026, 4, 20);
+    private static final Server SERVER = Server.builder().serverId(1).name("백호").isActive(true).build();
+    private static final int SERVER_ID = 1;
 
     // ── upsertDailyStat() 테스트 ──────────────────────────────────────────────
 
     @Test
     @DisplayName("upsertDailyStat_nativeUpsert_호출")
     void upsertDailyStat_nativeUpsert_호출() {
-        tradeStatService.upsertDailyStat(STAT_KEY, 500_000_000L, 1L, TODAY);
+        tradeStatService.upsertDailyStat(STAT_KEY, 500_000_000L, 1L, TODAY, SERVER);
 
-        verify(tradeStatDailyRepository).upsertAccumulate(TODAY, STAT_KEY, 500_000_000L, 1L);
+        verify(tradeStatDailyRepository).upsertAccumulate(TODAY, STAT_KEY, SERVER_ID, 500_000_000L, 1L);
     }
 
     // ── getDailyHistory() 테스트 ──────────────────────────────────────────────
@@ -64,10 +64,10 @@ class TradeStatServiceTest {
                 .priceMin(400_000_000L)
                 .priceMax(600_000_000L)
                 .build();
-        when(tradeStatDailyRepository.findByStatKeyAndDateRange(STAT_KEY, from, to))
+        when(tradeStatDailyRepository.findByStatKeyAndDateRange(eq(STAT_KEY), eq(from), eq(to), eq(SERVER_ID)))
                 .thenReturn(List.of(stat));
 
-        List<DailyPriceHistoryResponse> result = tradeStatService.getDailyHistory(1L, from, to, 10);
+        List<DailyPriceHistoryResponse> result = tradeStatService.getDailyHistory(1L, from, to, 10, SERVER_ID);
 
         assertThat(result).hasSize(1);
         DailyPriceHistoryResponse response = result.get(0);
@@ -81,17 +81,17 @@ class TradeStatServiceTest {
     @Test
     @DisplayName("getDailyHistory_기간미지정_days=10_기본범위사용")
     void getDailyHistory_기간미지정_days_기본범위사용() {
-        when(tradeStatDailyRepository.findByStatKeyAndDateRange(any(), any(), any()))
+        when(tradeStatDailyRepository.findByStatKeyAndDateRange(any(), any(), any(), any()))
                 .thenReturn(List.of());
 
-        List<DailyPriceHistoryResponse> result = tradeStatService.getDailyHistory(1L, null, null, 10);
+        List<DailyPriceHistoryResponse> result = tradeStatService.getDailyHistory(1L, null, null, 10, SERVER_ID);
 
         assertThat(result).isEmpty();
         // 날짜 범위가 (오늘 - 10일 ~ 오늘)으로 호출됐는지 검증
         ArgumentCaptor<LocalDate> fromCaptor = ArgumentCaptor.forClass(LocalDate.class);
         ArgumentCaptor<LocalDate> toCaptor = ArgumentCaptor.forClass(LocalDate.class);
         verify(tradeStatDailyRepository).findByStatKeyAndDateRange(
-                eq(STAT_KEY), fromCaptor.capture(), toCaptor.capture());
+                eq(STAT_KEY), fromCaptor.capture(), toCaptor.capture(), eq(SERVER_ID));
         assertThat(toCaptor.getValue()).isEqualTo(LocalDate.now());
         assertThat(fromCaptor.getValue()).isEqualTo(LocalDate.now().minusDays(10));
     }
@@ -99,11 +99,11 @@ class TradeStatServiceTest {
     @Test
     @DisplayName("getDailyHistory_데이터없으면_빈리스트반환")
     void getDailyHistory_데이터없으면_빈리스트반환() {
-        when(tradeStatDailyRepository.findByStatKeyAndDateRange(any(), any(), any()))
+        when(tradeStatDailyRepository.findByStatKeyAndDateRange(any(), any(), any(), any()))
                 .thenReturn(List.of());
 
         List<DailyPriceHistoryResponse> result =
-                tradeStatService.getDailyHistory(999L, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31), 10);
+                tradeStatService.getDailyHistory(999L, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31), 10, SERVER_ID);
 
         assertThat(result).isEmpty();
     }
@@ -121,11 +121,11 @@ class TradeStatServiceTest {
                 .priceMin(100_000_000L)
                 .priceMax(100_000_000L)
                 .build();
-        when(tradeStatDailyRepository.findByStatKeyAndDateRange(eq("ITEM:2"), any(), any()))
+        when(tradeStatDailyRepository.findByStatKeyAndDateRange(eq("ITEM:2"), any(), any(), eq(SERVER_ID)))
                 .thenReturn(List.of(stat));
 
         List<DailyPriceHistoryResponse> result =
-                tradeStatService.getDailyHistory(2L, TODAY, TODAY, 10);
+                tradeStatService.getDailyHistory(2L, TODAY, TODAY, 10, SERVER_ID);
 
         assertThat(result.get(0).avgPrice()).isEqualTo(1_000_000L);  // 1억 / 100
     }

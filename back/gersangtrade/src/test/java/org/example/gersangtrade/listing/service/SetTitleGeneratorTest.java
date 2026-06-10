@@ -1,9 +1,9 @@
 package org.example.gersangtrade.listing.service;
 
+import org.example.gersangtrade.domain.catalog.enums.EquipmentSlot;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.util.Arrays;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -14,111 +14,145 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class SetTitleGeneratorTest {
 
-    // ── 전체 동일 주술 ────────────────────────────────────────────────────────
+    private static SetTitleGenerator.PieceTitleInput p(EquipmentSlot slot, String mark) {
+        return new SetTitleGenerator.PieceTitleInput(slot, mark);
+    }
+
+    // ── 풀 5피스 ─────────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("5피스_전체_동일마크_풀마크세트명형식")
-    void 전체동일주술_풀마크세트명형식() {
-        List<String> marks = List.of("**", "**", "**", "**", "**");
+    @DisplayName("5피스_전체_동일마크")
+    void 전체동일주술_5피스() {
+        List<SetTitleGenerator.PieceTitleInput> pieces = List.of(
+                p(EquipmentSlot.HELMET, "<개양>"),
+                p(EquipmentSlot.ARMOR, "<개양>"),
+                p(EquipmentSlot.GLOVES, "<개양>"),
+                p(EquipmentSlot.BELT, "<개양>"),
+                p(EquipmentSlot.SHOES, "<개양>"));
 
-        String title = SetTitleGenerator.generate("00세트", marks);
-
-        assertThat(title).isEqualTo("풀 ** 00세트");
+        assertThat(SetTitleGenerator.generate("각성광목천왕", pieces))
+                .isEqualTo("5<개양> 풀 각성광목천왕");
     }
 
     @Test
-    @DisplayName("5피스_전체_성공마크_풀마크세트명형식")
-    void 전체동일주술_성공마크() {
-        List<String> marks = List.of("00", "00", "00", "00", "00");
+    @DisplayName("5피스_변두리만_주술_3개")
+    void 변두리만_주술_3개() {
+        List<SetTitleGenerator.PieceTitleInput> pieces = List.of(
+                p(EquipmentSlot.HELMET, null),
+                p(EquipmentSlot.ARMOR, null),
+                p(EquipmentSlot.GLOVES, "<북두칠성_개양>"),
+                p(EquipmentSlot.BELT, "<북두칠성_개양>"),
+                p(EquipmentSlot.SHOES, "<북두칠성_개양>"));
 
-        String title = SetTitleGenerator.generate("XX세트", marks);
-
-        assertThat(title).isEqualTo("풀 00 XX세트");
+        assertThat(SetTitleGenerator.generate("각성광목천왕", pieces))
+                .isEqualTo("3<북두칠성_개양> 풀 각성광목천왕");
     }
 
     @Test
-    @DisplayName("1피스_전체_동일마크_풀마크세트명형식")
-    void 단일피스_전체동일주술() {
-        List<String> marks = List.of("**");
+    @DisplayName("5피스_주술없음")
+    void 주술없음_풀() {
+        List<SetTitleGenerator.PieceTitleInput> pieces = List.of(
+                p(EquipmentSlot.HELMET, null),
+                p(EquipmentSlot.ARMOR, null),
+                p(EquipmentSlot.GLOVES, null),
+                p(EquipmentSlot.BELT, null),
+                p(EquipmentSlot.SHOES, null));
 
-        String title = SetTitleGenerator.generate("00세트", marks);
-
-        assertThat(title).isEqualTo("풀 ** 00세트");
+        assertThat(SetTitleGenerator.generate("각성광목천왕", pieces))
+                .isEqualTo("풀 각성광목천왕");
     }
 
-    // ── 부분 주술 ────────────────────────────────────────────────────────────
+    // ── 풀반쌍 ───────────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("5피스중3피스_주술있음_풀세트명피스수마크형식")
-    void 부분주술_3피스() {
-        List<String> marks = Arrays.asList("**", "**", "**", null, null);
+    @DisplayName("풀반쌍_5피스_전체주술_반지무주술")
+    void 풀반쌍_5피스_주술() {
+        List<SetTitleGenerator.PieceTitleInput> pieces = List.of(
+                p(EquipmentSlot.HELMET, "<북두칠성_개양>"),
+                p(EquipmentSlot.ARMOR, "<북두칠성_개양>"),
+                p(EquipmentSlot.GLOVES, "<북두칠성_개양>"),
+                p(EquipmentSlot.BELT, "<북두칠성_개양>"),
+                p(EquipmentSlot.SHOES, "<북두칠성_개양>"),
+                p(EquipmentSlot.RING, null));
 
-        String title = SetTitleGenerator.generate("00세트", marks);
-
-        assertThat(title).isEqualTo("풀 00세트 3**");
-    }
-
-    @Test
-    @DisplayName("5피스중1피스_주술있음_풀세트명피스수마크형식")
-    void 부분주술_1피스() {
-        List<String> marks = Arrays.asList("00", null, null, null, null);
-
-        String title = SetTitleGenerator.generate("XX세트", marks);
-
-        assertThat(title).isEqualTo("풀 XX세트 100");
-    }
-
-    @Test
-    @DisplayName("5피스중4피스_주술있음_풀세트명피스수마크형식")
-    void 부분주술_4피스() {
-        List<String> marks = Arrays.asList("**", "**", "**", "**", null);
-
-        String title = SetTitleGenerator.generate("00세트", marks);
-
-        assertThat(title).isEqualTo("풀 00세트 4**");
-    }
-
-    // ── 주술 없음 ─────────────────────────────────────────────────────────────
-
-    @Test
-    @DisplayName("5피스_주술없음_풀세트명형식")
-    void 주술없음_전체null() {
-        List<String> marks = Arrays.asList(null, null, null, null, null);
-
-        String title = SetTitleGenerator.generate("00세트", marks);
-
-        assertThat(title).isEqualTo("풀 00세트");
+        assertThat(SetTitleGenerator.generate("각성광목천왕", pieces))
+                .isEqualTo("5<북두칠성_개양> 풀 각성광목천왕반쌍");
     }
 
     @Test
-    @DisplayName("빈목록_주술없음_풀세트명형식")
-    void 주술없음_빈목록() {
-        List<String> marks = List.of();
+    @DisplayName("풀반쌍_변두리만_주술")
+    void 풀반쌍_변두리_주술() {
+        List<SetTitleGenerator.PieceTitleInput> pieces = List.of(
+                p(EquipmentSlot.HELMET, null),
+                p(EquipmentSlot.ARMOR, null),
+                p(EquipmentSlot.GLOVES, "<북두칠성_개양>"),
+                p(EquipmentSlot.BELT, "<북두칠성_개양>"),
+                p(EquipmentSlot.SHOES, "<북두칠성_개양>"),
+                p(EquipmentSlot.RING, null));
 
-        String title = SetTitleGenerator.generate("00세트", marks);
-
-        assertThat(title).isEqualTo("풀 00세트");
+        assertThat(SetTitleGenerator.generate("각성광목천왕", pieces))
+                .isEqualTo("3<북두칠성_개양> 풀 각성광목천왕반쌍");
     }
 
-    // ── 혼재 마크 (폴백) ──────────────────────────────────────────────────────
+    // ── 갑투 / 변 / 반쌍 ─────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("마크혼재_다른종류_폴백세트명형식")
-    void 혼재마크_폴백() {
-        List<String> marks = Arrays.asList("**", "00", "**", null, null);
+    @DisplayName("갑투_주술_2개")
+    void 갑투_주술_2개() {
+        List<SetTitleGenerator.PieceTitleInput> pieces = List.of(
+                p(EquipmentSlot.HELMET, "<00>"),
+                p(EquipmentSlot.ARMOR, "<00>"));
 
-        String title = SetTitleGenerator.generate("00세트", marks);
-
-        assertThat(title).isEqualTo("풀 00세트");
+        assertThat(SetTitleGenerator.generate("각성광목천왕", pieces))
+                .isEqualTo("2<00>각성광목천왕갑투");
     }
 
     @Test
-    @DisplayName("마크2종류_전체혼재_폴백세트명형식")
-    void 전체혼재마크_폴백() {
-        List<String> marks = List.of("**", "00", "**", "00", "**");
+    @DisplayName("갑투_무주술")
+    void 갑투_무주술() {
+        List<SetTitleGenerator.PieceTitleInput> pieces = List.of(
+                p(EquipmentSlot.HELMET, null),
+                p(EquipmentSlot.ARMOR, null));
 
-        String title = SetTitleGenerator.generate("XX세트", marks);
+        assertThat(SetTitleGenerator.generate("각성광목천왕", pieces))
+                .isEqualTo("각성광목천왕갑투");
+    }
 
-        assertThat(title).isEqualTo("풀 XX세트");
+    @Test
+    @DisplayName("변_주술_3개")
+    void 변_주술_3개() {
+        List<SetTitleGenerator.PieceTitleInput> pieces = List.of(
+                p(EquipmentSlot.GLOVES, "<00>"),
+                p(EquipmentSlot.BELT, "<00>"),
+                p(EquipmentSlot.SHOES, "<00>"));
+
+        assertThat(SetTitleGenerator.generate("각성광목천왕", pieces))
+                .isEqualTo("3<00>변각성광목천왕");
+    }
+
+    @Test
+    @DisplayName("반쌍_무주술")
+    void 반쌍_무주술() {
+        List<SetTitleGenerator.PieceTitleInput> pieces = List.of(
+                p(EquipmentSlot.RING, null));
+
+        assertThat(SetTitleGenerator.generate("각성광목천왕", pieces))
+                .isEqualTo("각성광목천왕반쌍");
+    }
+
+    // ── 혼재 마크 (폴백) ───────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("마크혼재_풀_폴백")
+    void 혼재마크_풀_폴백() {
+        List<SetTitleGenerator.PieceTitleInput> pieces = List.of(
+                p(EquipmentSlot.HELMET, "<북두칠성_개양>"),
+                p(EquipmentSlot.ARMOR, "<개양>"),
+                p(EquipmentSlot.GLOVES, "<북두칠성_개양>"),
+                p(EquipmentSlot.BELT, null),
+                p(EquipmentSlot.SHOES, null));
+
+        assertThat(SetTitleGenerator.generate("각성광목천왕", pieces))
+                .isEqualTo("풀 각성광목천왕");
     }
 }

@@ -2,6 +2,7 @@ package org.example.gersangtrade.catalog.seeder;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.example.gersangtrade.admin.service.MyeongwangWeaponStatCleanupService;
 import org.example.gersangtrade.catalog.repository.ItemRepository;
 import org.example.gersangtrade.catalog.repository.ItemStatRepository;
 import org.example.gersangtrade.domain.catalog.Item;
@@ -29,11 +30,13 @@ public class ItemStatCorrectionSeeder implements ApplicationRunner {
 
     private final ItemRepository itemRepository;
     private final ItemStatRepository itemStatRepository;
+    private final MyeongwangWeaponStatCleanupService myeongwangWeaponStatCleanupService;
 
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
         correctSainGumScope();
+        myeongwangWeaponStatCleanupService.removeSelfElementValueStats();
     }
 
     /** 사인검 ELEMENT_VALUE: scope SELF → ALLY correction */

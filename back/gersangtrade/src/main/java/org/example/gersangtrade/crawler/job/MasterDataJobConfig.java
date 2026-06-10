@@ -1,6 +1,7 @@
 package org.example.gersangtrade.crawler.job;
 
 import lombok.RequiredArgsConstructor;
+import org.example.gersangtrade.crawler.tasklet.GersangjjangExclusiveEquipmentTasklet;
 import org.example.gersangtrade.crawler.tasklet.GersangjjangItemTasklet;
 import org.example.gersangtrade.crawler.tasklet.GersangjjangMaterialTasklet;
 import org.example.gersangtrade.crawler.tasklet.GersangjjangMercenaryTasklet;
@@ -26,6 +27,7 @@ import org.springframework.transaction.PlatformTransactionManager;
  *   <li>{@code mercenaryDataJob} — 용병만 실행 (POST /admin/crawler/mercenaries)</li>
  *   <li>{@code setDataJob}       — 장비 세트만 실행 (POST /admin/crawler/sets)</li>
  *   <li>{@code ritualDataJob}    — 주술만 실행 (POST /admin/crawler/rituals)</li>
+ *   <li>{@code exclusiveEquipmentDataJob} — 전용장비만 실행 (POST /admin/crawler/exclusive-equipment)</li>
  * </ul>
  */
 @Configuration
@@ -37,6 +39,7 @@ public class MasterDataJobConfig {
     private final GersangjjangItemTasklet gersangjjangItemTasklet;
     private final GersangjjangMaterialTasklet gersangjjangMaterialTasklet;
     private final GersangjjangMercenaryTasklet gersangjjangMercenaryTasklet;
+    private final GersangjjangExclusiveEquipmentTasklet gersangjjangExclusiveEquipmentTasklet;
     private final GersangjjangSetTasklet gersangjjangSetTasklet;
     private final GersangjjangRitualTasklet gersangjjangRitualTasklet;
     private final GersangjjangMonsterTasklet gersangjjangMonsterTasklet;
@@ -49,6 +52,7 @@ public class MasterDataJobConfig {
                 .next(materialListStep())
                 .next(setListStep())
                 .next(mercenaryListStep())
+                .next(exclusiveEquipmentListStep())
                 .next(ritualListStep())
                 .build();
     }
@@ -74,6 +78,14 @@ public class MasterDataJobConfig {
     public Job mercenaryDataJob() {
         return new JobBuilder("mercenaryDataJob", jobRepository)
                 .start(mercenaryListStep())
+                .build();
+    }
+
+    /** 전용장비만 수집 Job — mercenaryListStep 이후 실행 권장 */
+    @Bean
+    public Job exclusiveEquipmentDataJob() {
+        return new JobBuilder("exclusiveEquipmentDataJob", jobRepository)
+                .start(exclusiveEquipmentListStep())
                 .build();
     }
 
@@ -103,6 +115,13 @@ public class MasterDataJobConfig {
     public Step mercenaryListStep() {
         return new StepBuilder("mercenaryListStep", jobRepository)
                 .tasklet(gersangjjangMercenaryTasklet, transactionManager)
+                .build();
+    }
+
+    @Bean
+    public Step exclusiveEquipmentListStep() {
+        return new StepBuilder("exclusiveEquipmentListStep", jobRepository)
+                .tasklet(gersangjjangExclusiveEquipmentTasklet, transactionManager)
                 .build();
     }
 

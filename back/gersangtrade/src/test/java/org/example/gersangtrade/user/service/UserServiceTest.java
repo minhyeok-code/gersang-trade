@@ -43,6 +43,8 @@ class UserServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private TradeListingRepository tradeListingRepository;
     @Mock private ListingBundleRepository listingBundleRepository;
+    @Mock private org.example.gersangtrade.listing.repository.BundleLineRepository bundleLineRepository;
+    @Mock private org.example.gersangtrade.listing.service.ListingBundleTitleService listingBundleTitleService;
     @Mock private ServerRepository serverRepository;
 
     @InjectMocks
@@ -257,7 +259,7 @@ class UserServiceTest {
             var result = userService.getMyListings(1L);
 
             assertThat(result).isEmpty();
-            verify(listingBundleRepository, never()).findByListingIdOrderByIdAsc(any());
+            verify(listingBundleRepository, never()).findByListingIdIn(any());
         }
 
         @Test
@@ -276,13 +278,17 @@ class UserServiceTest {
 
             given(tradeListingRepository.findActivesBySellerId(1L))
                     .willReturn(List.of(listing));
-            given(listingBundleRepository.findByListingIdOrderByIdAsc(10L))
+            given(listingBundleRepository.findByListingIdIn(List.of(10L)))
+                    .willReturn(List.of());
+            given(bundleLineRepository.findByBundleIdIn(List.of()))
+                    .willReturn(List.of());
+            given(listingBundleTitleService.buildSummaries(List.of(), java.util.Map.of()))
                     .willReturn(List.of());
 
             var result = userService.getMyListings(1L);
 
             assertThat(result).hasSize(1);
-            verify(listingBundleRepository).findByListingIdOrderByIdAsc(10L);
+            verify(listingBundleRepository).findByListingIdIn(List.of(10L));
         }
     }
 

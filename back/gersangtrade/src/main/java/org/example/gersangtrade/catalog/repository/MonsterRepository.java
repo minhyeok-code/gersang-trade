@@ -12,7 +12,7 @@ import java.util.Optional;
 
 public interface MonsterRepository extends JpaRepository<Monster, Long> {
 
-    Optional<Monster> findByNameAndPageUrl(String name, String pageUrl);
+    Optional<Monster> findByName(String name);
 
     List<Monster> findByElement(Element element);
 

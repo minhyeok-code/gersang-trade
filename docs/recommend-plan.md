@@ -2,7 +2,8 @@
 
 > 작성일: 2026-04-21 / 최종 수정: 2026-04-22
 > 대상 범위: 유저 덱 정보 수집, 사냥 기록(클리어 타임) 기반 집단 분석, 최적 스펙업 경로 추천
-> 기준 문서: `docs/personalization_cache_design.md`, `docs/calculator.md`, `docs/entity-model.ko.md`
+> 기준 문서: `docs/personalization_cache_design.md`, `docs/calculator.md`, `docs/entity-model.ko.md`  
+> 상세 기획(클리어타임·사냥 허브·해금): [`docs/clear-time-hunt-hub.ko.md`](./clear-time-hunt-hub.ko.md)
 
 ---
 
@@ -33,9 +34,10 @@
 
 ## 2. 엔티티 설계
 
-### 2.1 `UserDeck` — 유저 덱 정보 ✅ 구현 완료
+### 2.1 `UserDeck` — 유저 편집용 덱 ✅ 구현 완료
 
-유저가 저장한 용병 구성과 스펙 스냅샷을 관리한다. 덱은 불변 스냅샷으로 수정 시 새 행을 생성한다.
+유저가 저장한 용병 구성을 관리한다. 엔티티 주석은 “불변 스냅샷”이나 **실제로는 동일 `deckId`를 in-place 수정**한다.  
+클리어타임·추천용 “당시 덱”은 **`DeckSnapshot`** 으로 별도 저장한다. 상세: [`clear-time-hunt-hub.ko.md`](./clear-time-hunt-hub.ko.md).
 
 | 필드 | 타입 | Null | 설명 |
 |------|------|------|------|
@@ -66,34 +68,41 @@
 
 ---
 
-### 2.3 `HuntLog` — 사냥 기록
+### 2.3 `UserClearTime` + `DeckSnapshot` — 사냥 기록
 
-유저가 직접 입력한 실제 사냥 성능 데이터. 추천 알고리즘의 원천 데이터.
+유저가 직접 입력한 실제 사냥 성능 데이터. 추천 알고리즘의 원천 데이터.  
+(구 명칭 `HuntLog` — **`UserClearTime`으로 통일**. 당시 덱은 `deckId` FK가 아니라 **`deck_snapshot_id`**.)
+
+**`UserClearTime`**
 
 | 필드 | 타입 | Null | 설명 |
 |------|------|------|------|
 | `id` | Long (PK) | NO | |
 | `userId` | Long (FK → User) | NO | |
-| `deckId` | Long (FK → UserDeck) | NO | 사냥 당시 사용한 덱 스냅샷 |
 | `monsterId` | Long (FK → Monster) | NO | 대상 몬스터 |
-| `clearTime` | Float | NO | 평균 클리어 타임 (초 단위) |
-| `createdAt` | LocalDateTime | NO | |
+| `clearTimeSeconds` | Integer | NO | 평균 클리어 타임 (초, 6~26) |
+| `deckId` | Long | YES | 참고용 (FK 아님) |
+| `deckSnapshotId` | Long (FK → DeckSnapshot) | NO | 사냥 당시 덱 구성 (구현 예정) |
+| `finalDps` | BigDecimal | YES | 저장 시점 DPS (구현 예정) |
+| `recordedAt` | LocalDateTime | NO | |
+
+**`DeckSnapshot`** — 불변 JSON + `content_hash`. 상세 스키마는 [`clear-time-hunt-hub.ko.md`](./clear-time-hunt-hub.ko.md) §3.2.1.
 
 ---
 
 ### 2.4 `RecommendationCache` — 추천 결과 캐시
 
 데이터가 충분히 쌓였을 때 연산된 추천 경로를 저장한다.
-몬스터 + 클리어 타임 구간 단위로 집계하여 전역 캐시로 관리한다.
+몬스터별 IQR 사분위수·구간(과스펙·가성비·저스펙) 단위로 집계하여 전역 캐시로 관리한다.  
+집계 규칙: [`clear-time-hunt-hub.ko.md`](./clear-time-hunt-hub.ko.md) §4.2~§6.
 
 | 필드 | 타입 | Null | 설명 |
 |------|------|------|------|
-| `id` | Long (PK) | NO | |
-| `monsterId` | Long (FK → Monster) | NO | 목표 몬스터 |
-| `currentTimeRange` | String | NO | 현재 클리어 타임 구간 (예: `12~14초`) |
-| `nextBestItemId` | Long (FK → Item) | NO | 가장 효율적인 다음 추천 아이템 |
-| `expectedReduction` | Float | NO | 예상 단축 시간 (초) |
-| `updatedAt` | LocalDateTime | NO | 마지막 집계 시각 |
+| `monsterId` | Long (PK, FK → Monster) | NO | 목표 몬스터 |
+| `sampleCount` | Integer | NO | 유효 표본 수 |
+| `p25Seconds` / `p50Seconds` / `p75Seconds` | Integer | NO | 클리어타임 사분위수 |
+| `overSpecAvgDps` 등 | BigDecimal | YES | 구간별 벤치마크 DPS |
+| `aggregatedAt` | LocalDateTime | NO | 마지막 집계 시각 |
 
 ---
 

@@ -6,9 +6,13 @@ import org.example.gersangtrade.catalog.dto.ItemSearchResult;
 import org.example.gersangtrade.catalog.dto.RitualResponse;
 import org.example.gersangtrade.catalog.repository.EquipmentItemRepository;
 import org.example.gersangtrade.catalog.repository.ItemJooqRepository;
+import org.example.gersangtrade.catalog.repository.ItemMercenaryRestrictionRepository;
 import org.example.gersangtrade.catalog.repository.ItemStatRepository;
 import org.example.gersangtrade.catalog.repository.RitualApplicabilityRepository;
+import org.example.gersangtrade.catalog.repository.RitualRepository;
+import org.example.gersangtrade.crawler.service.GersangjjangCatalogUpsertService;
 import org.example.gersangtrade.domain.catalog.EquipmentItem;
+import org.example.gersangtrade.domain.catalog.ItemMercenaryRestriction;
 import org.example.gersangtrade.domain.catalog.ItemStat;
 import org.example.gersangtrade.config.CacheConfig;
 import org.example.gersangtrade.domain.catalog.enums.EquipmentKind;
@@ -40,8 +44,10 @@ public class ItemSearchService {
 
     private final ItemJooqRepository itemJooqRepository;
     private final RitualApplicabilityRepository ritualApplicabilityRepository;
+    private final RitualRepository ritualRepository;
     private final EquipmentItemRepository equipmentItemRepository;
     private final ItemStatRepository itemStatRepository;
+    private final ItemMercenaryRestrictionRepository itemMercenaryRestrictionRepository;
 
     /**
      * 아이템 자동완성 검색.
@@ -75,6 +81,17 @@ public class ItemSearchService {
     }
 
     /**
+     * 전체 주술 목록 조회.
+     * 거래 페이지 주술 필터 구성에 사용된다.
+     */
+    @Cacheable(value = CacheConfig.RITUALS_ALL)
+    public List<RitualResponse> findAllRituals() {
+        return ritualRepository.findAll().stream()
+                .map(RitualResponse::from)
+                .toList();
+    }
+
+    /**
      * 전체 장비 목록 조회.
      * 덱 설정 페이지 초기 로딩 시 한 번에 받아가는 용도.
      */
@@ -87,11 +104,7 @@ public class ItemSearchService {
         Map<Long, List<ItemStat>> statsByItemId = itemStatRepository.findByItemIdIn(itemIds).stream()
                 .collect(Collectors.groupingBy(ist -> ist.getItem().getId()));
 
-        return items.stream()
-                .sorted((a, b) -> b.getItemId().compareTo(a.getItemId()))
-                .map(item -> EquipmentSlotItemResponse.of(item,
-                        statsByItemId.getOrDefault(item.getItemId(), List.of())))
-                .toList();
+        return mapEquipmentResponses(items, statsByItemId);
     }
 
     /**
@@ -105,6 +118,12 @@ public class ItemSearchService {
         List<EquipmentItem> items;
         if (slot == EquipSlot.RING_1 || slot == EquipSlot.RING_2) {
             items = equipmentItemRepository.findBySlotWithItem(EquipmentSlot.RING);
+        } else if (slot == EquipSlot.APP_WEAPON) {
+            items = mergeByItemId(
+                    equipmentItemRepository.findByEquipSlot(slot),
+                    equipmentItemRepository.findBySlotWithItem(EquipmentSlot.WEAPON).stream()
+                            .filter(item -> item.getEquipmentKind() == EquipmentKind.APPEARANCE)
+                            .toList());
         } else {
             items = equipmentItemRepository.findByEquipSlot(slot);
             EquipmentSlot fallbackSlot = fallbackEquipmentSlot(slot);
@@ -121,11 +140,67 @@ public class ItemSearchService {
         Map<Long, List<ItemStat>> statsByItemId = itemStatRepository.findByItemIdIn(itemIds).stream()
                 .collect(Collectors.groupingBy(ist -> ist.getItem().getId()));
 
+        return mapEquipmentResponses(items, statsByItemId);
+    }
+
+    /**
+     * 용병 전용장비만 덱 슬롯에 맞게 조회한다.
+     * 슬롯별 전체 목록을 필터하는 방식과 달리 restriction·mercenary_id를 직접 조회해
+     * equip_slot이 어긋난 전용무기도 노출한다.
+     */
+    public List<EquipmentSlotItemResponse> getExclusiveEquipmentForMercenary(Long mercenaryId, EquipSlot slot) {
+        List<EquipmentItem> candidates = equipmentItemRepository.findExclusiveEquipmentByMercenaryId(mercenaryId);
+        List<EquipmentItem> items = candidates.stream()
+                .filter(item -> matchesDeckSlot(item, slot))
+                .toList();
+        if (items.isEmpty()) {
+            return List.of();
+        }
+
+        List<Long> itemIds = items.stream().map(EquipmentItem::getItemId).toList();
+        Map<Long, List<ItemStat>> statsByItemId = itemStatRepository.findByItemIdIn(itemIds).stream()
+                .collect(Collectors.groupingBy(ist -> ist.getItem().getId()));
+
+        return mapEquipmentResponses(items, statsByItemId);
+    }
+
+    /** EquipmentItem이 해당 덱 슬롯에 착용 가능한지 판별 */
+    static boolean matchesDeckSlot(EquipmentItem item, EquipSlot deckSlot) {
+        if (deckSlot == EquipSlot.RING_1 || deckSlot == EquipSlot.RING_2) {
+            return item.getSlot() == EquipmentSlot.RING;
+        }
+        EquipSlot derived = GersangjjangCatalogUpsertService.deriveEquipSlot(
+                item.getSlot(), item.getEquipmentKind());
+        if (derived == deckSlot) {
+            return true;
+        }
+        return item.getEquipSlot() == deckSlot;
+    }
+
+    private List<EquipmentSlotItemResponse> mapEquipmentResponses(
+            List<EquipmentItem> items,
+            Map<Long, List<ItemStat>> statsByItemId) {
+        List<Long> itemIds = items.stream().map(EquipmentItem::getItemId).toList();
+        Map<Long, List<Long>> restrictionMercenaryIdsByItemId = loadRestrictionMercenaryIds(itemIds);
+
         return items.stream()
                 .sorted((a, b) -> b.getItemId().compareTo(a.getItemId()))
-                .map(item -> EquipmentSlotItemResponse.of(item,
-                        statsByItemId.getOrDefault(item.getItemId(), List.of())))
+                .map(item -> EquipmentSlotItemResponse.of(
+                        item,
+                        statsByItemId.getOrDefault(item.getItemId(), List.of()),
+                        restrictionMercenaryIdsByItemId.getOrDefault(item.getItemId(), List.of())))
                 .toList();
+    }
+
+    /** 아이템별 용병 전용 restriction mercenary_id 목록 */
+    private Map<Long, List<Long>> loadRestrictionMercenaryIds(List<Long> itemIds) {
+        if (itemIds.isEmpty()) {
+            return Map.of();
+        }
+        return itemMercenaryRestrictionRepository.findByItemIdInWithMercenary(itemIds).stream()
+                .collect(Collectors.groupingBy(
+                        r -> r.getItem().getId(),
+                        Collectors.mapping(r -> r.getMercenary().getId(), Collectors.toList())));
     }
 
     private List<EquipmentItem> mergeByItemId(List<EquipmentItem> first, List<EquipmentItem> second) {

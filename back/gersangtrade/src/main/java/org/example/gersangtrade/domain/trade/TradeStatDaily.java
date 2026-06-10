@@ -5,12 +5,13 @@ import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.example.gersangtrade.domain.catalog.Server;
 
 import java.time.LocalDate;
 
 /**
  * 일별 거래 통계 집계 엔티티.
- * 확정된 거래(TradeConfirmed) 데이터를 날짜·집계키 기준으로 집계한 결과를 보관한다.
+ * 확정된 거래(TradeConfirmed) 데이터를 날짜·집계키·서버 기준으로 집계한 결과를 보관한다.
  * 시세 조회 시 TradeConfirmed를 직접 집계하는 대신 이 테이블을 조회한다 (성능 최적화).
  * cancelled=true인 TradeConfirmed는 집계에서 제외된다.
  * 이벤트 방식(거래 확정 시 upsert) 또는 야간 배치로 갱신된다.
@@ -19,8 +20,8 @@ import java.time.LocalDate;
 @Table(
         name = "trade_stat_daily",
         uniqueConstraints = @UniqueConstraint(
-                name = "uq_trade_stat_daily_date_key",
-                columnNames = {"stat_date", "stat_key"}
+                name = "uq_trade_stat_daily_date_key_server",
+                columnNames = {"stat_date", "stat_key", "server_id"}
         )
 )
 @Getter
@@ -35,6 +36,11 @@ public class TradeStatDaily {
     /** 집계 날짜 */
     @Column(name = "stat_date", nullable = false)
     private LocalDate statDate;
+
+    /** 집계 서버 */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "server_id", nullable = false)
+    private Server server;
 
     /**
      * 집계 키.
@@ -68,10 +74,11 @@ public class TradeStatDaily {
     private Long priceMax;
 
     @Builder
-    public TradeStatDaily(LocalDate statDate, String statKey,
+    public TradeStatDaily(LocalDate statDate, Server server, String statKey,
                            Integer tradeCount, Long quantitySum,
                            Long priceSum, Long priceMin, Long priceMax) {
         this.statDate = statDate;
+        this.server = server;
         this.statKey = statKey;
         this.tradeCount = tradeCount;
         this.quantitySum = quantitySum;

@@ -1,6 +1,7 @@
 package org.example.gersangtrade.calculator.service;
 
 import lombok.RequiredArgsConstructor;
+import org.example.gersangtrade.calculator.overlay.LoadedMember;
 import org.example.gersangtrade.catalog.repository.MercenaryCharacteristicLevelRepository;
 import org.example.gersangtrade.catalog.repository.MercenaryCharacteristicRepository;
 import org.example.gersangtrade.domain.catalog.Mercenary;
@@ -183,6 +184,134 @@ public class MyungwangStatTransferCalculator {
         }
 
         return new ComputedTransfers(received, details);
+    }
+
+    /**
+     * {@link LoadedMember} 오버로드 — overlay 파이프라인용.
+     * charsByMemberId 불필요 (LoadedMember.characteristics()에서 직접 읽음).
+     */
+    public ComputedTransfers computeReceivedTransfers(
+            List<LoadedMember> members,
+            Map<Long, List<MercenaryCharacteristicLevel>> charLevelsByCharId,
+            Map<Long, Map<StatType, Integer>> preTransferStatsByMemberId) {
+
+        Map<Long, Map<StatType, Integer>> received = new HashMap<>();
+        Map<Long, List<TransferDetail>> details = new HashMap<>();
+
+        record MyungwangInfo(LoadedMember member, TransferConfig config, int transferAmount) {}
+
+        List<MyungwangInfo> myungwangs = new ArrayList<>();
+        for (LoadedMember m : members) {
+            MercenaryCategory cat = m.mercenary().getCategory();
+            if (cat != MercenaryCategory.MYEONG_KING && cat != MercenaryCategory.MYEONG_KING_AWAKENING) continue;
+
+            TransferConfig config = getConfig(m.mercenary());
+            if (config == null) continue;
+
+            int level = resolveTransferLevel(m, charLevelsByCharId);
+            float additionalRate = getAdditionalRate(m.mercenary().getId(), level);
+            float totalRate = (config.baseRate() + additionalRate) / 100f;
+            int statVal = preTransferStatsByMemberId.getOrDefault(m.memberId(), Map.of())
+                    .getOrDefault(config.statType(), 0);
+            int amount = Math.round(statVal * totalRate);
+
+            myungwangs.add(new MyungwangInfo(m, config, amount));
+        }
+
+        if (myungwangs.isEmpty()) return new ComputedTransfers(received, details);
+
+        List<LoadedMember> heavenlyKings = members.stream()
+                .filter(m -> m.mercenary().getCategory() == MercenaryCategory.FOUR_HEAVENLY_KINGS
+                        || m.mercenary().getCategory() == MercenaryCategory.FOUR_HEAVENLY_KINGS_AWAKENING)
+                .collect(Collectors.toList());
+
+        Set<Long> usedMyungwangIds = new HashSet<>();
+        Map<Long, MyungwangInfo> assignment = new HashMap<>();
+
+        // 1단계: 동속성 우선 배정
+        for (LoadedMember king : heavenlyKings) {
+            Nature kingNature = king.mercenary().getNature();
+            for (MyungwangInfo info : myungwangs) {
+                if (usedMyungwangIds.contains(info.member().memberId())) continue;
+                if (info.member().mercenary().getNature() == kingNature) {
+                    assignment.put(king.memberId(), info);
+                    usedMyungwangIds.add(info.member().memberId());
+                    break;
+                }
+            }
+        }
+
+        // 2단계: 미배정 사천왕 — 이전 대상 스탯 기준 최적 명왕 배정
+        List<MyungwangInfo> remaining = myungwangs.stream()
+                .filter(info -> !usedMyungwangIds.contains(info.member().memberId()))
+                .collect(Collectors.toList());
+
+        for (LoadedMember king : heavenlyKings) {
+            if (assignment.containsKey(king.memberId()) || remaining.isEmpty()) continue;
+
+            Map<StatType, Integer> kingStats = preTransferStatsByMemberId
+                    .getOrDefault(king.memberId(), Map.of());
+
+            MyungwangInfo best = remaining.stream()
+                    .max(Comparator.comparingInt(
+                            info -> kingStats.getOrDefault(info.config().statType(), 0)))
+                    .orElse(null);
+
+            if (best != null) {
+                assignment.put(king.memberId(), best);
+                usedMyungwangIds.add(best.member().memberId());
+                remaining.remove(best);
+            }
+        }
+
+        for (Map.Entry<Long, MyungwangInfo> entry : assignment.entrySet()) {
+            applyTransfer(entry.getKey(), entry.getValue().member().mercenary().getName(),
+                    entry.getValue().config().statType(), entry.getValue().transferAmount(),
+                    received, details);
+        }
+
+        // 3단계: 미배정 명왕 → 주인공·전설장수 fallback
+        List<MyungwangInfo> unassigned = myungwangs.stream()
+                .filter(info -> !usedMyungwangIds.contains(info.member().memberId()))
+                .toList();
+
+        Set<Long> usedFallbackIds = new HashSet<>();
+        for (MyungwangInfo info : unassigned) {
+            LoadedMember target = findFallbackTargetLoaded(members, usedFallbackIds);
+            if (target == null) continue;
+            usedFallbackIds.add(target.memberId());
+            applyTransfer(target.memberId(), info.member().mercenary().getName(),
+                    info.config().statType(), info.transferAmount(), received, details);
+        }
+
+        return new ComputedTransfers(received, details);
+    }
+
+    private int resolveTransferLevel(
+            LoadedMember member,
+            Map<Long, List<MercenaryCharacteristicLevel>> charLevelsByCharId) {
+        for (UserDeckMemberCharacteristic mc : member.characteristics()) {
+            boolean isTransferChar = charLevelsByCharId
+                    .getOrDefault(mc.getCharacteristic().getId(), List.of())
+                    .stream()
+                    .anyMatch(l -> CharacteristicScopeResolver.isStatTransferRateLabel(l.getLabel()));
+            if (isTransferChar) return mc.getSelectedLevel();
+        }
+        return 0;
+    }
+
+    private static LoadedMember findFallbackTargetLoaded(List<LoadedMember> members, Set<Long> usedIds) {
+        for (LoadedMember m : members) {
+            if (isMyungwangCategory(m.mercenary().getCategory())) continue;
+            if (usedIds.contains(m.memberId())) continue;
+            if (m.mercenary().getCategory() == MercenaryCategory.PROTAGONIST) return m;
+        }
+        for (LoadedMember m : members) {
+            if (isMyungwangCategory(m.mercenary().getCategory())) continue;
+            if (usedIds.contains(m.memberId())) continue;
+            if (m.mercenary().getCategory() == MercenaryCategory.LEGENDARY_GENERAL) return m;
+        }
+        return null;
     }
 
     private void applyTransfer(Long targetId, String sourceName, StatType statType, int amount,

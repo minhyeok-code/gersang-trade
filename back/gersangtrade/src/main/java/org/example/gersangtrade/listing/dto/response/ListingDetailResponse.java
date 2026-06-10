@@ -171,16 +171,14 @@ public record ListingDetailResponse(
      */
     public record BundleAssembly(
             ListingBundle bundle,
-            List<LineAssembly> lines
+            List<LineAssembly> lines,
+            String displayTitle
     ) {
         public BundleDetail toDetail() {
-            String title = bundle.getTitleOverride() != null
-                    ? bundle.getTitleOverride()
-                    : bundle.getBundleType().name();
             return new BundleDetail(
                     bundle.getId(),
                     bundle.getBundleType(),
-                    title,
+                    displayTitle,
                     lines.stream().map(LineAssembly::toDetail).toList()
             );
         }

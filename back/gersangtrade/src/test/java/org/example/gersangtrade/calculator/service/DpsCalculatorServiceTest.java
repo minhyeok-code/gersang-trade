@@ -22,7 +22,12 @@ import org.example.gersangtrade.deck.repository.UserDeckMemberSlotRepository;
 import org.example.gersangtrade.deck.repository.UserDeckRepository;
 import org.example.gersangtrade.domain.catalog.EquipmentSet;
 import org.example.gersangtrade.domain.catalog.EquipmentSetSkillEffect;
+import org.example.gersangtrade.domain.catalog.Item;
+import org.example.gersangtrade.domain.catalog.ItemSkill;
+import org.example.gersangtrade.domain.catalog.ItemSkillEffect;
+import org.example.gersangtrade.domain.catalog.ItemSkillMapping;
 import org.example.gersangtrade.domain.catalog.ItemStat;
+import org.example.gersangtrade.domain.catalog.MercenarySkillEffect;
 import org.example.gersangtrade.domain.catalog.Mercenary;
 import org.example.gersangtrade.domain.catalog.MercenaryCharacteristic;
 import org.example.gersangtrade.domain.catalog.MercenaryCharacteristicLevel;
@@ -43,6 +48,7 @@ import org.example.gersangtrade.domain.catalog.enums.StatType;
 import org.example.gersangtrade.domain.catalog.enums.StatUnit;
 import org.example.gersangtrade.domain.catalog.enums.TriggerSource;
 import org.example.gersangtrade.domain.catalog.enums.MercenaryCategory;
+import org.example.gersangtrade.domain.catalog.enums.ValueType;
 import org.example.gersangtrade.domain.deck.UserDeck;
 import org.example.gersangtrade.domain.deck.UserDeckMember;
 import org.example.gersangtrade.domain.deck.UserDeckMemberCharacteristic;
@@ -110,6 +116,8 @@ class DpsCalculatorServiceTest {
     @Mock private PlayerCharacterBuffCalculator playerCharacterBuffCalculator;
     @Mock private AwakenedMyungwangBuffCalculator awakenedMyungwangBuffCalculator;
     @Mock private MyungwangStatTransferCalculator myungwangStatTransferCalculator;
+    @Mock private BudongMyungwangWeaponTransferCalculator budongMyungwangWeaponTransferCalculator;
+    @Mock private DeckStateMerger deckStateMerger;
 
     @InjectMocks
     private DpsCalculatorService service;
@@ -194,7 +202,7 @@ class DpsCalculatorServiceTest {
         when(itemSkillEffectRepository.findBySkillIdIn(anyList())).thenReturn(List.of());
         when(monsterRepository.findById(MONSTER_ID)).thenReturn(Optional.of(monster));
 
-        when(myungwangStatTransferCalculator.computeReceivedTransfers(any(), any(), any(), any()))
+        when(myungwangStatTransferCalculator.computeReceivedTransfers(anyList(), any(), any()))
                 .thenReturn(new MyungwangStatTransferCalculator.ComputedTransfers(Map.of(), Map.of()));
         when(ritualStatRepository.findByRitualIdIn(anyList())).thenReturn(List.of());
     }
@@ -213,8 +221,8 @@ class DpsCalculatorServiceTest {
         assertThat(res.totalResistPierce()).isZero();
         assertThat(res.resistPassRate()).isEqualTo(43.0);
         assertThat(res.memberResults()).hasSize(1);
-        assertThat(res.memberResults().get(0).rawDps()).isEqualTo(6512L);
-        assertThat(res.totalDps()).isEqualTo(2800L);
+        assertThat(res.memberResults().get(0).rawDps()).isEqualTo(1628L);
+        assertThat(res.totalDps()).isEqualTo(700L);
     }
 
     @Test
@@ -293,7 +301,7 @@ class DpsCalculatorServiceTest {
     @Test
     @DisplayName("특성_PERCENT_STRENGTH_rawDps_증가")
     void 특성_PERCENT_STRENGTH_rawDps_증가() {
-        // STR 50% → effectiveSTR=1500 → rawDps=(1500+2256)×2.0=7512.0
+        // STR 50% → effectiveSTR=1500 → rawDps=(1500+2256)/2.0=1878.0
         MercenaryCharacteristic characteristic = characteristicMock(400L);
 
         UserDeckMemberCharacteristic memberChar = mock(UserDeckMemberCharacteristic.class);
@@ -308,7 +316,7 @@ class DpsCalculatorServiceTest {
 
         DpsResponse res = service.calculate(req());
 
-        assertThat(res.memberResults().get(0).rawDps()).isEqualTo(7512L);
+        assertThat(res.memberResults().get(0).rawDps()).isEqualTo(1878L);
     }
 
     @Test
@@ -329,7 +337,7 @@ class DpsCalculatorServiceTest {
 
         DpsResponse res = service.calculate(req());
 
-        assertThat(res.memberResults().get(0).rawDps()).isEqualTo(6512L);
+        assertThat(res.memberResults().get(0).rawDps()).isEqualTo(1628L);
     }
 
     @Test
@@ -350,7 +358,7 @@ class DpsCalculatorServiceTest {
 
         DpsResponse res = service.calculate(req());
 
-        assertThat(res.memberResults().get(0).rawDps()).isEqualTo(6512L);
+        assertThat(res.memberResults().get(0).rawDps()).isEqualTo(1628L);
     }
 
     // ── 주술 세트효과 ─────────────────────────────────────────────────────────
@@ -451,6 +459,30 @@ class DpsCalculatorServiceTest {
         assertThat(res.memberResults().get(0).skillResults()).hasSize(1);
     }
 
+    // ── 스킬 효과(저항깎) ─────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("아이템스킬매핑_있고_아이템스킬효과_미등록이면_용병스킬효과_fallback")
+    void 아이템스킬매핑_있고_아이템스킬효과_미등록이면_용병스킬효과_fallback() {
+        givenItemSkillMappingWithoutEffects();
+        givenMercenarySkillEffect(StatType.RESIST_PIERCE, 80, ValueType.FLAT);
+
+        DpsResponse res = service.calculate(req());
+
+        assertThat(res.totalResistPierce()).isEqualTo(80);
+    }
+
+    @Test
+    @DisplayName("아이템스킬효과_등록되면_용병스킬효과_미적용")
+    void 아이템스킬효과_등록되면_용병스킬효과_미적용() {
+        givenItemSkillMappingWithEffect(StatType.RESIST_PIERCE, 40, ValueType.FLAT);
+        givenMercenarySkillEffect(StatType.RESIST_PIERCE, 80, ValueType.FLAT);
+
+        DpsResponse res = service.calculate(req());
+
+        assertThat(res.totalResistPierce()).isEqualTo(40);
+    }
+
     // ── 헬퍼 ──────────────────────────────────────────────────────────────────
 
     private MercenaryCharacteristic characteristicMock(Long id) {
@@ -533,6 +565,99 @@ class DpsCalculatorServiceTest {
         when(sg.getStatSource()).thenReturn(statSource);
         when(sg.getTriggerSource()).thenReturn(triggerSource);
         return sg;
+    }
+
+    /** 아이템 스킬 매핑만 있고 item_skill_effects는 비어 있는 명왕형 시나리오 */
+    private void givenItemSkillMappingWithoutEffects() {
+        Item catalogItem = mock(Item.class);
+        when(catalogItem.getId()).thenReturn(ITEM_ID);
+
+        ItemSkill itemSkill = mock(ItemSkill.class);
+        when(itemSkill.getId()).thenReturn(900L);
+
+        ItemSkillMapping mapping = mock(ItemSkillMapping.class);
+        when(mapping.getItem()).thenReturn(catalogItem);
+        when(mapping.getSkill()).thenReturn(itemSkill);
+
+        SkillCoefficient itemCoef = mock(SkillCoefficient.class);
+        when(itemCoef.isMercenarySkill()).thenReturn(false);
+        when(itemCoef.isItemSkill()).thenReturn(true);
+        when(itemCoef.getItemSkill()).thenReturn(itemSkill);
+        when(itemCoef.getCoefStr()).thenReturn(1.0f);
+        when(itemCoef.getCoefDex()).thenReturn(0.0f);
+        when(itemCoef.getCoefVit()).thenReturn(0.0f);
+        when(itemCoef.getCoefInt()).thenReturn(0.0f);
+        when(itemCoef.getCoefAtk()).thenReturn(0.0f);
+        when(itemCoef.getCoefLvl()).thenReturn(0.0f);
+        when(itemCoef.getSkillType()).thenReturn(SkillType.INSTANT);
+        when(itemCoef.getCastsPerSecond()).thenReturn(2.0f);
+        when(itemCoef.getHitCount()).thenReturn(1);
+
+        when(itemSkillMappingRepository.findByItemIdIn(anyList())).thenReturn(List.of(mapping));
+        when(skillCoefficientRepository.findByItemSkillIdIn(anyList())).thenReturn(List.of(itemCoef));
+        when(itemSkillEffectRepository.findBySkillIdIn(anyList())).thenReturn(List.of());
+    }
+
+    private void givenItemSkillMappingWithEffect(StatType statType, int value, ValueType valueType) {
+        givenItemSkillMappingWithoutEffects();
+
+        ItemSkill itemSkill = mock(ItemSkill.class);
+        when(itemSkill.getId()).thenReturn(900L);
+
+        ItemSkillEffect effect = mock(ItemSkillEffect.class);
+        when(effect.getSkill()).thenReturn(itemSkill);
+        when(effect.getStatKey()).thenReturn(statType);
+        when(effect.getStatValue()).thenReturn(value);
+        when(effect.getValueType()).thenReturn(valueType);
+
+        when(itemSkillEffectRepository.findBySkillIdIn(anyList())).thenReturn(List.of(effect));
+    }
+
+    private void givenMercenarySkillEffect(StatType statType, int value, ValueType valueType) {
+        MercenarySkill mercSkill = mock(MercenarySkill.class);
+        when(mercSkill.getMercenary()).thenReturn(mercenary);
+
+        MercenarySkillEffect effect = mock(MercenarySkillEffect.class);
+        when(effect.getSkill()).thenReturn(mercSkill);
+        when(effect.getStatKey()).thenReturn(statType);
+        when(effect.getStatValue()).thenReturn(value);
+        when(effect.getValueType()).thenReturn(valueType);
+
+        when(mercenarySkillEffectRepository.findBySkill_MercenaryIdIn(anyList())).thenReturn(List.of(effect));
+    }
+
+    @Test
+    @DisplayName("민첩_1000당_크리티컬확률_2%p_DPS_반영")
+    void 민첩_크리티컬확률_DPS_반영() {
+        MercenaryStat dexStat = mock(MercenaryStat.class);
+        when(dexStat.getMercenary()).thenReturn(mercenary);
+        when(dexStat.getStatKey()).thenReturn(StatType.DEXTERITY);
+        when(dexStat.getStatValue()).thenReturn(3000);
+        when(mercenaryStatRepository.findByMercenaryIdIn(anyList())).thenReturn(List.of(dexStat));
+
+        SkillCoefficient dexCoef = mock(SkillCoefficient.class);
+        MercenarySkill mercSkill = mock(MercenarySkill.class);
+        when(mercSkill.getMercenary()).thenReturn(mercenary);
+        when(mercSkill.getSkillName()).thenReturn("민첩스킬");
+        when(dexCoef.isMercenarySkill()).thenReturn(true);
+        when(dexCoef.getMercenarySkill()).thenReturn(mercSkill);
+        when(dexCoef.getCoefStr()).thenReturn(0.0f);
+        when(dexCoef.getCoefDex()).thenReturn(1.0f);
+        when(dexCoef.getCoefVit()).thenReturn(0.0f);
+        when(dexCoef.getCoefInt()).thenReturn(0.0f);
+        when(dexCoef.getCoefAtk()).thenReturn(0.0f);
+        when(dexCoef.getCoefLvl()).thenReturn(0.0f);
+        when(dexCoef.getSkillType()).thenReturn(SkillType.INSTANT);
+        when(dexCoef.getCastsPerSecond()).thenReturn(1.0f);
+        when(dexCoef.getHitCount()).thenReturn(1);
+        when(skillCoefficientRepository.findByMercenaryIdIn(anyList())).thenReturn(List.of(dexCoef));
+
+        DpsResponse res = service.calculate(req());
+
+        // 민첩 3000 + 레벨분배 2256 → 크리 10% → E[dps] = 5256 × (1 + 0.10 × 2)
+        long baseWithoutCrit = 5256L;
+        long expectedRaw = Math.round(baseWithoutCrit * 1.20);
+        assertThat(res.memberResults().get(0).rawDps()).isEqualTo(expectedRaw);
     }
 
     private SkillCoefficient sgCoefMock(SetGrantedSkill sgSkill) {

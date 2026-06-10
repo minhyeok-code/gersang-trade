@@ -67,11 +67,14 @@ public class ItemStat {
 
     /**
      * 스탯 적용 범위.
-     * SELF : 장착 용병 본인에게만 적용 (기본값, 대부분의 아이템).
-     * PARTY: 덱 전체 용병에게 적용되는 파티 버프 아이템.
+     * SELF                : 장착 용병 본인 (기본값).
+     * ALLY                : 아군 전체 버프.
+     * ENEMY               : 적 디버프.
+     * ALLY_HEAVENLY_KING  : 명왕부·일반/고급 명왕 무기 — 동속성 사천왕 (부동명왕 제외).
+     * ALLY_SAME_ELEMENT   : 각성 명왕 무기 — 착용자 속성값 n%를 동속성 아군 전원에게 공유.
      */
     @Enumerated(EnumType.STRING)
-    @Column(name = "scope", nullable = false, length = 10)
+    @Column(name = "scope", nullable = false, length = 30)
     private BuffTarget scope;
 
     @Builder

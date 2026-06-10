@@ -42,6 +42,15 @@ public class GersangjjangSetParser {
             Map.entry("월",    EquipmentSlot.WEAPON),
             Map.entry("창",    EquipmentSlot.WEAPON),
             Map.entry("활",    EquipmentSlot.WEAPON),
+            Map.entry("화포",  EquipmentSlot.WEAPON),   // 최무선 등 화포 무기
+            // 전설장수 전용 무기 타입
+            Map.entry("방천화극", EquipmentSlot.WEAPON), // 여포
+            Map.entry("지팡이", EquipmentSlot.WEAPON),  // 치요메
+            Map.entry("대도",  EquipmentSlot.WEAPON),   // 보쿠텐
+            Map.entry("도끼",  EquipmentSlot.WEAPON),   // 맹획
+            Map.entry("부채",  EquipmentSlot.WEAPON),   // 초선
+            Map.entry("홀판",  EquipmentSlot.WEAPON),   // 마조
+            Map.entry("채찍",  EquipmentSlot.WEAPON),   // 레지나
             // 전용 장수 추가 무기 타입
             Map.entry("봉",    EquipmentSlot.WEAPON),   // 봉술 (도사·요가 계열)
             Map.entry("부메랑", EquipmentSlot.WEAPON),  // 부메랑 (인도女 요가)
@@ -60,7 +69,13 @@ public class GersangjjangSetParser {
             Map.entry("두건",  EquipmentSlot.HELMET),   // 두건 (무당·쿠노이치·궁수)
             Map.entry("삿갓",  EquipmentSlot.HELMET),   // 삿갓 (중국女 도사)
             Map.entry("가발",  EquipmentSlot.HELMET),   // 가발 (대만女 선녀)
+            Map.entry("가면",  EquipmentSlot.HELMET),   // 가면 (광목천왕 계열)
+            Map.entry("머리장식", EquipmentSlot.HELMET), // 치요메
+            Map.entry("패랭이", EquipmentSlot.HELMET),  // 홍길동
             // 갑옷
+            Map.entry("갑주",  EquipmentSlot.ARMOR),    // 노부츠나 (주와 구분)
+            Map.entry("견갑",  EquipmentSlot.ARMOR),    // 맹획
+            Map.entry("도복",  EquipmentSlot.ARMOR),    // 보쿠텐
             Map.entry("예복",  EquipmentSlot.ARMOR),
             Map.entry("갑옷",  EquipmentSlot.ARMOR),
             Map.entry("의",    EquipmentSlot.ARMOR),
@@ -72,6 +87,8 @@ public class GersangjjangSetParser {
             Map.entry("장갑",  EquipmentSlot.GLOVES),
             Map.entry("손목",  EquipmentSlot.GLOVES),
             Map.entry("손모",  EquipmentSlot.GLOVES),
+            Map.entry("수대",  EquipmentSlot.GLOVES),   // 치요메
+            Map.entry("팔찌",  EquipmentSlot.GLOVES),   // 마조
             // 요대
             Map.entry("요대",  EquipmentSlot.BELT),
             Map.entry("허리띠", EquipmentSlot.BELT),
@@ -80,10 +97,12 @@ public class GersangjjangSetParser {
             Map.entry("실발",  EquipmentSlot.SHOES),
             Map.entry("신발",  EquipmentSlot.SHOES),
             Map.entry("전투화", EquipmentSlot.SHOES),
+            Map.entry("짚신",  EquipmentSlot.SHOES),    // 홍길동
             // 반지
             Map.entry("반지",  EquipmentSlot.RING),
             Map.entry("반지2", EquipmentSlot.RING),
             Map.entry("가락지", EquipmentSlot.RING),
+            Map.entry("지환",  EquipmentSlot.RING),     // 지환 (광목천왕지환 계열)
             // 수호부
             Map.entry("부",    EquipmentSlot.TALISMAN)
     );
@@ -159,8 +178,10 @@ public class GersangjjangSetParser {
      * 긴 suffix를 우선 검사하여 오매칭을 방지한다 (예: "전투화" > "화").
      */
     public static Optional<EquipmentSlot> detectSlotByName(String itemName) {
+        // 전설장수 등 공백 포함 이름 대응 — "여포의 방천화극", "홍길동 의복"
+        String normalized = itemName.replace(" ", "");
         for (Map.Entry<String, EquipmentSlot> entry : SUFFIX_SLOT_LIST) {
-            if (itemName.endsWith(entry.getKey())) {
+            if (normalized.endsWith(entry.getKey())) {
                 return Optional.of(entry.getValue());
             }
         }

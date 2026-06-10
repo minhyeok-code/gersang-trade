@@ -1,13 +1,26 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { api, getSelectedServerName, sortChatMessages, type ChatMessageDto, type ChatRoomDetailDto, type ListingDto, type WantedDto, type ServerDto, type PublicUserDto } from '@/lib/api';
+import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import SearchBar from '@/components/common/SearchBar';
+import { api, getSelectedServerName, sortChatMessages, type ChatMessageDto, type ChatRoomDetailDto, type ListingDto, type WantedDto, type ServerDto, type PublicUserDto, type SetSummaryDto, type SetDetailDto, type RitualDto } from '@/lib/api';
 import { parseApiError } from '@/lib/parseApiError';
 import { isMyMessage, isSystemMessage } from '@/lib/chatUtils';
 import { useWs } from '@/lib/useWs';
 import type { ChatMessageWsEvent, RoomStatusWsEvent } from '@/lib/wsTypes';
-import { Search, BarChart2, Plus, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { BarChart2, Plus } from 'lucide-react';
 import CreateListingModal from '@/components/trade/CreateListingModal';
+import SetPieceConfigurator from '@/components/value-test/SetPieceConfigurator';
+import {
+  applyBundleKindToPieces,
+  buildRitualMarkOptions,
+  buildSetSearchFilterTokens,
+  initSetPieces,
+  type RitualCountOption,
+  type RitualMarkOption,
+  type SetBundleKind,
+  type SetPieceState,
+} from '@/lib/setTitle';
 
 // ══════════ 타입 ══════════
 
@@ -32,17 +45,13 @@ interface TradeItem {
   sellerId?: number;
 }
 
-interface SearchItem {
-  id: number;
-  name: string;
-  type: string;
-}
 
 interface Filters {
   setName: string;
   selectedItemId: number | null;
   selectedItemName: string;
   ritual: string;
+  setPieceMarks: string[]; // 세트 피스별 선택 주술 마크
 }
 
 // ══════════ 헬퍼 ══════════
@@ -120,138 +129,302 @@ function mapWanted(w: WantedDto): TradeItem {
   };
 }
 
-const RITUALS = ['전체', '없음', '천추', '북두', '천기', '개양', '천강', '자미', '탐랑', '거문', '녹존'];
+// ══════════ 사이드바 헬퍼 ══════════
+
+interface RitualOption {
+  label: string;
+  value: string;
+}
 
 // ══════════ 사이드바 ══════════
 
-function FilterSidebar({ filters, onChange, onItemSelect, onReset }: {
+function FilterSidebar({ filters, onChange, onItemSelect, onReset, onSetPieceMarksChange, onSetSearch }: {
   filters: Filters;
   onChange: (key: keyof Filters, value: string) => void;
   onItemSelect: (id: number | null, name: string) => void;
   onReset: () => void;
+  onSetPieceMarksChange: (marks: string[]) => void;
+  onSetSearch: () => void;
 }) {
-  const [itemQuery, setItemQuery] = useState('');
-  const [itemResults, setItemResults] = useState<SearchItem[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [dropOpen, setDropOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [searchMode, setSearchMode] = useState<'SINGLE' | 'SET'>('SINGLE');
+  const [rituals, setRituals] = useState<{ displayName: string; successMark: string; greatSuccessMark?: string | null }[]>([]);
+
+  // 세트 검색 상태
+  const [setQuery, setSetQuery] = useState(filters.setName);
+  const [setResults, setSetResults] = useState<SetSummaryDto[]>([]);
+  const [setDropOpen, setSetDropOpen] = useState(false);
+  const setSearchRef = useRef<HTMLDivElement>(null);
+
+  // 세트 피스·구성 상태
+  const [sidebarSetDetail, setSidebarSetDetail] = useState<SetDetailDto | null>(null);
+  const [sidebarPieces, setSidebarPieces] = useState<SetPieceState[]>([]);
+  const [uniqueRituals, setUniqueRituals] = useState<RitualMarkOption[]>([]);
+  const [sidebarBundleKind, setSidebarBundleKind] = useState<SetBundleKind>('FULL');
+  const [sidebarRitualCount, setSidebarRitualCount] = useState<RitualCountOption>(0);
+  const [sidebarRitualOpt, setSidebarRitualOpt] = useState<RitualMarkOption | null>(null);
+
+  function switchMode(mode: 'SINGLE' | 'SET') {
+    setSearchMode(mode);
+    if (mode === 'SET') {
+      onItemSelect(null, '');
+      onChange('ritual', '없음');
+    } else {
+      onChange('setName', '');
+      setSetQuery('');
+      setSidebarSetDetail(null);
+      setSidebarPieces([]);
+      setUniqueRituals([]);
+      setSidebarRitualOpt(null);
+      setSidebarBundleKind('FULL');
+      setSidebarRitualCount(0);
+      onSetPieceMarksChange([]);
+    }
+  }
+
+  function handleSetSearch() {
+    if (!sidebarSetDetail) return;
+    const tokens = buildSetSearchFilterTokens(
+      sidebarSetDetail.name,
+      sidebarBundleKind,
+      sidebarRitualCount,
+      sidebarRitualCount > 0 ? sidebarRitualOpt?.label ?? null : null,
+    );
+    onSetPieceMarksChange(tokens);
+    onSetSearch();
+  }
+
+  async function selectSet(s: SetSummaryDto) {
+    setSetQuery(s.name);
+    onChange('setName', s.name);
+    setSetDropOpen(false);
+    onSetPieceMarksChange([]);
+    setSidebarRitualOpt(null);
+    setSidebarRitualCount(0);
+    setSidebarBundleKind('FULL');
+    setUniqueRituals([]);
+    try {
+      const detail = await api.getSet(s.id);
+      setSidebarSetDetail(detail);
+      const perPieceRituals = await Promise.all(
+        detail.pieces.map((p) => api.getItemRituals(p.itemId).catch(() => [] as RitualDto[]))
+      );
+      const ritualMap = new Map(detail.pieces.map((p, i) => [p.itemId, perPieceRituals[i].length > 0]));
+      const initial = initSetPieces(detail.pieces, ritualMap);
+      setSidebarPieces(applyBundleKindToPieces(initial, 'FULL', 0));
+      setUniqueRituals(buildRitualMarkOptions(perPieceRituals));
+    } catch {}
+  }
 
   useEffect(() => {
+    if (!filters.selectedItemId) {
+      setRituals([]);
+      return;
+    }
+    api.getItemRituals(filters.selectedItemId)
+      .then((list) => setRituals(list.map((r) => ({
+        displayName: r.displayName,
+        successMark: r.successMark ?? r.displayName,
+        greatSuccessMark: r.greatSuccessMark,
+      }))))
+      .catch(() => setRituals([]));
+  }, [filters.selectedItemId]);
+
+  // 아이템 변경 시 주술 선택 초기화
+  const prevItemIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (prevItemIdRef.current !== filters.selectedItemId) {
+      prevItemIdRef.current = filters.selectedItemId;
+      onChange('ritual', '없음');
+    }
+  }, [filters.selectedItemId]);
+
+  // 필터 초기화 시 세트 쿼리도 동기화
+  useEffect(() => {
+    if (!filters.setName) setSetQuery('');
+  }, [filters.setName]);
+
+  // 세트명 debounced 검색
+  useEffect(() => {
+    if (!setQuery.trim()) { setSetResults([]); return; }
+    // 이미 세트가 선택된 상태(setQuery === filters.setName)면 검색 안 함
+    if (setQuery === filters.setName) return;
+    const t = setTimeout(async () => {
+      try {
+        const res = await api.getSets(setQuery);
+        setSetResults(res.content ?? []);
+        setSetDropOpen((res.content ?? []).length > 0);
+      } catch {
+        setSetResults([]);
+      }
+    }, 250);
+    return () => clearTimeout(t);
+  }, [setQuery, filters.setName]);
+
+  // 세트 드롭다운 외부 클릭 닫기
+  useEffect(() => {
     function close(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setDropOpen(false);
+      if (setSearchRef.current && !setSearchRef.current.contains(e.target as Node)) setSetDropOpen(false);
     }
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);
   }, []);
 
-  useEffect(() => {
-    if (!itemQuery.trim()) { setItemResults([]); setDropOpen(false); return; }
-    const t = setTimeout(async () => {
-      setSearching(true);
-      try {
-        const res = await api.searchItems(itemQuery, { limit: 10 });
-        setItemResults(res);
-        setDropOpen(res.length > 0);
-      } catch { setItemResults([]); }
-      finally { setSearching(false); }
-    }, 300);
-    return () => clearTimeout(t);
-  }, [itemQuery]);
+  // 순서: 없음, 주술(성공), 주술(대성공), ..., 전체
+  const ritualOptions: RitualOption[] = [
+    { label: '없음', value: '없음' },
+    ...rituals.flatMap((r) => [
+      { label: r.successMark || r.displayName, value: r.successMark || r.displayName },
+      ...(r.greatSuccessMark ? [{ label: `<${r.greatSuccessMark.replace(/[<>]/g, '')}_${(r.successMark ?? r.displayName).replace(/[<>]/g, '')}>`, value: r.greatSuccessMark }] : []),
+    ]),
+    ...(rituals.length > 0 ? [{ label: '전체', value: '전체' }] : []),
+  ];
 
   return (
     <aside
-      style={{ background: 'var(--card)', borderRight: '1px solid var(--border)', width: 240 }}
+      style={{ background: 'var(--card)', borderRight: '1px solid var(--border)', width: 270 }}
       className="shrink-0 overflow-y-auto"
     >
       <div className="p-3 space-y-4">
-        {/* 아이템 검색 */}
-        <div>
-          <p style={{ color: 'var(--text-muted)' }} className="text-xs mb-2 font-medium uppercase tracking-wide">아이템 검색</p>
-          {filters.selectedItemId ? (
-            <div
-              style={{ background: 'var(--bg)', border: '1px solid var(--brown)' }}
-              className="flex items-center justify-between px-3 py-2 rounded"
+        {/* 단품/세트 토글 */}
+        <div className="grid grid-cols-2 gap-1.5">
+          {(['SINGLE', 'SET'] as const).map((mode) => (
+            <button
+              key={mode}
+              onClick={() => switchMode(mode)}
+              className="rounded-lg py-1.5 text-xs font-medium transition-colors"
+              style={{
+                background: searchMode === mode ? 'var(--brown)' : 'var(--bg)',
+                border: `1px solid ${searchMode === mode ? 'var(--brown)' : 'var(--border)'}`,
+                color: searchMode === mode ? 'var(--beige)' : 'var(--text-muted)',
+              }}
             >
-              <span className="text-sm font-medium truncate mr-2" style={{ color: 'var(--text)' }}>
-                {filters.selectedItemName}
-              </span>
-              <button
-                onClick={() => { onItemSelect(null, ''); setItemQuery(''); }}
-                style={{ color: 'var(--text-muted)' }}
-                className="hover:text-red-400 shrink-0 transition-colors"
-              >
-                <X style={{ width: 14, height: 14 }} />
-              </button>
-            </div>
-          ) : (
-            <div className="relative" ref={ref}>
-              <input
-                value={itemQuery}
-                onChange={(e) => setItemQuery(e.target.value)}
-                onFocus={() => itemResults.length > 0 && setDropOpen(true)}
-                placeholder="아이템명 입력..."
-                style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
-                className="w-full rounded px-3 py-1.5 text-sm placeholder-[var(--text-disabled)] focus:outline-none focus:border-[var(--brown)]"
-              />
-              {searching && (
-                <span style={{ color: 'var(--text-muted)' }} className="absolute right-2 top-1/2 -translate-y-1/2 text-xs">검색 중...</span>
-              )}
-              {dropOpen && (
-                <ul
-                  style={{ background: 'var(--card)', border: '1px solid var(--border)', zIndex: 20 }}
-                  className="absolute top-full left-0 right-0 mt-0.5 rounded shadow-xl max-h-48 overflow-y-auto"
-                >
-                  {itemResults.map((item) => (
-                    <li
-                      key={item.id}
-                      onMouseDown={() => { onItemSelect(item.id, item.name); setItemQuery(''); setDropOpen(false); }}
-                      className="flex items-center justify-between px-3 py-2 text-sm cursor-pointer hover:bg-[var(--bg)]"
-                    >
-                      <span style={{ color: 'var(--text)' }}>{item.name}</span>
-                      <span style={{ color: 'var(--text-muted)' }} className="text-xs ml-2 shrink-0">{item.type}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
+              {mode === 'SINGLE' ? '단품' : '세트'}
+            </button>
+          ))}
         </div>
 
-        {/* 세트명 */}
-        <div>
-          <p style={{ color: 'var(--text-muted)' }} className="text-xs mb-2 font-medium uppercase tracking-wide">세트명</p>
-          <input
-            value={filters.setName}
-            onChange={(e) => onChange('setName', e.target.value)}
-            placeholder="예: 지국천왕"
-            style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
-            className="w-full rounded px-3 py-1.5 text-sm placeholder-[var(--text-disabled)] focus:outline-none focus:border-[var(--brown)]"
-          />
-        </div>
-
-        {/* 주술 */}
-        <div>
-          <p style={{ color: 'var(--text-muted)' }} className="text-xs mb-2 font-medium uppercase tracking-wide">주술</p>
-          <div className="flex flex-wrap gap-1">
-            {RITUALS.map((r) => (
-              <button
-                key={r}
-                onClick={() => onChange('ritual', r)}
-                style={{
-                  background: filters.ritual === r ? 'var(--brown)' : 'var(--bg)',
-                  border: `1px solid ${filters.ritual === r ? 'var(--brown)' : 'var(--border)'}`,
-                  color: filters.ritual === r ? 'var(--beige)' : 'var(--text-muted)',
-                }}
-                className="px-2 py-0.5 text-xs rounded transition-colors"
-              >
-                {r}
-              </button>
-            ))}
+        {/* 단품 검색 */}
+        {searchMode === 'SINGLE' && (
+          <div>
+            <p style={{ color: 'var(--text-muted)' }} className="text-xs mb-2 font-medium uppercase tracking-wide">아이템 검색</p>
+            <SearchBar
+              size="sm"
+              placeholder="아이템명 입력..."
+              initialItemId={filters.selectedItemId}
+              initialItemName={filters.selectedItemName}
+              showSubmitButton
+              onSearch={(_, itemId, itemName) => onItemSelect(itemId, itemName)}
+            />
           </div>
-        </div>
+        )}
+
+        {/* 세트 검색 */}
+        {searchMode === 'SET' && (
+          <>
+            <div>
+              <p style={{ color: 'var(--text-muted)' }} className="text-xs mb-2 font-medium uppercase tracking-wide">세트명</p>
+              <div className="relative" ref={setSearchRef}>
+                <input
+                  value={setQuery}
+                  onChange={(e) => {
+                    setSetQuery(e.target.value);
+                    if (!e.target.value) {
+                      onChange('setName', '');
+                      setSidebarSetDetail(null);
+                      setSidebarPieces([]);
+                      onSetPieceMarksChange([]);
+                    }
+                  }}
+                  onFocus={() => setResults.length > 0 && setSetDropOpen(true)}
+                  placeholder="예: 지국천왕"
+                  style={{
+                    background: 'var(--bg)',
+                    border: `1px solid ${filters.setName ? 'var(--brown)' : 'var(--border)'}`,
+                    color: 'var(--text)',
+                  }}
+                  className="w-full rounded px-3 py-1.5 text-sm placeholder-[var(--text-disabled)] focus:outline-none focus:border-[var(--brown)]"
+                />
+                {setDropOpen && setResults.length > 0 && (
+                  <ul
+                    style={{ background: 'var(--card)', border: '1px solid var(--border)', zIndex: 50 }}
+                    className="absolute top-full left-0 right-0 mt-0.5 rounded shadow-xl max-h-40 overflow-y-auto"
+                  >
+                    {setResults.map((s) => (
+                      <li
+                        key={s.id}
+                        onMouseDown={() => selectSet(s)}
+                        className="flex items-center justify-between px-3 py-2 text-sm cursor-pointer hover:bg-[var(--bg)]"
+                      >
+                        <span style={{ color: 'var(--text)' }}>{s.name}</span>
+                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{s.totalPieces}피스</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+
+            {sidebarSetDetail && sidebarPieces.length > 0 && (
+              <SetPieceConfigurator
+                setName={sidebarSetDetail.name}
+                pieces={sidebarPieces}
+                uniqueRituals={uniqueRituals}
+                bundleKind={sidebarBundleKind}
+                ritualCount={sidebarRitualCount}
+                ritualMark={sidebarRitualOpt}
+                onBundleKindChange={setSidebarBundleKind}
+                onRitualCountChange={setSidebarRitualCount}
+                onRitualMarkChange={setSidebarRitualOpt}
+                onPiecesChange={setSidebarPieces}
+              />
+            )}
+
+            {/* 세트 검색 버튼 */}
+            {sidebarSetDetail && (
+              <button
+                onClick={handleSetSearch}
+                className="w-full rounded-lg py-2 text-sm font-semibold transition-opacity hover:opacity-90"
+                style={{ background: 'var(--brown)', color: 'var(--beige)' }}
+              >
+                검색
+              </button>
+            )}
+          </>
+        )}
+
+        {/* 주술 (단품 모드에서만) */}
+        {searchMode === 'SINGLE' && (
+          <div>
+            <p style={{ color: 'var(--text-muted)' }} className="text-xs mb-2 font-medium uppercase tracking-wide">주술</p>
+            <div className="flex flex-wrap gap-1">
+              {ritualOptions.map((opt) => (
+                <button
+                  key={opt.label}
+                  onClick={() => onChange('ritual', opt.value)}
+                  style={{
+                    background: filters.ritual === opt.value ? 'var(--brown)' : 'var(--bg)',
+                    border: `1px solid ${filters.ritual === opt.value ? 'var(--brown)' : 'var(--border)'}`,
+                    color: filters.ritual === opt.value ? 'var(--beige)' : 'var(--text-muted)',
+                  }}
+                  className="px-2 py-0.5 text-xs rounded transition-colors"
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <button
-          onClick={onReset}
+          onClick={() => {
+            onReset();
+            setSetQuery('');
+            setSearchMode('SINGLE');
+            setSidebarSetDetail(null);
+            setSidebarPieces([]);
+            setUniqueRituals([]);
+            setSidebarRitualOpt(null);
+          }}
           style={{ color: 'var(--text-muted)' }}
           className="w-full text-xs py-1 hover:text-[var(--text)] transition-colors"
         >
@@ -930,7 +1103,6 @@ function PriceDrawer({ onClose }: { onClose: () => void }) {
                   <li key={r.id} onMouseDown={() => { setSelected({ id: r.id, name: r.name }); setQuery(r.name); setDropOpen(false); }}
                     className="px-3 py-2 text-sm cursor-pointer hover:bg-[var(--bg)]" style={{ color: 'var(--text)' }}>
                     {r.name}
-                    <span style={{ color: 'var(--text-muted)' }} className="text-xs ml-2">{r.type}</span>
                   </li>
                 ))}
               </ul>
@@ -986,8 +1158,18 @@ function PriceDrawer({ onClose }: { onClose: () => void }) {
 
 // ══════════ 메인 ══════════
 
-export default function TradePage() {
-  const [filters, setFilters] = useState<Filters>({ setName: '', selectedItemId: null, selectedItemName: '', ritual: '전체' });
+function TradePageInner() {
+  const searchParams = useSearchParams();
+  const initialQ = searchParams.get('q') ?? '';
+  const initialItemId = searchParams.get('itemId') ? Number(searchParams.get('itemId')) : null;
+  // itemId가 있으면 아이템 검색으로, 없으면 세트명 텍스트 필터로 초기화
+  const [filters, setFilters] = useState<Filters>({
+    setName: initialItemId ? '' : initialQ,
+    selectedItemId: initialItemId,
+    selectedItemName: initialItemId ? initialQ : '',
+    ritual: '없음',
+    setPieceMarks: [],
+  });
   const [activeTab, setActiveTab] = useState<Tab>('all');
   const [sellSort, setSellSort] = useState<SortKey>('latest');
   const [buySort, setBuySort] = useState<SortKey>('latest');
@@ -1044,7 +1226,10 @@ export default function TradePage() {
   function applyFilters(items: TradeItem[]): TradeItem[] {
     return items.filter((item) => {
       if (filters.setName && !item.displayName.includes(filters.setName)) return false;
-      if (filters.ritual !== '전체' && filters.ritual !== '없음' && !item.displayName.includes(filters.ritual)) return false;
+      if (filters.ritual !== '없음' && filters.ritual !== '전체' && !item.displayName.includes(filters.ritual)) return false;
+      for (const mark of filters.setPieceMarks) {
+        if (mark && !item.displayName.includes(mark)) return false;
+      }
       return true;
     });
   }
@@ -1059,9 +1244,11 @@ export default function TradePage() {
         onChange={(key, val) => setFilters((prev) => ({ ...prev, [key]: val }))}
         onItemSelect={(id, name) => setFilters((prev) => ({ ...prev, selectedItemId: id, selectedItemName: name }))}
         onReset={() => {
-          setFilters({ setName: '', selectedItemId: null, selectedItemName: '', ritual: '전체' });
+          setFilters({ setName: '', selectedItemId: null, selectedItemName: '', ritual: '없음', setPieceMarks: [] });
           loadListings();
         }}
+        onSetPieceMarksChange={(marks) => setFilters((prev) => ({ ...prev, setPieceMarks: marks }))}
+        onSetSearch={() => loadListings()}
       />
 
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
@@ -1128,5 +1315,13 @@ export default function TradePage() {
         />
       )}
     </div>
+  );
+}
+
+export default function TradePage() {
+  return (
+    <Suspense>
+      <TradePageInner />
+    </Suspense>
   );
 }

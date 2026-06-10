@@ -32,17 +32,39 @@ public class GersangjjangParser {
 
     public static final String BASE_URL = "https://www.gersangjjang.com/item/";
 
-    /** 수집 제외 href 목록 — 유물/전설장수/각성개조는 크롤링 대상 외.
-     *  잡화/소모품/재료 카테고리는 GersangjjangMaterialTasklet이 별도 처리하므로 여기서 제외. */
+    /**
+     * 수집 제외 href 목록.
+     * <ul>
+     *   <li>전용장비(사천왕·명왕·전설장수·주인공) — {@code GersangjjangExclusiveEquipmentTasklet} 담당</li>
+     *   <li>장인·기타무기(zhu_jiangren/qita) — 어떤 크롤러도 수집하지 않음</li>
+     *   <li>잡화/소모품/재료 — {@code GersangjjangMaterialTasklet} 담당</li>
+     * </ul>
+     * 상세: {@code docs/exclusive-equipment-crawling.ko.md}
+     */
     private static final Set<String> EXCLUDED_HREFS = Set.of(
             "yiwu.asp",                                          // 유물
-            "4j_lvbu.asp", "4j_nobu.asp", "4j_choi.asp",        // 전설장수 火
-            "4j_chiyome.asp", "4j_chosen.asp", "4j_mazo.asp",   // 전설장수 水
-            "4j_meng.asp", "4j_boku.asp", "4j_hong.asp",        // 전설장수 風
-            "4j_zhumeng.asp", "4j_hua.asp",                      // 전설장수 雷
-            "4j_baji.asp", "4j_akbar.asp",                       // 전설장수 土
-            "3jiang_k.asp", "3jiang_j.asp", "3jiang_c.asp",     // 각성/개조
-            "3jiang_t.asp", "3jiang_i.asp",                      // 각성/개조
+            // ── 전설장수 (전용장비 크롤러) ─────────────────────────────────────
+            "4j_lvbu.asp", "4j_nobu.asp", "4j_choi.asp",
+            "4j_chiyome.asp", "4j_chosen.asp", "4j_mazo.asp",
+            "4j_meng.asp", "4j_boku.asp", "4j_hong.asp",
+            "4j_zhumeng.asp", "4j_hua.asp",
+            "4j_baji.asp", "4j_akbar.asp",
+            "4j_manxian.asp", "4j_rejina.asp",
+            // ── 사천왕 (전용장비 크롤러) ──────────────────────────────────────
+            "wang_cg.asp", "wang_dm.asp", "wang_gm.asp", "wang_zz.asp",
+            // ── 명왕 (전용장비 크롤러) ────────────────────────────────────────
+            "ming_hang.asp", "ming_kum.asp", "ming_da.asp",
+            "ming_gun.asp", "ming_bu.asp",
+            // ── 주인공 전용 (전용장비 크롤러) ────────────────────────────────
+            "z_kr1.asp", "z_kr2.asp", "z_jp1.asp", "z_jp2.asp",
+            "z_cn1.asp", "z_cn2.asp", "z_tw1.asp", "z_tw2.asp",
+            "z_in1.asp", "z_in2.asp",
+            "zhu_bian.asp",                                      // 변신무기(인형) — 전용장비 크롤러
+            // ── 장인·기타무기 — 어떤 크롤러도 수집하지 않음 ───────────────────
+            "zhu_jiangren.asp", "zhu_qita.asp",
+            // ── 각성/개조 ────────────────────────────────────────────────────
+            "3jiang_k.asp", "3jiang_j.asp", "3jiang_c.asp",
+            "3jiang_t.asp", "3jiang_i.asp",
             // ── 잡화 (GersangjjangMaterialTasklet 처리) ──────────────────────
             "ti.asp", "mo.asp", "fuhuo.asp", "shiwu.asp",
             "jiaoyipin.asp", "gongju.asp",
@@ -101,10 +123,7 @@ public class GersangjjangParser {
             Map.entry("조총",       CategoryMeta.normal(EquipmentSlot.WEAPON)),
             Map.entry("석궁",       CategoryMeta.normal(EquipmentSlot.WEAPON)),
             Map.entry("화포",       CategoryMeta.normal(EquipmentSlot.WEAPON)),
-            // ── 무기 기타 ────────────────────────────────────────────────────────
-            Map.entry("변신무기",   CategoryMeta.normal(EquipmentSlot.WEAPON)),
-            Map.entry("장인",       CategoryMeta.normal(EquipmentSlot.WEAPON)),
-            Map.entry("기타무기",   CategoryMeta.normal(EquipmentSlot.WEAPON)),
+            // zhu_bian(변신무기)는 전용장비 크롤러 담당. 장인·기타무기(zhu_jiangren/qita)는 영구 제외
             // ── 몹용병 (장착 무기 슬롯) ──────────────────────────────────────────
             Map.entry("당나귀",     CategoryMeta.normal(EquipmentSlot.WEAPON)),
             Map.entry("정령몹",     CategoryMeta.normal(EquipmentSlot.WEAPON)),
@@ -134,28 +153,9 @@ public class GersangjjangParser {
             Map.entry("날개",   CategoryMeta.appearance(EquipmentSlot.WING)),
             Map.entry("칭호",   CategoryMeta.appearance(EquipmentSlot.TITLE)),
             // ── 보조 슬롯 ─────────────────────────────────────────────────────────
-            Map.entry("수호부(신수,천왕,명왕)", CategoryMeta.normal(EquipmentSlot.TALISMAN)),
-            // ── 슬롯 혼재 페이지 (아이템명 suffix로 감지) ─────────────────────────
-            Map.entry("지국천왕(각성)", CategoryMeta.mixedSlots()),
-            Map.entry("다문천왕(각성)", CategoryMeta.mixedSlots()),
-            Map.entry("광목천왕(각성)", CategoryMeta.mixedSlots()),
-            Map.entry("증장천왕(각성)", CategoryMeta.mixedSlots()),
-            Map.entry("항삼세명왕(火)", CategoryMeta.mixedSlots()),
-            Map.entry("금강야차명왕(水)", CategoryMeta.mixedSlots()),
-            Map.entry("대위덕명왕(風)", CategoryMeta.mixedSlots()),
-            Map.entry("군다리명왕(雷)", CategoryMeta.mixedSlots()),
-            Map.entry("부동명왕(地)",  CategoryMeta.mixedSlots()),
-            // ── 전용 장수 장비 (z_kr1.asp ~ z_in2.asp) ──────────────────────────
-            Map.entry("조선男", CategoryMeta.mixedSlots()),
-            Map.entry("조선女", CategoryMeta.mixedSlots()),
-            Map.entry("일본男", CategoryMeta.mixedSlots()),
-            Map.entry("일본女", CategoryMeta.mixedSlots()),
-            Map.entry("중국男", CategoryMeta.mixedSlots()),
-            Map.entry("중국女", CategoryMeta.mixedSlots()),
-            Map.entry("대만男", CategoryMeta.mixedSlots()),
-            Map.entry("대만女", CategoryMeta.mixedSlots()),
-            Map.entry("인도男", CategoryMeta.mixedSlots()),
-            Map.entry("인도女", CategoryMeta.mixedSlots())
+            Map.entry("수호부(신수,천왕,명왕)", CategoryMeta.normal(EquipmentSlot.TALISMAN))
+            // 사천왕·명왕·전설장수·주인공(z_kr/zhu_bian) 전용 페이지는 EXCLUDED_HREFS로 제외
+            // (zhu_jiangren·zhu_qita는 전용장비가 아니며 영구 제외)
     );
 
     /**
@@ -214,14 +214,23 @@ public class GersangjjangParser {
             Map.entry("모든 능력치", StatType.ALL_STAT)   // 공백 표기 대응
     );
 
-    /** 속성 접두어("불", "뇌", "물", "풍", "땅") → Element 매핑 */
-    private static final Map<String, org.example.gersangtrade.domain.catalog.enums.Element> ELEMENT_PREFIX_MAP = Map.of(
-            "불", org.example.gersangtrade.domain.catalog.enums.Element.FIRE,
-            "뇌", org.example.gersangtrade.domain.catalog.enums.Element.THUNDER,
-            "물", org.example.gersangtrade.domain.catalog.enums.Element.WATER,
-            "풍", org.example.gersangtrade.domain.catalog.enums.Element.WIND,
-            "땅", org.example.gersangtrade.domain.catalog.enums.Element.EARTH
+    /**
+     * 속성 접두어 → Element 매핑.
+     * 거상짱은 불/화(화속성), 물/수(수속성) 등 동의 표기를 혼용한다.
+     */
+    private static final Map<String, org.example.gersangtrade.domain.catalog.enums.Element> ELEMENT_PREFIX_MAP = Map.ofEntries(
+            Map.entry("불", org.example.gersangtrade.domain.catalog.enums.Element.FIRE),
+            Map.entry("화", org.example.gersangtrade.domain.catalog.enums.Element.FIRE),
+            Map.entry("회", org.example.gersangtrade.domain.catalog.enums.Element.FIRE),  // 회속성 오타
+            Map.entry("뇌", org.example.gersangtrade.domain.catalog.enums.Element.THUNDER),
+            Map.entry("물", org.example.gersangtrade.domain.catalog.enums.Element.WATER),
+            Map.entry("수", org.example.gersangtrade.domain.catalog.enums.Element.WATER),
+            Map.entry("풍", org.example.gersangtrade.domain.catalog.enums.Element.WIND),
+            Map.entry("땅", org.example.gersangtrade.domain.catalog.enums.Element.EARTH)
     );
+
+    /** 속성 접두어 문자 클래스 — ELEMENT_STAT_PATTERN, ELEMENT_VALUE_SHORT_PATTERN 공용 */
+    private static final String ELEMENT_PREFIX_CHARS = "불화회뇌물수풍땅";
 
     /**
      * 속성별 스탯 행 파싱 패턴.
@@ -229,15 +238,15 @@ public class GersangjjangParser {
      * group(1)=속성접두어, group(2)=스탯종류(속성값|속성깎), group(3)=부호, group(4)=수치
      */
     private static final Pattern ELEMENT_STAT_PATTERN =
-            Pattern.compile("^([불뇌물풍땅])(속성값|속성깎)([+\\-])(\\d+)$");
+            Pattern.compile("^([" + ELEMENT_PREFIX_CHARS + "])(속성값|속성깎)([+\\-])(\\d+)$");
 
     /**
-     * 속성값 단축 표기 패턴 — "풍속성+20", "불속성+5" 등.
+     * 속성값 단축 표기 패턴 — "풍속성+20", "불속성+5", "화속성+5" 등.
      * '값'/'깎' 없이 속성명+속성으로만 표기된 경우로, 항상 ELEMENT_VALUE로 처리한다.
      * group(1)=속성접두어, group(2)=부호, group(3)=수치
      */
     private static final Pattern ELEMENT_VALUE_SHORT_PATTERN =
-            Pattern.compile("^([불뇌물풍땅])속성([+\\-])(\\d+)$");
+            Pattern.compile("^([" + ELEMENT_PREFIX_CHARS + "])속성([+\\-])(\\d+)$");
 
     /**
      * 파싱된 단일 스탯 (StatType + element + 수치 + StatUnit).
@@ -373,13 +382,7 @@ public class GersangjjangParser {
             for (Element subRow : doc.select(".item-row .sub-row")) {
                 Element nameEl = subRow.selectFirst(".w-name");
                 if (nameEl == null) continue;
-                // .w-name 안 첫 번째 텍스트 노드 = 아이템명 (이후 <br>+레벨 제외)
-                String name = nameEl.childNodes().stream()
-                        .filter(n -> n instanceof TextNode)
-                        .map(n -> ((TextNode) n).text().trim())
-                        .filter(t -> !t.isBlank())
-                        .findFirst()
-                        .orElse("").trim();
+                String name = extractSubRowItemName(nameEl);
                 if (name.isBlank()) continue;
 
                 List<ParsedStat> stats = new ArrayList<>();
@@ -392,6 +395,90 @@ public class GersangjjangParser {
 
         return rows;
     }
+
+    /**
+     * 단일 {@code .data-row} 요소에서 아이템 행을 추출한다.
+     * 전용장비 페이지 섹션 순회 파싱에 사용한다.
+     *
+     * @param row .data-row Element
+     * @return 파싱 결과. strong 이름이 없으면 null
+     */
+    public static ItemRow parseSingleDataRow(Element row) {
+        Element nameEl = row.selectFirst(".w-name strong");
+        if (nameEl == null) return null;
+        String name = nameEl.text().trim();
+        if (name.isBlank()) return null;
+
+        List<ParsedStat> stats = new ArrayList<>();
+        List<String> skills = new ArrayList<>();
+        parseStatCell(row.selectFirst(".w-stat"), stats, skills);
+        return new ItemRow(name, stats, skills);
+    }
+
+    /**
+     * 단일 {@code .item-row .sub-row} 요소에서 아이템 행을 추출한다.
+     * 전설장수(4j_*.asp) 등 Type B 페이지 파싱에 사용한다.
+     *
+     * @param subRow .sub-row Element
+     * @return 파싱 결과. 이름이 없으면 null
+     */
+    /** br 다음 줄 {@code (+N)} 강화 표기 — 전설장수 Type B 페이지 */
+    private static final Pattern ENHANCEMENT_LINE_PATTERN = Pattern.compile("^\\(\\+\\d+\\)$");
+
+    public static ItemRow parseSingleSubRow(Element subRow) {
+        Element nameEl = subRow.selectFirst(".w-name");
+        if (nameEl == null) return null;
+
+        String name = extractSubRowItemName(nameEl);
+        if (name.isBlank()) return null;
+
+        List<ParsedStat> stats = new ArrayList<>();
+        List<String> skills = new ArrayList<>();
+        parseStatCell(subRow.selectFirst(".w-stat"), stats, skills);
+        return new ItemRow(name, stats, skills);
+    }
+
+    /**
+     * Type B {@code .w-name} 셀에서 아이템명을 추출한다.
+     * 전설장수 페이지는 {@code 이름<br>(+5)} 형태이므로 강화 접미사를 병합한다.
+     */
+    static String extractSubRowItemName(Element nameEl) {
+        List<String> parts = new ArrayList<>();
+        for (var node : nameEl.childNodes()) {
+            if (node instanceof TextNode textNode) {
+                String text = textNode.text().trim();
+                if (!text.isBlank()) {
+                    parts.add(text);
+                }
+            }
+        }
+
+        String name = "";
+        if (!parts.isEmpty()) {
+            name = parts.getFirst();
+            for (int i = 1; i < parts.size(); i++) {
+                if (ENHANCEMENT_LINE_PATTERN.matcher(parts.get(i)).matches()) {
+                    name = name.replaceAll("\\s*\\(\\+\\d+\\)$", "") + parts.get(i);
+                    break;
+                }
+            }
+            // 인라인 " (+5)" 공백 정리 — 여포 등 한 줄 표기
+            name = name.replaceAll("\\s+\\(", "(");
+        } else {
+            Element strong = nameEl.selectFirst("strong");
+            if (strong != null) {
+                name = strong.text().trim();
+            }
+        }
+        return name.trim();
+    }
+
+    /**
+     * 각성 명왕 무기 — "동속아군 속성+20%", "동속아군속성+25%" 등.
+     * group(1)=부호, group(2)=수치
+     */
+    private static final Pattern ALLY_SAME_ELEMENT_SHARE_PATTERN =
+            Pattern.compile("^동속아군\\s*속성([+\\-])(\\d+)%$");
 
     /** 값만 있는 행 패턴 — "+75", "-30", "+200%" 등 (접두어 없이 부호+숫자만) */
     private static final Pattern VALUE_ONLY_PATTERN = Pattern.compile("^[+\\-]\\d+%?$");
@@ -436,6 +523,9 @@ public class GersangjjangParser {
         // "-" 단독 표기 = 해당 스탯 없음 표시 → 무시
         if ("-".equals(line)) return;
 
+        // 거상짱 동의 표기 정규화 — "뇌전속성값", "바람속성값" 등 복합 접두어
+        line = normalizeElementStatLine(line);
+
         // 공격력 범위: "공 220-250" 또는 "공 220"
         Matcher attackMatcher = ATTACK_PATTERN.matcher(line);
         if (attackMatcher.find()) {
@@ -458,6 +548,19 @@ public class GersangjjangParser {
             int sign = elementStatMatcher.group(3).equals("-") ? -1 : 1;
             int value = Integer.parseInt(elementStatMatcher.group(4)) * sign;
             stats.add(new ParsedStat(statType, element, value, StatUnit.FLAT));
+            return;
+        }
+
+        // 각성 명왕 무기: "동속아군 속성+20%" → 착용자 속성값의 n%를 동속성 아군에게 공유
+        Matcher allyShareMatcher = ALLY_SAME_ELEMENT_SHARE_PATTERN.matcher(line);
+        if (allyShareMatcher.find()) {
+            int sign = allyShareMatcher.group(1).equals("-") ? -1 : 1;
+            int value = Integer.parseInt(allyShareMatcher.group(2)) * sign;
+            stats.add(new ParsedStat(
+                    StatType.ELEMENT_VALUE,
+                    org.example.gersangtrade.domain.catalog.enums.Element.ADAPTIVE,
+                    value,
+                    StatUnit.PERCENT));
             return;
         }
 
@@ -496,5 +599,22 @@ public class GersangjjangParser {
 
         // 수치 없는 텍스트 — 고유 스킬
         skills.add(line);
+    }
+
+    /**
+     * 속성 스탯 줄의 접두어 동의어를 표준 1글자 접두어로 치환한다.
+     * 명왕궁 "뇌전속성값+5", 명왕극 "바람속성값+5" 등 복합 표기 대응.
+     */
+    static String normalizeElementStatLine(String line) {
+        if (line == null || line.isBlank()) {
+            return line;
+        }
+        return line
+                .replace("뇌전속성값", "뇌속성값")
+                .replace("뇌전속성깎", "뇌속성깎")
+                .replace("뇌전속성", "뇌속성")
+                .replace("바람속성값", "풍속성값")
+                .replace("바람속성깎", "풍속성깎")
+                .replace("바람속성", "풍속성");
     }
 }

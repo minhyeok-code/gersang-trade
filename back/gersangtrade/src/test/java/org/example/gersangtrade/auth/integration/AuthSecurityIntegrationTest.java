@@ -103,6 +103,9 @@ class AuthSecurityIntegrationTest {
     @MockitoBean(name = "priceCrawlJob")
     private Job priceCrawlJob;
 
+    @MockitoBean(name = "exclusiveEquipmentDataJob")
+    private Job exclusiveEquipmentDataJob;
+
     @Test
     @DisplayName("refresh_RT쿠키존재_새AT반환및RT쿠키갱신")
     void refresh_RT쿠키존재_새AT반환및RT쿠키갱신() throws Exception {

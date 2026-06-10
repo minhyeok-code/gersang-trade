@@ -16,6 +16,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -28,6 +29,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 /**
@@ -40,6 +42,9 @@ class NotificationServiceTest {
 
     @Mock
     private NotificationRepository notificationRepository;
+
+    @Mock
+    private SimpMessagingTemplate messagingTemplate;
 
     @InjectMocks
     private NotificationService notificationService;
@@ -68,39 +73,26 @@ class NotificationServiceTest {
     }
 
     @Test
-    @DisplayName("send_SSE연결있음_알림저장후push됨")
-    void send_SSE연결있음_알림저장후push됨() throws IOException {
-        // emitter 맵에 Mock emitter 주입
-        SseEmitter mockEmitter = mock(SseEmitter.class);
-        Map<Long, SseEmitter> emitters = new ConcurrentHashMap<>();
-        emitters.put(1L, mockEmitter);
-        ReflectionTestUtils.setField(notificationService, "emitters", emitters);
-
+    @DisplayName("send_WebSocket_push_됨")
+    void send_WebSocket_push_됨() {
         notificationService.send(user, NotificationType.CHAT_OPENED, 100L, "채팅 요청");
 
         // DB 저장 확인
         verify(notificationRepository).save(any(Notification.class));
-        // SSE push 확인
-        verify(mockEmitter).send(any(SseEmitter.SseEventBuilder.class));
+        // WebSocket push 확인
+        verify(messagingTemplate).convertAndSendToUser(eq("1"), anyString(), any());
     }
 
     @Test
-    @DisplayName("send_SSE_IOException발생_emitter제거_예외미전파")
-    void send_SSE_IOException발생_emitter제거_예외미전파() throws IOException {
-        // push 시 IOException 발생하는 Mock emitter
-        SseEmitter mockEmitter = mock(SseEmitter.class);
-        doThrow(new IOException("연결 끊김")).when(mockEmitter).send(any(SseEmitter.SseEventBuilder.class));
+    @DisplayName("send_WebSocket_push_실패해도_예외미전파_DB저장완료")
+    void send_WebSocket_push_실패해도_예외미전파_DB저장완료() {
+        doThrow(new RuntimeException("WS 연결 없음"))
+                .when(messagingTemplate).convertAndSendToUser(anyString(), anyString(), any());
 
-        Map<Long, SseEmitter> emitters = new ConcurrentHashMap<>();
-        emitters.put(1L, mockEmitter);
-        ReflectionTestUtils.setField(notificationService, "emitters", emitters);
-
-        // IOException이 외부로 전파되지 않아야 함
+        // 예외가 외부로 전파되지 않아야 함
         assertThatNoException().isThrownBy(
                 () -> notificationService.send(user, NotificationType.CHAT_OPENED, 100L, "채팅 요청"));
 
-        // emitter가 맵에서 제거되어야 함
-        assertThat(emitters).doesNotContainKey(1L);
         // DB 저장은 정상 완료되어야 함
         verify(notificationRepository).save(any(Notification.class));
     }

@@ -22,11 +22,19 @@ public record EquipmentSlotItemResponse(
         String setName,
         String slot,
         String equipSlot,
+        /** 전용장비 대표 용병 (equipment_items.mercenary_id) */
+        Long exclusiveMercenaryId,
+        String exclusiveMercenaryName,
+        /** item_mercenary_restrictions 용병 전용 목록 (명왕부 등 2명 공유 포함) */
+        List<Long> restrictionMercenaryIds,
         List<StatEntry> stats
 ) {
     public record StatEntry(StatType statType, Element element, int value, String scope) {}
 
-    public static EquipmentSlotItemResponse of(EquipmentItem item, List<ItemStat> stats) {
+    public static EquipmentSlotItemResponse of(
+            EquipmentItem item,
+            List<ItemStat> stats,
+            List<Long> restrictionMercenaryIds) {
         return new EquipmentSlotItemResponse(
                 item.getItemId(),
                 item.getItem().getName(),
@@ -38,6 +46,9 @@ public record EquipmentSlotItemResponse(
                 item.getEquipmentSet() != null ? item.getEquipmentSet().getName() : null,
                 item.getSlot().name(),
                 item.getEquipSlot() != null ? item.getEquipSlot().name() : null,
+                item.getMercenary() != null ? item.getMercenary().getId() : null,
+                item.getMercenary() != null ? item.getMercenary().getName() : null,
+                restrictionMercenaryIds != null ? restrictionMercenaryIds : List.of(),
                 stats.stream()
                         .map(s -> new StatEntry(s.getStatType(), s.getElement(), s.getValue(), s.getScope().name()))
                         .toList()

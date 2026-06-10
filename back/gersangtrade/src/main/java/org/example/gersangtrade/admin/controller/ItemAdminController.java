@@ -2,16 +2,22 @@ package org.example.gersangtrade.admin.controller;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.example.gersangtrade.admin.dto.enums.ItemCleanupCriterion;
 import org.example.gersangtrade.admin.dto.request.EquipmentDetailUpdateRequest;
+import org.example.gersangtrade.admin.dto.request.ItemBulkDeleteRequest;
 import org.example.gersangtrade.admin.dto.request.ItemRestrictionAddRequest;
 import org.example.gersangtrade.admin.dto.request.ItemStatReplaceRequest;
 import org.example.gersangtrade.admin.dto.request.ItemUpdateRequest;
 import org.example.gersangtrade.admin.dto.request.SkillEffectReplaceRequest;
 import org.example.gersangtrade.admin.dto.request.SkillReplaceRequest;
 import org.example.gersangtrade.admin.dto.response.ItemAdminResponse;
+import org.example.gersangtrade.admin.dto.response.ItemBulkDeleteResponse;
+import org.example.gersangtrade.admin.dto.response.ItemCleanupCandidateResponse;
 import org.example.gersangtrade.admin.dto.response.ItemDetailAdminResponse;
 import org.example.gersangtrade.admin.dto.response.ItemRestrictionResponse;
+import org.example.gersangtrade.admin.dto.response.MyeongwangWeaponStatCleanupResponse;
 import org.example.gersangtrade.admin.service.ItemAdminService;
+import org.example.gersangtrade.admin.service.MyeongwangWeaponStatCleanupService;
 import org.example.gersangtrade.domain.catalog.enums.ItemType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -47,6 +53,7 @@ import java.util.List;
 public class ItemAdminController {
 
     private final ItemAdminService itemAdminService;
+    private final MyeongwangWeaponStatCleanupService myeongwangWeaponStatCleanupService;
 
     /**
      * 아이템 목록 조회.
@@ -116,6 +123,34 @@ public class ItemAdminController {
     public ResponseEntity<Void> deleteItem(@PathVariable Long itemId) {
         itemAdminService.deleteItem(itemId);
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * 크롤링 정리 후보 조회.
+     * criteria 생략 시 기본 프리셋(미지원 부위·착용슬롯 없음·미참조)을 사용한다.
+     */
+    @GetMapping("/cleanup-candidates")
+    public ResponseEntity<List<ItemCleanupCandidateResponse>> findCleanupCandidates(
+            @RequestParam(required = false) List<ItemCleanupCriterion> criteria) {
+        return ResponseEntity.ok(itemAdminService.findCleanupCandidates(criteria));
+    }
+
+    /** 아이템 일괄 삭제 — 실패 항목은 응답 failed에 포함된다. */
+    @PostMapping("/bulk-delete")
+    public ResponseEntity<ItemBulkDeleteResponse> bulkDeleteItems(
+            @Valid @RequestBody ItemBulkDeleteRequest request) {
+        return ResponseEntity.ok(itemAdminService.bulkDeleteItems(request));
+    }
+
+    /**
+     * 명왕 전용 무기의 잘못된 SELF scope 속성값 스탯 삭제.
+     * ALLY_HEAVENLY_KING / ALLY_SAME_ELEMENT 행은 유지한다.
+     */
+    @PostMapping("/cleanup/myeongwang-weapon-self-element-value")
+    public ResponseEntity<MyeongwangWeaponStatCleanupResponse> cleanupMyeongwangWeaponSelfElementValue() {
+        var result = myeongwangWeaponStatCleanupService.removeSelfElementValueStats();
+        return ResponseEntity.ok(new MyeongwangWeaponStatCleanupResponse(
+                result.deletedCount(), result.itemNames()));
     }
 
     // ── 착용 제한 관리 ────────────────────────────────────────────────────────────

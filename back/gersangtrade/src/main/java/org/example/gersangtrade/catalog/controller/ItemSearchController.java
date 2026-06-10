@@ -26,6 +26,9 @@ import java.util.List;
  *
  * GET /api/items/equipment?slot={EquipSlot}
  *   — 덱 슬롯별 착용 가능 장비 목록 (비로그인 허용)
+ *
+ * GET /api/rituals
+ *   — 전체 주술 목록 (거래 페이지 필터용)
  */
 @Validated
 @RestController

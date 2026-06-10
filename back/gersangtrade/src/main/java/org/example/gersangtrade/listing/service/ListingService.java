@@ -9,6 +9,7 @@ import org.example.gersangtrade.domain.catalog.Item;
 import org.example.gersangtrade.domain.catalog.Ritual;
 import org.example.gersangtrade.domain.catalog.RitualApplicability;
 import org.example.gersangtrade.domain.catalog.enums.EquipmentKind;
+import org.example.gersangtrade.domain.catalog.enums.EquipmentSlot;
 import org.example.gersangtrade.domain.catalog.enums.ItemType;
 import org.example.gersangtrade.domain.listing.enums.BundleType;
 import org.example.gersangtrade.domain.listing.enums.ListingStatus;
@@ -68,6 +69,7 @@ public class ListingService {
     private final ItemRepository itemRepository;
     private final EquipmentItemRepository equipmentItemRepository;
     private final RitualApplicabilityRepository ritualApplicabilityRepository;
+    private final ListingBundleTitleService listingBundleTitleService;
 
     // ── 등록 ────────────────────────────────────────────────────────────────
 
@@ -106,12 +108,14 @@ public class ListingService {
     }
 
     /**
-     * 피스별 세트명·주술 마크 정보. 세트 제목 자동 생성에 사용된다.
+     * 피스별 세트명·주술 표시 마크·반지 여부. 세트 제목 자동 생성에 사용된다.
      *
-     * @param setName 소속 세트명 (세트에 속하지 않으면 null)
-     * @param mark    적용된 첫 번째 주술 마크 스냅샷 (주술 없으면 null)
+     * @param setName     소속 세트명 (세트에 속하지 않으면 null)
+     * @param displayMark 표시용 주술 마크 (주술 없으면 null).
+     *                    성공이면 successMark 그대로, 대성공이면 {@code <대성공마크_일반성공마크>} 형식.
+     * @param isRing      반지(RING) 슬롯 여부
      */
-    private record PieceInfo(String setName, String mark) {}
+    private record PieceInfo(String setName, org.example.gersangtrade.domain.catalog.enums.EquipmentSlot slot, String displayMark) {}
 
     /**
      * 번들 단위 처리 — 번들 저장 후 라인을 순서대로 처리한다.
@@ -154,8 +158,10 @@ public class ListingService {
                 && !pieceInfos.isEmpty()) {
             String setName = pieceInfos.get(0).setName();
             if (setName != null) {
-                List<String> marks = pieceInfos.stream().map(PieceInfo::mark).toList();
-                bundle.updateTitle(SetTitleGenerator.generate(setName, marks));
+                List<SetTitleGenerator.PieceTitleInput> inputs = pieceInfos.stream()
+                        .map(p -> new SetTitleGenerator.PieceTitleInput(p.slot(), p.displayMark()))
+                        .toList();
+                bundle.updateTitle(SetTitleGenerator.generate(setName, inputs));
             }
         }
     }
@@ -244,25 +250,24 @@ public class ListingService {
                 ? equipmentItem.getEquipmentSet().getName()
                 : null;
 
-        // 주술 저장 후 대표 마크 추출 (세트 제목 생성용)
-        String mark = null;
+        // 주술 저장 후 표시용 마크 추출 (세트 제목 생성용)
+        String displayMark = null;
         if (detailReq.hasRitual()) {
-            List<String> marks = saveRituals(line, equipmentItem, detailReq.rituals());
-            mark = marks.isEmpty() ? null : marks.get(0);
+            displayMark = saveRitualsAndGetDisplayMark(line, equipmentItem, detailReq.rituals());
         }
 
-        return new PieceInfo(setName, mark);
+        return new PieceInfo(setName, equipmentItem.getSlot(), displayMark);
     }
 
     /**
-     * 주술 결과 저장.
+     * 주술 결과 저장 후 세트 제목용 표시 마크를 반환한다.
      * 각 주술 ID가 해당 장비에 적용 가능한지 먼저 검증한 후 저장한다.
      * 적용 가능 주술 목록을 한 번에 로드하여 N+1을 방지한다.
      *
-     * @return 저장된 주술의 appliedMarkSnapshot 목록 (세트 제목 생성용)
+     * @return 첫 번째 주술의 표시 마크. 성공이면 successMark, 대성공이면 {@code <대성공마크_일반성공마크>} 형식.
      */
-    private List<String> saveRituals(BundleLine line, EquipmentItem equipmentItem,
-                                      List<RitualResultRequest> ritualRequests) {
+    private String saveRitualsAndGetDisplayMark(BundleLine line, EquipmentItem equipmentItem,
+                                                 List<RitualResultRequest> ritualRequests) {
         // 요청 내 중복 ritualId 검사
         long distinctRitualCount = ritualRequests.stream()
                 .map(RitualResultRequest::ritualId)
@@ -301,9 +306,11 @@ public class ListingService {
                     .build());
         }
         bundleEquipmentRitualRepository.saveAll(ritualsToSave);
-        return ritualsToSave.stream()
-                .map(BundleEquipmentRitual::getAppliedMarkSnapshot)
-                .toList();
+
+        // 첫 번째 주술의 표시 마크 반환
+        if (ritualsToSave.isEmpty()) return null;
+        BundleEquipmentRitual first = ritualsToSave.get(0);
+        return SetTitleGenerator.buildTitleMark(first.getRitual(), first.getOutcome());
     }
 
     // ── 목록 조회 ────────────────────────────────────────────────────────────
@@ -334,11 +341,12 @@ public class ListingService {
                         .collect(Collectors.groupingBy(l -> l.getBundle().getId()));
 
         return listings.stream()
-                .map(listing -> ListingSummaryResponse.from(
-                        listing,
-                        bundlesByListingId.getOrDefault(listing.getId(), List.of()),
-                        linesByBundleId
-                ))
+                .map(listing -> {
+                    List<ListingBundle> bundles = bundlesByListingId.getOrDefault(listing.getId(), List.of());
+                    List<ListingSummaryResponse.BundleSummary> bundleSummaries =
+                            listingBundleTitleService.buildSummaries(bundles, linesByBundleId);
+                    return ListingSummaryResponse.from(listing, bundleSummaries);
+                })
                 .toList();
     }
 
@@ -391,7 +399,8 @@ public class ListingService {
                                     ritualsByLineId.getOrDefault(line.getId(), List.of())
                             ))
                             .toList();
-                    return new BundleAssembly(bundle, lineAssemblies);
+                    String displayTitle = listingBundleTitleService.resolveDetailTitle(bundle, lineAssemblies);
+                    return new BundleAssembly(bundle, lineAssemblies, displayTitle);
                 })
                 .toList();
 

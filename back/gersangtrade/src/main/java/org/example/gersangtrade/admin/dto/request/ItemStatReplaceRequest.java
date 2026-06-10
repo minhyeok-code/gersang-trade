@@ -2,6 +2,7 @@ package org.example.gersangtrade.admin.dto.request;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
+import org.example.gersangtrade.domain.catalog.enums.BuffTarget;
 import org.example.gersangtrade.domain.catalog.enums.Element;
 import org.example.gersangtrade.domain.catalog.enums.StatType;
 
@@ -14,6 +15,7 @@ public record ItemStatReplaceRequest(
     public record Entry(
             @NotNull StatType statType,
             Element element,   // null이면 NONE으로 처리
-            @NotNull Integer value
+            @NotNull Integer value,
+            BuffTarget scope   // null이면 SELF
     ) {}
 }

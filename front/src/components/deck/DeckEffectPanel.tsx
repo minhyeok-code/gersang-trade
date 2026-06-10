@@ -25,6 +25,7 @@ const ELEMENT_COLORS: Record<string, string> = {
 };
 
 const STAT_LABEL: Record<string, string> = {
+  MAIN_STAT_FLAT: '주스텟',
   ELEMENT_VALUE: '속성값',
   ELEMENT_PIERCE: '속성깎',
   RESIST_PIERCE: '저항깎',
@@ -41,6 +42,8 @@ const STAT_LABEL: Record<string, string> = {
   CRITICAL_CHANCE: '크리티컬확률',
   MAGIC_RESISTANCE: '마법저항',
   HITTING_RESISTANCE: '타격저항',
+  MAGIC_RESISTANCE_PIERCE: '마법저항깎',
+  HITTING_RESISTANCE_PIERCE: '타격저항깎',
   DAMAGE_PERCENT: '데미지증가',
   SKILL_DAMAGE_PERCENT: '스킬데미지증가',
   FIELD_MOVE_SPEED: '필드이동속도',
@@ -59,6 +62,57 @@ const STAT_LABEL: Record<string, string> = {
   SKILL_RANGE: '사거리',
 };
 
+// ── 공명 레벨별 수치 테이블 ─────────────────────────────────────────────────
+// lv1~14: MAIN_STAT_FLAT만 / lv15~30: MAIN_STAT_FLAT + DAMAGE_PERCENT
+const GONMYEONG_MAIN: Record<number, number> = {
+  1:100, 2:110, 3:120, 4:130, 5:150, 6:160, 7:170, 8:180, 9:190, 10:250,
+  11:260, 12:270, 13:280, 14:290, 15:300, 16:310, 17:320, 18:330, 19:340, 20:400,
+  21:410, 22:420, 23:430, 24:440, 25:450, 26:460, 27:470, 28:480, 29:490, 30:550,
+};
+const GONMYEONG_DMG: Record<number, number> = {
+  15:1, 16:1, 17:1, 18:1, 19:1, 20:2, 21:2, 22:2, 23:2, 24:2,
+  25:3, 26:3, 27:3, 28:3, 29:3, 30:4,
+};
+
+// ── 가호 레벨별 수치 테이블 ─────────────────────────────────────────────────
+// lv1~10: MAIN_STAT_FLAT만 / lv11~15: +DAMAGE_PERCENT / lv16~30: +ELEMENT_VALUE
+const GAHO_MAIN: Record<number, number> = {
+  1:25, 2:50, 3:75, 4:100, 5:125, 6:150, 7:175, 8:200, 9:225, 10:250,
+  11:275, 12:300, 13:325, 14:350, 15:375, 16:400, 17:425, 18:450, 19:475, 20:500,
+  21:525, 22:550, 23:575, 24:600, 25:625, 26:650, 27:675, 28:700, 29:725, 30:750,
+};
+const GAHO_DMG: Record<number, number> = {
+  11:1, 12:1, 13:2, 14:2, 15:3,
+  16:3, 17:3, 18:3, 19:3, 20:3, 21:4, 22:4, 23:5, 24:5, 25:6,
+  26:6, 27:6, 28:6, 29:6, 30:6,
+};
+const GAHO_ELEM: Record<number, number> = {
+  16:1, 17:1, 18:2, 19:2, 20:3, 21:3, 22:3, 23:3, 24:3, 25:3,
+  26:4, 27:4, 28:5, 29:5, 30:6,
+};
+
+type StatLine = { label: string; value: string };
+
+function gonmyeongStatLines(level: number): StatLine[] {
+  const lines: StatLine[] = [];
+  const main = GONMYEONG_MAIN[level];
+  if (main) lines.push({ label: '주스텟 (주인공)', value: `+${main}` });
+  const dmg = GONMYEONG_DMG[level];
+  if (dmg) lines.push({ label: '데미지증가 (전체)', value: `+${dmg}%` });
+  return lines;
+}
+
+function gahoStatLines(level: number): StatLine[] {
+  const lines: StatLine[] = [];
+  const main = GAHO_MAIN[level];
+  if (main) lines.push({ label: '주스텟 (전체 용병)', value: `+${main}` });
+  const dmg = GAHO_DMG[level];
+  if (dmg) lines.push({ label: '데미지증가 (전체)', value: `+${dmg}%` });
+  const elem = GAHO_ELEM[level];
+  if (elem) lines.push({ label: '속성값 (전체)', value: `+${elem}` });
+  return lines;
+}
+
 const SPIRIT_NATURE_ORDER = ['FIRE', 'WATER', 'THUNDER', 'WIND', 'EARTH'] as const;
 const SPIRIT_GRADE_ORDER = ['LOWER', 'MIDDLE', 'UPPER', 'HIGHEST', 'LEGEND'] as const;
 const SPIRIT_GRADE_LABELS: Record<string, string> = {
@@ -73,11 +127,11 @@ const JINBEOP_ELEMENT_ORDER = ['FIRE', 'WIND', 'THUNDER', 'WATER'] as const;
 
 type EffectCategory = 'spirit' | 'jinbeop' | 'gaho' | 'gongmyung';
 
-const EFFECT_CATEGORIES: { id: EffectCategory; label: string; ready: boolean }[] = [
-  { id: 'spirit', label: '정령', ready: true },
-  { id: 'jinbeop', label: '진법', ready: true },
-  { id: 'gaho', label: '가호', ready: false },
-  { id: 'gongmyung', label: '공명', ready: false },
+const EFFECT_CATEGORIES: { id: EffectCategory; label: string }[] = [
+  { id: 'spirit', label: '정령' },
+  { id: 'jinbeop', label: '진법' },
+  { id: 'gaho', label: '가호' },
+  { id: 'gongmyung', label: '공명' },
 ];
 
 type DraftEffects = {
@@ -85,6 +139,8 @@ type DraftEffects = {
   spirit2Id: number | null;
   jinbeopSourceId: number | null;
   cheungjinSourceId: number | null;
+  gonmyeongLevel: number | null;
+  gahoLevel: number | null;
 };
 
 function formatBuffLine(buff: DeckEffectBuffDto): string {
@@ -140,7 +196,79 @@ function draftFromEffects(effects?: DeckEffectDto | null, cheungjinId?: number |
     spirit2Id: effects?.spirits?.[1]?.id ?? null,
     jinbeopSourceId: effects?.jinbeop?.id ?? null,
     cheungjinSourceId: cheungjinId ?? effects?.cheungjin?.id ?? null,
+    gonmyeongLevel: effects?.gonmyeongLevel ?? null,
+    gahoLevel: effects?.gahoLevel ?? null,
   };
+}
+
+function LevelPicker({
+  label,
+  value,
+  onChange,
+  getStatLines,
+}: {
+  label: string;
+  value: number | null;
+  onChange: (v: number | null) => void;
+  getStatLines: (level: number) => StatLine[];
+}) {
+  const previewLines = value != null ? getStatLines(value) : [];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-medium" style={{ color: 'var(--text)' }}>
+          {value != null ? `${label} ${value}단계` : `${label} 미적용`}
+        </span>
+        {value != null && (
+          <button
+            type="button"
+            onClick={() => onChange(null)}
+            style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+            className="rounded px-2 py-0.5 text-[11px] hover:border-[var(--text-muted)]"
+          >
+            초기화
+          </button>
+        )}
+      </div>
+
+      <div className="grid grid-cols-6 gap-1.5">
+        {Array.from({ length: 30 }, (_, i) => i + 1).map((lv) => {
+          const active = value === lv;
+          return (
+            <button
+              key={lv}
+              type="button"
+              onClick={() => onChange(active ? null : lv)}
+              style={{
+                background: active ? 'var(--brown)' : 'var(--bg)',
+                color: active ? 'var(--beige)' : 'var(--text-muted)',
+                border: `1px solid ${active ? 'var(--brown)' : 'var(--border)'}`,
+              }}
+              className="rounded py-1.5 text-xs font-medium hover:border-[var(--brown)] transition-colors"
+            >
+              {lv}
+            </button>
+          );
+        })}
+      </div>
+
+      {previewLines.length > 0 && (
+        <div style={{ background: 'var(--bg)', border: '1px solid var(--border)' }} className="rounded-lg p-3">
+          <p className="text-xs font-medium mb-1.5" style={{ color: 'var(--text)' }}>
+            {label} {value}단계 효과
+          </p>
+          <ul className="space-y-0.5">
+            {previewLines.map((line, i) => (
+              <li key={i} className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                · {line.label} {line.value}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function SpiritPortrait({ spirit, emptyLabel }: { spirit?: DeckEffectSpiritDto | null; emptyLabel: string }) {
@@ -274,6 +402,8 @@ function DeckEffectSettingsModal({
       spirit2Id: draft.spirit2Id,
       jinbeopSourceId: draft.jinbeopSourceId,
       cheungjinSourceId: draft.cheungjinSourceId,
+      gonmyeongLevel: draft.gonmyeongLevel,
+      gahoLevel: draft.gahoLevel,
     });
   }
 
@@ -300,6 +430,9 @@ function DeckEffectSettingsModal({
         <div className="px-5 pt-3 flex flex-wrap gap-1.5">
           {EFFECT_CATEGORIES.map((cat) => {
             const active = category === cat.id;
+            const hasValue =
+              (cat.id === 'gaho' && draft.gahoLevel != null) ||
+              (cat.id === 'gongmyung' && draft.gonmyeongLevel != null);
             return (
               <button
                 key={cat.id}
@@ -307,14 +440,16 @@ function DeckEffectSettingsModal({
                 onClick={() => setCategory(cat.id)}
                 style={{
                   background: active ? 'var(--brown)' : 'var(--bg)',
-                  color: active ? 'var(--beige)' : 'var(--text-muted)',
-                  border: `1px solid ${active ? 'var(--brown)' : 'var(--border)'}`,
+                  color: active ? 'var(--beige)' : hasValue ? 'var(--text)' : 'var(--text-muted)',
+                  border: `1px solid ${active ? 'var(--brown)' : hasValue ? 'var(--text-muted)' : 'var(--border)'}`,
                 }}
                 className="rounded-lg px-3 py-1.5 text-sm font-medium transition-colors"
               >
                 {cat.label}
-                {!cat.ready && (
-                  <span className="text-[10px] ml-1 opacity-70">(준비중)</span>
+                {hasValue && !active && (
+                  <span className="text-[10px] ml-1 opacity-70">
+                    {cat.id === 'gaho' ? `${draft.gahoLevel}단` : `${draft.gonmyeongLevel}단`}
+                  </span>
                 )}
               </button>
             );
@@ -473,15 +608,22 @@ function DeckEffectSettingsModal({
             </div>
           )}
 
-          {(category === 'gaho' || category === 'gongmyung') && (
-            <div className="text-center py-12">
-              <p className="text-sm font-medium mb-1" style={{ color: 'var(--text)' }}>
-                {EFFECT_CATEGORIES.find((c) => c.id === category)?.label} 설정
-              </p>
-              <p className="text-xs" style={{ color: 'var(--text-disabled)' }}>
-                추후 업데이트 예정입니다.
-              </p>
-            </div>
+          {category === 'gaho' && (
+            <LevelPicker
+              label="가호"
+              value={draft.gahoLevel}
+              onChange={(v) => setDraft((prev) => ({ ...prev, gahoLevel: v }))}
+              getStatLines={gahoStatLines}
+            />
+          )}
+
+          {category === 'gongmyung' && (
+            <LevelPicker
+              label="공명"
+              value={draft.gonmyeongLevel}
+              onChange={(v) => setDraft((prev) => ({ ...prev, gonmyeongLevel: v }))}
+              getStatLines={gonmyeongStatLines}
+            />
           )}
         </div>
 
@@ -624,12 +766,50 @@ export function DeckEffectPanel({
               )}
             </section>
 
-            {/* 가호 / 공명 — 확장용 플레이스홀더 */}
+            {/* 가호 */}
             <section style={{ borderTop: '1px solid var(--border)' }} className="pt-3">
-              <p className="text-xs font-semibold mb-1" style={{ color: 'var(--text-disabled)' }}>가호</p>
-              <p className="text-[11px] mb-2" style={{ color: 'var(--text-disabled)' }}>-</p>
-              <p className="text-xs font-semibold mb-1" style={{ color: 'var(--text-disabled)' }}>공명</p>
-              <p className="text-[11px]" style={{ color: 'var(--text-disabled)' }}>-</p>
+              {effects?.gahoLevel != null ? (
+                <>
+                  <p className="text-xs font-semibold mb-1" style={{ color: 'var(--text)' }}>
+                    가호 {effects.gahoLevel}단계
+                  </p>
+                  <ul className="space-y-0.5">
+                    {gahoStatLines(effects.gahoLevel).map((line, i) => (
+                      <li key={i} className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                        - {line.label} {line.value}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs font-semibold mb-1" style={{ color: 'var(--text-disabled)' }}>가호</p>
+                  <p className="text-[11px]" style={{ color: 'var(--text-disabled)' }}>-</p>
+                </>
+              )}
+            </section>
+
+            {/* 공명 */}
+            <section style={{ borderTop: '1px solid var(--border)' }} className="pt-3">
+              {effects?.gonmyeongLevel != null ? (
+                <>
+                  <p className="text-xs font-semibold mb-1" style={{ color: 'var(--text)' }}>
+                    공명 {effects.gonmyeongLevel}단계
+                  </p>
+                  <ul className="space-y-0.5">
+                    {gonmyeongStatLines(effects.gonmyeongLevel).map((line, i) => (
+                      <li key={i} className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                        - {line.label} {line.value}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs font-semibold mb-1" style={{ color: 'var(--text-disabled)' }}>공명</p>
+                  <p className="text-[11px]" style={{ color: 'var(--text-disabled)' }}>-</p>
+                </>
+              )}
             </section>
           </>
         )}

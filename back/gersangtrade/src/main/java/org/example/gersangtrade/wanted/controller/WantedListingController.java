@@ -73,7 +73,7 @@ public class WantedListingController {
         WantedStatus resolvedStatus = (status != null) ? status : WantedStatus.OPEN;
 
         WantedSearchCondition cond = new WantedSearchCondition(
-                server, resolvedStatus, keyword, page, size);
+                server, resolvedStatus, keyword, null, page, size);
         return ResponseEntity.ok(wantedListingService.getWantedListings(cond));
     }
 

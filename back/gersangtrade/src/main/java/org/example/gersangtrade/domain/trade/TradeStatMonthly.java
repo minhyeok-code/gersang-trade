@@ -5,6 +5,7 @@ import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.example.gersangtrade.domain.catalog.Server;
 
 /**
  * 월별 거래 통계 집계 엔티티.
@@ -16,8 +17,8 @@ import lombok.NoArgsConstructor;
 @Table(
         name = "trade_stat_monthly",
         uniqueConstraints = @UniqueConstraint(
-                name = "uq_trade_stat_monthly_month_key",
-                columnNames = {"stat_month", "stat_key"}
+                name = "uq_trade_stat_monthly_month_key_server",
+                columnNames = {"stat_month", "stat_key", "server_id"}
         )
 )
 @Getter
@@ -32,6 +33,11 @@ public class TradeStatMonthly {
     /** 집계 월 — "YYYY-MM" 형식 (예: "2026-03") */
     @Column(name = "stat_month", nullable = false, length = 7)
     private String statMonth;
+
+    /** 집계 서버 */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "server_id", nullable = false)
+    private Server server;
 
     /**
      * 집계 키.
@@ -61,10 +67,11 @@ public class TradeStatMonthly {
     private Long priceMax;
 
     @Builder
-    public TradeStatMonthly(String statMonth, String statKey,
+    public TradeStatMonthly(String statMonth, Server server, String statKey,
                              Long avgPrice, Integer tradeCount, Long quantitySum,
                              Long priceMin, Long priceMax) {
         this.statMonth = statMonth;
+        this.server = server;
         this.statKey = statKey;
         this.avgPrice = avgPrice;
         this.tradeCount = tradeCount;

@@ -67,6 +67,15 @@ public class EquipmentItem {
     private EquipSlot equipSlot;
 
     /**
+     * 전용장비 소유 용병 (카탈로그 표시용, nullable).
+     * null이면 공용 장비 또는 restriction이 2명 이상·카테고리 전용인 경우.
+     * 런타임 착용 ACL은 {@link ItemMercenaryRestriction}이 담당한다.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "mercenary_id")
+    private Mercenary mercenary;
+
+    /**
      * 전설장수 장비 기본 강화 단계.
      * 전설장수 세트의 대표 강화 수치 (0강 / 5강 / 10강).
      * 일반 장비는 null. DB에는 실제 숫자(0/5/10)로 저장한다.
@@ -95,8 +104,8 @@ public class EquipmentItem {
     public EquipmentItem(Item item, EquipmentKind equipmentKind,
                          EquipmentSlot slot, EquipmentSet equipmentSet,
                          boolean ritualApplicable, boolean hasSlotOption,
-                         EquipSlot equipSlot, Enhancement enhancement,
-                         boolean sainSword) {
+                         EquipSlot equipSlot, Mercenary mercenary,
+                         Enhancement enhancement, boolean sainSword) {
         this.item = item;
         this.equipmentKind = equipmentKind;
         this.slot = slot;
@@ -104,6 +113,7 @@ public class EquipmentItem {
         this.ritualApplicable = ritualApplicable;
         this.hasSlotOption = hasSlotOption;
         this.equipSlot = equipSlot;
+        this.mercenary = mercenary;
         this.enhancement = enhancement;
         this.sainSword = sainSword;
     }
@@ -119,18 +129,27 @@ public class EquipmentItem {
         if (equipSlot != null) this.equipSlot = equipSlot;
     }
 
-    /** 관리자 수동 수정 — 슬롯, 장비 종류, 주술 가능 여부, 홈 옵션 여부, 세트 소속, 덱 슬롯, 강화 단계, 사인검 여부 */
+    /** 관리자 수동 수정 — 슬롯, 장비 종류, 주술 가능 여부, 홈 옵션 여부, 세트 소속, 덱 슬롯, 전용 용병, 강화 단계, 사인검 여부 */
     public void updateInfo(EquipmentSlot slot, EquipmentKind equipmentKind,
                            boolean ritualApplicable, boolean hasSlotOption,
                            EquipmentSet equipmentSet, EquipSlot equipSlot,
-                           Enhancement enhancement, boolean sainSword) {
+                           Mercenary mercenary, Enhancement enhancement,
+                           boolean sainSword) {
         if (slot != null) this.slot = slot;
         if (equipmentKind != null) this.equipmentKind = equipmentKind;
         this.ritualApplicable = ritualApplicable;
         this.hasSlotOption = hasSlotOption;
         this.equipmentSet = equipmentSet;
         this.equipSlot = equipSlot;
+        this.mercenary = mercenary;
         this.enhancement = enhancement;
         this.sainSword = sainSword;
+    }
+
+    /** 전용장비 크롤러 — 단일 소유 용병 FK 갱신 (이미 설정된 경우 덮어쓰지 않음) */
+    public void updateExclusiveMercenaryIfAbsent(Mercenary mercenary) {
+        if (mercenary != null && this.mercenary == null) {
+            this.mercenary = mercenary;
+        }
     }
 }

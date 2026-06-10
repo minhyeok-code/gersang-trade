@@ -76,7 +76,17 @@
       "Bash(echo \"EXIT:$?\")",
       "Bash(rm \"D:/Java/gersangTrade/back/gersangtrade/src/main/java/org/example/gersangtrade/crawler/service/S3ImageService.java\")",
       "Bash(rm \"D:/Java/gersangTrade/back/gersangtrade/src/main/java/org/example/gersangtrade/config/S3Config.java\")",
-      "Bash(npx --prefix \"D:/Java/gersangTrade/front\" tsc --noEmit -p \"D:/Java/gersangTrade/front/tsconfig.json\")"
+      "Bash(npx --prefix \"D:/Java/gersangTrade/front\" tsc --noEmit -p \"D:/Java/gersangTrade/front/tsconfig.json\")",
+      "Bash(cmd /c \"cd D:\\\\Java\\\\gersangTrade\\\\front && npx tsc --noEmit 2>&1\")",
+      "Bash(cmd *)",
+      "Bash(D:/Java/gersangTrade/front/node_modules/.bin/tsc --noEmit --project D:/Java/gersangTrade/front/tsconfig.json)",
+      "Bash(where mysql *)",
+      "Bash(/c/Program Files/MySQL/MySQL Server 8.0/bin/mysql *)",
+      "Bash(\"/c/Program Files/MySQL/MySQL Server 8.0/bin/mysql\" -h 127.0.0.1 -P 3307 -u root -pqwer1234 gersang-trade-db -e \"SELECT * FROM equipment_sets WHERE name LIKE '%광목%';\")",
+      "Bash(\"/c/Program Files/MySQL/MySQL Server 8.0/bin/mysql\" -h 127.0.0.1 -P 3307 -u root -pqwer1234 gersang-trade-db --default-character-set=utf8mb4 -e \"SELECT * FROM equipment_sets WHERE name LIKE '%광목%';\")",
+      "Bash('/c/Program Files/MySQL/MySQL Server 8.0/bin/mysql' -h 127.0.0.1 -P 3307 -u root -pqwer1234 gersang-trade-db --default-character-set=utf8mb4 -e ' *)",
+      "Bash(\"/c/Program Files/MySQL/MySQL Server 8.0/bin/mysql\" -h 127.0.0.1 -P 3307 -u root -pqwer1234 gersang-trade-db --default-character-set=utf8mb4 -e \"DESCRIBE equipment_set_pieces;\")",
+      "Bash(\"/c/Program Files/MySQL/MySQL Server 8.0/bin/mysql\" -h 127.0.0.1 -P 3307 -u root -pqwer1234 gersang-trade-db --default-character-set=utf8mb4 -e \"DESCRIBE equipment_items;\")"
     ]
   }
 }

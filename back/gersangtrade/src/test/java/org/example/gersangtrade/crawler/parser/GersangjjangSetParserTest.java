@@ -40,7 +40,18 @@ class GersangjjangSetParserTest {
                 "공명장갑,  GLOVES",
                 "공명요대,  BELT",
                 "공명화,    SHOES",
-                "공명반지,  RING"
+                "공명반지,  RING",
+                "노부츠나의갑주, ARMOR",
+                "맹획의견갑,     ARMOR",
+                "여포의 방천화극, WEAPON",
+                "치요메의 지팡이, WEAPON",
+                "홍길동의 패랭이, HELMET",
+                "홍길동 의복,    ARMOR",
+                "홍길동의 짚신,  SHOES",
+                "보쿠텐의대도,   WEAPON",
+                "마조의홀판,     WEAPON",
+                "만선야의의복,   ARMOR",
+                "레지나의채찍,   WEAPON"
         })
         @DisplayName("suffix 매핑 정확도 검증")
         void suffix_슬롯_매핑(String itemName, String expectedSlot) {

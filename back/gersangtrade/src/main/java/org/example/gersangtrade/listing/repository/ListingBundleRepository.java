@@ -1,6 +1,7 @@
 package org.example.gersangtrade.listing.repository;
 
 import org.example.gersangtrade.domain.listing.ListingBundle;
+import org.example.gersangtrade.domain.listing.enums.BundleType;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
@@ -22,4 +23,11 @@ public interface ListingBundleRepository extends JpaRepository<ListingBundle, Lo
      * 목록 화면에서 N+1 방지를 위해 IN 쿼리로 미리 로드한다.
      */
     List<ListingBundle> findByListingIdIn(List<Long> listingIds);
+
+    /**
+     * 세트 시세 조회용 — 특정 setId의 EQUIPMENT_SET 번들만 일괄 조회.
+     * equipment_set_id FK를 직접 비교하여 N+1 없이 필터링한다.
+     */
+    List<ListingBundle> findByListingIdInAndBundleTypeAndEquipmentSet_Id(
+            List<Long> listingIds, BundleType bundleType, Long equipmentSetId);
 }

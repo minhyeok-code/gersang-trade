@@ -9,14 +9,46 @@ function getToken(): string | null {
   return localStorage.getItem('accessToken');
 }
 
+function setToken(token: string) {
+  localStorage.setItem('accessToken', token);
+}
+
+/** AT 만료 시 RT 쿠키로 새 AT를 발급받는다. 실패 시 null 반환. */
+async function tryRefresh(): Promise<string | null> {
+  try {
+    const res = await fetch(`${BASE}/auth/refresh`, { method: 'POST', credentials: 'include' });
+    if (!res.ok) return null;
+    const data = await res.json() as { accessToken?: string };
+    if (data.accessToken) {
+      setToken(data.accessToken);
+      return data.accessToken;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 async function req<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const token = getToken();
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...(options.headers as Record<string, string>),
+  const doFetch = (token: string | null) => {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(options.headers as Record<string, string>),
+    };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    return fetch(`${BASE}${path}`, { ...options, headers, credentials: 'include' });
   };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-  const res = await fetch(`${BASE}${path}`, { ...options, headers, credentials: 'include' });
+
+  let res = await doFetch(getToken());
+
+  // AT 만료(401/403) → 자동 갱신 후 1회 재시도
+  if (res.status === 401 || res.status === 403) {
+    const newToken = await tryRefresh();
+    if (newToken) {
+      res = await doFetch(newToken);
+    }
+  }
+
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(`${res.status}: ${text}`);
@@ -109,6 +141,8 @@ type EditableStat = {
   statType: string;
   element?: string | null;
   value: string;
+  /** 아이템 스탯 전용 — 용병 스탯 행에는 없음 */
+  scope?: string;
 };
 
 type EditableEquipmentDetail = {
@@ -144,6 +178,8 @@ const STAT_TYPE_OPTIONS = [
   { value: 'CRITICAL_CHANCE', label: '크리티컬확률' },
   { value: 'MAGIC_RESISTANCE', label: '마법저항' },
   { value: 'HITTING_RESISTANCE', label: '타격저항' },
+  { value: 'MAGIC_RESISTANCE_PIERCE', label: '마법저항깎' },
+  { value: 'HITTING_RESISTANCE_PIERCE', label: '타격저항깎' },
   { value: 'DAMAGE_PERCENT', label: '데미지증가' },
   { value: 'SKILL_DAMAGE_PERCENT', label: '스킬데미지증가' },
   { value: 'FIELD_MOVE_SPEED', label: '필드이동속도' },
@@ -162,6 +198,24 @@ const STAT_TYPE_OPTIONS = [
   { value: 'ATTACK_POWER', label: '공격력' },
   { value: 'SKILL_RANGE', label: '사거리' },
 ];
+
+const BUFF_SCOPE_OPTIONS = [
+  { value: 'SELF', label: '착용자 본인' },
+  { value: 'ALLY', label: '아군 전체' },
+  { value: 'ALLY_HEAVENLY_KING', label: '동속성 사천왕 (명왕부·명왕무기)' },
+  { value: 'ALLY_SAME_ELEMENT', label: '동속성 아군 % (각성 명왕 무기)' },
+  { value: 'ENEMY', label: '적 디버프' },
+] as const;
+
+const ELEMENT_OPTIONS = [
+  { value: '', label: '없음 (NONE)' },
+  { value: 'ADAPTIVE', label: '용병 속성 추종 (ADAPTIVE)' },
+  { value: 'FIRE', label: '화 (FIRE)' },
+  { value: 'WATER', label: '수 (WATER)' },
+  { value: 'WIND', label: '풍 (WIND)' },
+  { value: 'EARTH', label: '토 (EARTH)' },
+  { value: 'THUNDER', label: '뇌 (THUNDER)' },
+] as const;
 
 function toText(value: unknown): string {
   return value === null || value === undefined ? '' : String(value);
@@ -221,6 +275,70 @@ function StatTypeSelect({
   );
 }
 
+function ElementSelect({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const normalized = value === 'NONE' ? '' : (value ?? '');
+  return (
+    <select
+      value={normalized}
+      onChange={(e) => onChange(e.target.value)}
+      className={inputClass('w-full min-w-[9rem]')}
+    >
+      {ELEMENT_OPTIONS.map((option) => (
+        <option key={option.value || 'NONE'} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function BuffScopeSelect({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <select
+      value={value || 'SELF'}
+      onChange={(e) => onChange(e.target.value)}
+      className={inputClass('w-full min-w-[10rem]')}
+    >
+      {BUFF_SCOPE_OPTIONS.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function ValueTypeSelect({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className={inputClass('w-full')}
+    >
+      <option value="FLAT">고정값</option>
+      <option value="PERCENT">퍼센트(%)</option>
+    </select>
+  );
+}
+
 function EmptyRows({ colSpan, label }: { colSpan: number; label: string }) {
   return (
     <tr>
@@ -249,11 +367,14 @@ function CrawlerTab({ notify }: { notify: (m: string) => void }) {
   }
 
   const jobs = [
-    { path: 'master', label: '전체 수집 (아이템+용병)', color: 'yellow' as const },
+    { path: 'master', label: '전체 수집 (아이템+용병+전용장비)', color: 'yellow' as const },
     { path: 'items', label: '장비/보석 수집', color: 'blue' as const },
     { path: 'materials', label: '잡화/소모품/재료 수집', color: 'blue' as const },
     { path: 'mercenaries', label: '용병 수집', color: 'blue' as const },
+    { path: 'exclusive-equipment', label: '전용장비 수집', color: 'blue' as const },
     { path: 'sets', label: '장비 세트 수집', color: 'blue' as const },
+    { path: 'rituals', label: '주술 수집', color: 'blue' as const },
+    { path: 'monsters', label: '몬스터 수집', color: 'blue' as const },
     { path: 'price', label: '가격 데이터 수집', color: 'green' as const },
   ];
 
@@ -261,6 +382,7 @@ function CrawlerTab({ notify }: { notify: (m: string) => void }) {
     <Section title="크롤링 Job 수동 트리거">
       <p className="text-xs text-gray-400 mb-3">
         배치 Job을 즉시 실행합니다. Job이 시작되면 백그라운드에서 실행되며 결과는 서버 로그에서 확인할 수 있습니다.
+        전용장비 수집은 앱 시더·용병 수집 이후 실행하는 것을 권장합니다.
       </p>
       <div className="flex flex-wrap gap-3">
         {jobs.map((j) => (
@@ -558,9 +680,38 @@ interface ItemDetail {
     hasSlotOption: boolean;
     equipSlot?: string | null;
   };
-  stats: { id?: number; statType: string; element?: string | null; value: number }[];
-  skills: string[];
+  stats: { id?: number; statType: string; element?: string | null; value: number; scope?: string | null }[];
+  skills: { id: number | null; skillName: string; effects: { statKey: string; statValue: number; valueType?: string }[] }[];
 }
+
+interface ItemSkillRow {
+  id: number | null;
+  skillName: string;
+  effects: { statKey: string; statValue: string; valueType: string }[];
+}
+
+interface CleanupCandidate {
+  id: number;
+  name: string;
+  type: string;
+  slot?: string | null;
+  setName?: string | null;
+  statCount: number;
+  matchedCriteria: string[];
+}
+
+const CLEANUP_CRITERIA = [
+  { id: 'UNSUPPORTED_SLOT', label: '미지원 부위(보주/날개/칭호)' },
+  { id: 'NO_EQUIP_SLOT', label: '덱 착용 슬롯 없음(반지 제외)' },
+  { id: 'NON_TRADEABLE_SET', label: '비거래 세트 소속' },
+  { id: 'NOT_SET_PIECE', label: '세트 피스 미등록' },
+  { id: 'NO_STATS', label: '스탯 없음' },
+  { id: 'UNREFERENCED', label: '미참조(거래/덱/시세 없음)' },
+] as const;
+
+const CLEANUP_CRITERIA_LABEL: Record<string, string> = Object.fromEntries(
+  CLEANUP_CRITERIA.map((c) => [c.id, c.label]),
+);
 
 function ItemsTab({ notify }: { notify: (m: string) => void }) {
   const [items, setItems] = useState<ItemRow[]>([]);
@@ -571,7 +722,7 @@ function ItemsTab({ notify }: { notify: (m: string) => void }) {
   const [selected, setSelected] = useState<ItemDetail | null>(null);
   const [editInfo, setEditInfo] = useState({ name: '', type: '', tradeCategory: '' });
   const [itemStats, setItemStats] = useState<EditableStat[]>([]);
-  const [itemSkills, setItemSkills] = useState<string[]>([]);
+  const [itemSkills, setItemSkills] = useState<ItemSkillRow[]>([]);
   const [eqDetail, setEqDetail] = useState<EditableEquipmentDetail>({
     slot: '',
     equipmentKind: '',
@@ -580,6 +731,14 @@ function ItemsTab({ notify }: { notify: (m: string) => void }) {
     hasSlotOption: false,
     equipSlot: '',
   });
+  const [cleanupCriteria, setCleanupCriteria] = useState<string[]>([
+    'UNSUPPORTED_SLOT',
+    'NO_EQUIP_SLOT',
+    'UNREFERENCED',
+  ]);
+  const [cleanupCandidates, setCleanupCandidates] = useState<CleanupCandidate[]>([]);
+  const [cleanupSelectedIds, setCleanupSelectedIds] = useState<Set<number>>(new Set());
+  const [cleanupScanning, setCleanupScanning] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -606,8 +765,13 @@ function ItemsTab({ notify }: { notify: (m: string) => void }) {
         statType: stat.statType,
         element: stat.element ?? '',
         value: toText(stat.value),
+        scope: stat.scope ?? 'SELF',
       })));
-      setItemSkills(data.skills ?? []);
+      setItemSkills((data.skills ?? []).map(s => ({
+        id: s.id,
+        skillName: s.skillName,
+        effects: (s.effects ?? []).map(e => ({ statKey: e.statKey, statValue: String(e.statValue), valueType: e.valueType ?? 'FLAT' })),
+      })));
       const equipment = data.equipmentDetail ?? data.equipment;
       setEqDetail({
         slot: equipment?.slot ?? '',
@@ -643,6 +807,7 @@ function ItemsTab({ notify }: { notify: (m: string) => void }) {
           statType: stat.statType.trim(),
           element: stat.element?.trim() || null,
           value: Number(stat.value),
+          scope: stat.scope?.trim() || 'SELF',
         }));
       await req(`/admin/items/${selected.id}/stats`, { method: 'PUT', body: JSON.stringify({ stats }) });
       notify('✅ 스탯 저장 완료');
@@ -652,9 +817,24 @@ function ItemsTab({ notify }: { notify: (m: string) => void }) {
   async function saveSkills() {
     if (!selected) return;
     try {
-      const skills = itemSkills.map((skill) => skill.trim()).filter(Boolean);
+      const skills = itemSkills.map(s => s.skillName.trim()).filter(Boolean);
       await req(`/admin/items/${selected.id}/skills`, { method: 'PUT', body: JSON.stringify({ skills }) });
-      notify('✅ 스킬 저장 완료');
+      notify('✅ 스킬 저장 (효과는 초기화됨)');
+      await selectItem(selected.id);
+    } catch (e: unknown) { notify(`오류 - ${(e as Error).message}`); }
+  }
+
+  async function saveItemSkillEffects(skillId: number, effects: { statKey: string; statValue: string; valueType: string }[]) {
+    if (!selected) return;
+    try {
+      const body = {
+        effects: effects
+          .filter(e => e.statKey)
+          .map(e => ({ statKey: e.statKey, statValue: Number(e.statValue), valueType: e.valueType || 'FLAT' })),
+      };
+      await req(`/admin/items/${selected.id}/skills/${skillId}/effects`, { method: 'PUT', body: JSON.stringify(body) });
+      notify('✅ 스킬 효과 저장');
+      await selectItem(selected.id);
     } catch (e: unknown) { notify(`오류 - ${(e as Error).message}`); }
   }
 
@@ -691,7 +871,162 @@ function ItemsTab({ notify }: { notify: (m: string) => void }) {
     }
   }
 
+  function toggleCleanupCriterion(id: string) {
+    setCleanupCriteria((prev) =>
+      prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id],
+    );
+  }
+
+  async function scanCleanupCandidates() {
+    setCleanupScanning(true);
+    try {
+      const sp = new URLSearchParams();
+      cleanupCriteria.forEach((c) => sp.append('criteria', c));
+      const data = await req<CleanupCandidate[]>(`/admin/items/cleanup-candidates?${sp}`);
+      setCleanupCandidates(data);
+      setCleanupSelectedIds(new Set(data.map((c) => c.id)));
+      notify(`✅ 정리 후보 ${data.length}건 조회`);
+    } catch (e: unknown) {
+      notify(`오류 - 정리 후보 조회: ${(e as Error).message}`);
+    } finally {
+      setCleanupScanning(false);
+    }
+  }
+
+  function toggleCleanupRow(id: number) {
+    setCleanupSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleCleanupSelectAll(checked: boolean) {
+    setCleanupSelectedIds(checked ? new Set(cleanupCandidates.map((c) => c.id)) : new Set());
+  }
+
+  async function bulkDeleteCleanupSelected() {
+    const ids = Array.from(cleanupSelectedIds);
+    if (ids.length === 0) {
+      notify('삭제할 항목을 선택하세요');
+      return;
+    }
+    const ok = window.confirm(
+      `선택한 ${ids.length}개 아이템을 DB에서 삭제할까요?\n거래/덱 등에서 참조 중인 항목은 건너뜁니다.`,
+    );
+    if (!ok) return;
+
+    try {
+      const res = await req<{ deletedCount: number; deletedIds: number[]; failed: { itemId: number; reason: string }[] }>(
+        '/admin/items/bulk-delete',
+        { method: 'POST', body: JSON.stringify({ itemIds: ids }) },
+      );
+      const failMsg = res.failed.length > 0
+        ? ` / 실패 ${res.failed.length}건`
+        : '';
+      notify(`✅ 삭제 완료 ${res.deletedCount}건${failMsg}`);
+      setCleanupCandidates((prev) => prev.filter((c) => !res.deletedIds.includes(c.id)));
+      setCleanupSelectedIds((prev) => {
+        const next = new Set(prev);
+        res.deletedIds.forEach((id) => next.delete(id));
+        return next;
+      });
+      if (selected && res.deletedIds.includes(selected.id)) {
+        setSelected(null);
+        setItemStats([]);
+        setItemSkills([]);
+      }
+      await load();
+    } catch (e: unknown) {
+      notify(`오류 - 일괄 삭제: ${(e as Error).message}`);
+    }
+  }
+
   return (
+    <div>
+    <Section title="크롤링 정리 — 불필요 아이템 검색·삭제">
+      <p className="text-xs text-gray-400 mb-3">
+        선택한 기준 중 하나라도 해당하면 후보에 표시됩니다. 삭제 전 목록을 반드시 확인하세요.
+      </p>
+      <div className="flex flex-wrap gap-3 mb-3">
+        {CLEANUP_CRITERIA.map((c) => (
+          <label key={c.id} className="flex items-center gap-1.5 text-sm">
+            <input
+              type="checkbox"
+              checked={cleanupCriteria.includes(c.id)}
+              onChange={() => toggleCleanupCriterion(c.id)}
+            />
+            {c.label}
+          </label>
+        ))}
+      </div>
+      <div className="flex gap-2 mb-3">
+        <Btn color="blue" onClick={scanCleanupCandidates} disabled={cleanupScanning || cleanupCriteria.length === 0}>
+          {cleanupScanning ? '검색 중…' : '후보 검색'}
+        </Btn>
+        <Btn
+          color="red"
+          onClick={bulkDeleteCleanupSelected}
+          disabled={cleanupSelectedIds.size === 0}
+        >
+          선택 삭제 ({cleanupSelectedIds.size})
+        </Btn>
+      </div>
+      {cleanupCandidates.length > 0 && (
+        <div className="overflow-x-auto max-h-64 overflow-y-auto border border-gray-700 rounded">
+          <table className="w-full text-sm">
+            <thead className="text-gray-400 border-b border-gray-700 sticky top-0 bg-gray-800">
+              <tr>
+                <th className="py-1 px-2 text-left w-8">
+                  <input
+                    type="checkbox"
+                    checked={cleanupSelectedIds.size === cleanupCandidates.length && cleanupCandidates.length > 0}
+                    onChange={(e) => toggleCleanupSelectAll(e.target.checked)}
+                  />
+                </th>
+                <th className="py-1 px-2 text-left">이름</th>
+                <th className="py-1 px-2 text-left">타입</th>
+                <th className="py-1 px-2 text-left">슬롯</th>
+                <th className="py-1 px-2 text-left">세트</th>
+                <th className="py-1 px-2 text-left">스탯</th>
+                <th className="py-1 px-2 text-left">해당 기준</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cleanupCandidates.map((c) => (
+                <tr key={c.id} className="border-b border-gray-700 hover:bg-gray-700/50">
+                  <td className="py-1 px-2">
+                    <input
+                      type="checkbox"
+                      checked={cleanupSelectedIds.has(c.id)}
+                      onChange={() => toggleCleanupRow(c.id)}
+                    />
+                  </td>
+                  <td className="py-1 px-2">
+                    <button
+                      type="button"
+                      className="text-left hover:text-yellow-300"
+                      onClick={() => selectItem(c.id)}
+                    >
+                      {c.name}
+                    </button>
+                  </td>
+                  <td className="py-1 px-2 text-gray-400">{c.type}</td>
+                  <td className="py-1 px-2 text-gray-400">{c.slot ?? '-'}</td>
+                  <td className="py-1 px-2 text-gray-400">{c.setName ?? '-'}</td>
+                  <td className="py-1 px-2 text-gray-400">{c.statCount}</td>
+                  <td className="py-1 px-2 text-xs text-orange-300">
+                    {c.matchedCriteria.map((k) => CLEANUP_CRITERIA_LABEL[k] ?? k).join(', ')}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Section>
+
     <div className="flex gap-4">
       {/* 목록 */}
       <div className="w-72 shrink-0">
@@ -804,21 +1139,31 @@ function ItemsTab({ notify }: { notify: (m: string) => void }) {
                       <th className="text-left py-1 pr-2">스탯 타입</th>
                       <th className="text-left py-1 pr-2">속성</th>
                       <th className="text-left py-1 pr-2">값</th>
+                      <th className="text-left py-1 pr-2">적용 범위</th>
                       <th className="text-left py-1">액션</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {itemStats.length === 0 && <EmptyRows colSpan={4} label="스탯 없음" />}
+                    {itemStats.length === 0 && <EmptyRows colSpan={5} label="스탯 없음" />}
                     {itemStats.map((stat, idx) => (
                       <tr key={stat.id ?? idx} className="border-b border-gray-700">
                         <td className="py-1 pr-2">
                           <StatTypeSelect value={stat.statType} onChange={(v) => setItemStats(rows => rows.map((row, i) => i === idx ? { ...row, statType: v } : row))} />
                         </td>
                         <td className="py-1 pr-2">
-                          <SmallInput value={stat.element ?? ''} onChange={(v) => setItemStats(rows => rows.map((row, i) => i === idx ? { ...row, element: v } : row))} placeholder="없으면 공백" />
+                          <ElementSelect
+                            value={stat.element ?? ''}
+                            onChange={(v) => setItemStats(rows => rows.map((row, i) => i === idx ? { ...row, element: v } : row))}
+                          />
                         </td>
                         <td className="py-1 pr-2 w-28">
                           <SmallInput value={stat.value} onChange={(v) => setItemStats(rows => rows.map((row, i) => i === idx ? { ...row, value: v } : row))} type="number" />
+                        </td>
+                        <td className="py-1 pr-2">
+                          <BuffScopeSelect
+                            value={stat.scope ?? 'SELF'}
+                            onChange={(v) => setItemStats(rows => rows.map((row, i) => i === idx ? { ...row, scope: v } : row))}
+                          />
                         </td>
                         <td className="py-1">
                           <Btn color="red" onClick={() => setItemStats(rows => rows.filter((_, i) => i !== idx))}>삭제</Btn>
@@ -829,43 +1174,77 @@ function ItemsTab({ notify }: { notify: (m: string) => void }) {
                 </table>
               </div>
               <div className="flex gap-2">
-                <Btn color="green" onClick={() => setItemStats(rows => [...rows, { statType: '', element: '', value: '' }])}>행 추가</Btn>
+                <Btn color="green" onClick={() => setItemStats(rows => [...rows, { statType: '', element: '', value: '', scope: 'SELF' }])}>행 추가</Btn>
                 <Btn color="yellow" onClick={saveStats}>저장 (전체 교체)</Btn>
               </div>
             </Section>
 
             <Section title="스킬">
-              <div className="overflow-x-auto mb-3">
-                <table className="w-full text-sm">
-                  <thead className="text-gray-400 border-b border-gray-700">
-                    <tr>
-                      <th className="text-left py-1 pr-2">스킬명</th>
-                      <th className="text-left py-1">액션</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {itemSkills.length === 0 && <EmptyRows colSpan={2} label="스킬 없음" />}
-                    {itemSkills.map((skill, idx) => (
-                      <tr key={idx} className="border-b border-gray-700">
-                        <td className="py-1 pr-2">
-                          <SmallInput value={skill} onChange={(v) => setItemSkills(rows => rows.map((row, i) => i === idx ? v : row))} placeholder="스킬명" />
-                        </td>
-                        <td className="py-1 w-20">
-                          <Btn color="red" onClick={() => setItemSkills(rows => rows.filter((_, i) => i !== idx))}>삭제</Btn>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="space-y-2 mb-3">
+                {itemSkills.length === 0 && <p className="text-gray-500 text-sm">스킬 없음</p>}
+                {itemSkills.map((skill, idx) => (
+                  <div key={skill.id ?? `new-${idx}`} className="border border-gray-700 rounded p-2">
+                    <div className="flex items-center gap-2 mb-2">
+                      <SmallInput
+                        value={skill.skillName}
+                        onChange={(v) => setItemSkills(rows => rows.map((r, i) => i === idx ? { ...r, skillName: v } : r))}
+                        placeholder="스킬명"
+                      />
+                      <Btn color="red" onClick={() => setItemSkills(rows => rows.filter((_, i) => i !== idx))}>삭제</Btn>
+                    </div>
+                    {skill.id != null && (
+                      <div className="ml-2 border-l border-gray-600 pl-2">
+                        <p className="text-xs text-gray-400 mb-1">스킬 효과 (저항깎·속성깎)</p>
+                        {skill.effects.map((eff, ei) => (
+                          <div key={ei} className="flex items-center gap-1 mb-1">
+                            <StatTypeSelect
+                              value={eff.statKey}
+                              onChange={(v) => setItemSkills(rows => rows.map((r, i) =>
+                                i === idx ? { ...r, effects: r.effects.map((e, j) => j === ei ? { ...e, statKey: v } : e) } : r
+                              ))}
+                            />
+                            <SmallInput
+                              value={eff.statValue}
+                              onChange={(v) => setItemSkills(rows => rows.map((r, i) =>
+                                i === idx ? { ...r, effects: r.effects.map((e, j) => j === ei ? { ...e, statValue: v } : e) } : r
+                              ))}
+                              type="number"
+                              placeholder="수치"
+                              className="w-24"
+                            />
+                            <div className="w-28 shrink-0">
+                              <ValueTypeSelect
+                                value={eff.valueType}
+                                onChange={(v) => setItemSkills(rows => rows.map((r, i) =>
+                                  i === idx ? { ...r, effects: r.effects.map((e, j) => j === ei ? { ...e, valueType: v } : e) } : r
+                                ))}
+                              />
+                            </div>
+                            <Btn color="red" onClick={() => setItemSkills(rows => rows.map((r, i) =>
+                              i === idx ? { ...r, effects: r.effects.filter((_, j) => j !== ei) } : r
+                            ))}>삭제</Btn>
+                          </div>
+                        ))}
+                        <div className="flex gap-2 mt-1">
+                          <Btn color="gray" onClick={() => setItemSkills(rows => rows.map((r, i) =>
+                            i === idx ? { ...r, effects: [...r.effects, { statKey: '', statValue: '', valueType: 'FLAT' }] } : r
+                          ))}>효과 추가</Btn>
+                          <Btn color="blue" onClick={() => saveItemSkillEffects(skill.id!, skill.effects)}>효과 저장</Btn>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
               <div className="flex gap-2">
-                <Btn color="green" onClick={() => setItemSkills(rows => [...rows, ''])}>행 추가</Btn>
+                <Btn color="green" onClick={() => setItemSkills(rows => [...rows, { id: null, skillName: '', effects: [] }])}>스킬 추가</Btn>
                 <Btn color="yellow" onClick={saveSkills}>저장 (전체 교체)</Btn>
               </div>
             </Section>
           </div>
         )}
       </div>
+    </div>
     </div>
   );
 }
@@ -889,16 +1268,20 @@ interface CharRow {
   levels: { id?: number; label: string; level: number; amount: string; statType?: string | null }[];
 }
 
+interface SkillEffect { statKey: string; statValue: string; valueType: string; }
+interface MercSkillRow { id: number | null; skillName: string; effects: SkillEffect[]; }
+
 function MercenariesTab({ notify }: { notify: (m: string) => void }) {
   const [mercs, setMercs] = useState<MercenaryRow[]>([]);
   const [filterNature, setFilterNature] = useState('');
   const [filterNation, setFilterNation] = useState('');
+  const [filterName, setFilterName] = useState('');
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [chars, setChars] = useState<CharRow[]>([]);
   const [mercStats, setMercStats] = useState<EditableStat[]>([]);
-  const [mercSkills, setMercSkills] = useState<string[]>([]);
+  const [mercSkills, setMercSkills] = useState<MercSkillRow[]>([]);
   const [bulkIds, setBulkIds] = useState('');
   const [bulkNature, setBulkNature] = useState('');
   const [bulkNation, setBulkNation] = useState('');
@@ -911,13 +1294,14 @@ function MercenariesTab({ notify }: { notify: (m: string) => void }) {
       const sp = new URLSearchParams({ page: String(page), size: '30', sort: 'name,asc' });
       if (filterNature) sp.set('nature', filterNature);
       if (filterNation) sp.set('nation', filterNation);
+      if (filterName.trim()) sp.set('name', filterName.trim());
       const data = await req<PageResponse<MercenaryRow>>(`/admin/mercenaries?${sp}`);
       setMercs(data.content);
       setTotal(data.totalElements);
     } catch (e: unknown) {
       notify(`오류 - 용병 목록: ${(e as Error).message}`);
     }
-  }, [page, filterNature, filterNation, notify]);
+  }, [page, filterNature, filterNation, filterName, notify]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -925,7 +1309,7 @@ function MercenariesTab({ notify }: { notify: (m: string) => void }) {
     setSelectedId(id);
     try {
       const [detail, charList] = await Promise.all([
-        req<{ stats: { id?: number; statType: string; value: number }[]; skills: string[] }>(`/admin/mercenaries/${id}`),
+        req<{ stats: { id?: number; statType: string; value: number }[]; skills: { id: number; skillName: string; effects: { statKey: string; statValue: number; valueType?: string }[] }[] }>(`/admin/mercenaries/${id}`),
         req<CharRow[]>(`/admin/mercenaries/${id}/characteristics`),
       ]);
       setMercStats((detail.stats ?? []).map((stat) => ({
@@ -933,7 +1317,11 @@ function MercenariesTab({ notify }: { notify: (m: string) => void }) {
         statType: stat.statType,
         value: toText(stat.value),
       })));
-      setMercSkills(detail.skills ?? []);
+      setMercSkills((detail.skills ?? []).map(s => ({
+        id: s.id,
+        skillName: s.skillName,
+        effects: (s.effects ?? []).map(e => ({ statKey: e.statKey, statValue: String(e.statValue), valueType: e.valueType ?? 'FLAT' })),
+      })));
       setChars(charList);
       const lvMap: Record<number, EditableLevel[]> = {};
       charList.forEach((c) => {
@@ -965,9 +1353,20 @@ function MercenariesTab({ notify }: { notify: (m: string) => void }) {
   async function saveSkills() {
     if (!selectedId) return;
     try {
-      const skills = mercSkills.map((skill) => skill.trim()).filter(Boolean);
+      const skills = mercSkills.map(s => s.skillName.trim()).filter(Boolean);
       await req(`/admin/mercenaries/${selectedId}/skills`, { method: 'PUT', body: JSON.stringify({ skills }) });
-      notify('✅ 용병 스킬 저장');
+      notify('✅ 용병 스킬 저장 (효과는 초기화됨 — 스킬별 효과를 다시 저장하세요)');
+      await selectMerc(selectedId);
+    } catch (e: unknown) { notify(`오류 - ${(e as Error).message}`); }
+  }
+
+  async function saveSkillEffects(skillId: number, effects: SkillEffect[]) {
+    if (!selectedId) return;
+    try {
+      const body = { effects: effects.filter(e => e.statKey).map(e => ({ statKey: e.statKey, statValue: Number(e.statValue), valueType: e.valueType || 'FLAT' })) };
+      await req(`/admin/mercenaries/${selectedId}/skills/${skillId}/effects`, { method: 'PUT', body: JSON.stringify(body) });
+      notify('✅ 스킬 효과 저장');
+      await selectMerc(selectedId);
     } catch (e: unknown) { notify(`오류 - ${(e as Error).message}`); }
   }
 
@@ -1081,6 +1480,13 @@ function MercenariesTab({ notify }: { notify: (m: string) => void }) {
         {/* 목록 */}
         <div className="w-64 shrink-0">
           <Section title="용병 목록">
+            <input
+              value={filterName}
+              onChange={(e) => { setFilterName(e.target.value); setPage(0); }}
+              onKeyDown={(e) => e.key === 'Enter' && load()}
+              placeholder="이름 검색"
+              className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs mb-2"
+            />
             <div className="flex gap-1 mb-2">
               <select value={filterNature} onChange={(e) => { setFilterNature(e.target.value); setPage(0); }}
                 className="bg-gray-700 border border-gray-600 rounded px-1 py-1 text-xs flex-1">
@@ -1176,7 +1582,7 @@ function MercenariesTab({ notify }: { notify: (m: string) => void }) {
                       {mercSkills.map((skill, idx) => (
                         <tr key={idx} className="border-b border-gray-700">
                           <td className="py-1 pr-2">
-                            <SmallInput value={skill} onChange={(v) => setMercSkills(rows => rows.map((row, i) => i === idx ? v : row))} placeholder="스킬명" />
+                            <SmallInput value={skill.skillName} onChange={(v) => setMercSkills(rows => rows.map((row, i) => i === idx ? { ...row, skillName: v } : row))} placeholder="스킬명" />
                           </td>
                           <td className="py-1 w-20">
                             <Btn color="red" onClick={() => setMercSkills(rows => rows.filter((_, i) => i !== idx))}>삭제</Btn>
@@ -1186,10 +1592,55 @@ function MercenariesTab({ notify }: { notify: (m: string) => void }) {
                     </tbody>
                   </table>
                 </div>
-                <div className="flex gap-2">
-                  <Btn color="green" onClick={() => setMercSkills(rows => [...rows, ''])}>행 추가</Btn>
+                <div className="flex gap-2 mb-4">
+                  <Btn color="green" onClick={() => setMercSkills(rows => [...rows, { id: null, skillName: '', effects: [] }])}>행 추가</Btn>
                   <Btn color="yellow" onClick={saveSkills}>저장 (전체 교체)</Btn>
                 </div>
+
+                {/* 스킬별 효과 편집 — 저장 후 ID가 생긴 스킬만 표시 */}
+                {mercSkills.some(s => s.id !== null) && (
+                  <div className="space-y-3">
+                    <p className="text-xs text-gray-400">스킬 효과 (저항깎·속성깎 등 상대에게 적용되는 디버프)</p>
+                    {mercSkills.filter(s => s.id !== null).map((skill) => (
+                      <div key={skill.id} className="rounded border border-gray-700 p-2">
+                        <p className="text-sm font-medium text-yellow-300 mb-2">{skill.skillName}</p>
+                        <table className="w-full text-sm mb-2">
+                          <thead className="text-gray-400 border-b border-gray-700">
+                            <tr>
+                              <th className="text-left py-1 pr-2">효과 종류</th>
+                              <th className="text-left py-1 pr-2">수치</th>
+                              <th className="text-left py-1 pr-2">수치 타입</th>
+                              <th className="text-left py-1">액션</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {skill.effects.length === 0 && <EmptyRows colSpan={4} label="효과 없음" />}
+                            {skill.effects.map((effect, eIdx) => (
+                              <tr key={eIdx} className="border-b border-gray-700">
+                                <td className="py-1 pr-2">
+                                  <StatTypeSelect value={effect.statKey} onChange={(v) => setMercSkills(rows => rows.map(r => r.id !== skill.id ? r : { ...r, effects: r.effects.map((e, i) => i === eIdx ? { ...e, statKey: v } : e) }))} />
+                                </td>
+                                <td className="py-1 pr-2 w-28">
+                                  <SmallInput type="number" value={effect.statValue} onChange={(v) => setMercSkills(rows => rows.map(r => r.id !== skill.id ? r : { ...r, effects: r.effects.map((e, i) => i === eIdx ? { ...e, statValue: v } : e) }))} placeholder="수치" />
+                                </td>
+                                <td className="py-1 pr-2 w-32">
+                                  <ValueTypeSelect value={effect.valueType} onChange={(v) => setMercSkills(rows => rows.map(r => r.id !== skill.id ? r : { ...r, effects: r.effects.map((e, i) => i === eIdx ? { ...e, valueType: v } : e) }))} />
+                                </td>
+                                <td className="py-1 w-20">
+                                  <Btn color="red" onClick={() => setMercSkills(rows => rows.map(r => r.id !== skill.id ? r : { ...r, effects: r.effects.filter((_, i) => i !== eIdx) }))}>삭제</Btn>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        <div className="flex gap-2">
+                          <Btn color="green" onClick={() => setMercSkills(rows => rows.map(r => r.id !== skill.id ? r : { ...r, effects: [...r.effects, { statKey: '', statValue: '', valueType: 'FLAT' }] }))}>행 추가</Btn>
+                          <Btn color="yellow" onClick={() => saveSkillEffects(skill.id!, skill.effects)}>효과 저장</Btn>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </Section>
 
               <Section title="특성 관리">

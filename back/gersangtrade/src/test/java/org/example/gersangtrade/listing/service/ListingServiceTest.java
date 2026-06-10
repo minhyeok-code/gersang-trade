@@ -73,6 +73,8 @@ class ListingServiceTest {
     private EquipmentItemRepository equipmentItemRepository;
     @Mock
     private RitualApplicabilityRepository ritualApplicabilityRepository;
+    @Mock
+    private ListingBundleTitleService listingBundleTitleService;
 
     @InjectMocks
     private ListingService listingService;
@@ -482,8 +484,11 @@ class ListingServiceTest {
         when(bundle.getBundleType()).thenReturn(BundleType.MATERIAL_BUNDLE);
         when(bundle.getTitleOverride()).thenReturn(null);
 
+        when(bundle.getId()).thenReturn(10L);
         when(listingQueryRepository.search(cond)).thenReturn(List.of(listing));
         when(listingBundleRepository.findByListingIdIn(List.of(1L))).thenReturn(List.of(bundle));
+        when(bundleLineRepository.findByBundleIdIn(List.of(10L))).thenReturn(List.of());
+        when(listingBundleTitleService.buildSummaries(anyList(), anyMap())).thenReturn(List.of());
 
         // 실행
         List<ListingSummaryResponse> result = listingService.getListings(cond);
@@ -548,6 +553,7 @@ class ListingServiceTest {
                 .thenReturn(Collections.emptyList());
         when(bundleEquipmentRitualRepository.findWithRitualByBundleLineIdIn(List.of(100L)))
                 .thenReturn(Collections.emptyList());
+        when(listingBundleTitleService.resolveDetailTitle(any(), anyList())).thenReturn("강화석");
 
         // 실행
         ListingDetailResponse result = listingService.getDetail(1L);

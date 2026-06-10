@@ -12,6 +12,10 @@ import org.example.gersangtrade.user.dto.request.UserServerUpdateRequest;
 import org.example.gersangtrade.user.dto.response.ClearTimeResponse;
 import org.example.gersangtrade.user.dto.response.PublicUserProfileResponse;
 import org.example.gersangtrade.user.dto.response.UserProfileResponse;
+import org.example.gersangtrade.hunt.dto.response.HuntHubStatusResponse;
+import org.example.gersangtrade.hunt.dto.response.MyClearTimeResponse;
+import org.example.gersangtrade.hunt.service.ClearTimeService;
+import org.example.gersangtrade.hunt.service.HuntHubService;
 import org.example.gersangtrade.user.service.UserService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -40,6 +44,8 @@ import java.util.List;
 public class UserController {
 
     private final UserService userService;
+    private final ClearTimeService clearTimeService;
+    private final HuntHubService huntHubService;
     private final TradeReviewService tradeReviewService;
 
     /**
@@ -139,7 +145,23 @@ public class UserController {
     public ResponseEntity<ClearTimeResponse> saveClearTime(
             @AuthenticationPrincipal Long userId,
             @RequestBody @Valid ClearTimeRequest request) {
-        return ResponseEntity.ok(userService.saveClearTime(userId, request));
+        return ResponseEntity.ok(clearTimeService.saveClearTime(userId, request));
+    }
+
+    /** 내 클리어타임 기록 목록 (최신순) */
+    @GetMapping("/me/clear-times")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<List<MyClearTimeResponse>> getMyClearTimes(
+            @AuthenticationPrincipal Long userId) {
+        return ResponseEntity.ok(huntHubService.getMyClearTimes(userId));
+    }
+
+    /** 사냥 허브 해금 상태 (distinct 몬스터 수 / 필요 수) */
+    @GetMapping("/me/hunt-hub-status")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<HuntHubStatusResponse> getHuntHubStatus(
+            @AuthenticationPrincipal Long userId) {
+        return ResponseEntity.ok(huntHubService.getHubStatus(userId));
     }
 
     /**

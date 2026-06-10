@@ -9,6 +9,7 @@ import org.example.gersangtrade.domain.wanted.enums.WantedStatus;
  * @param server   서버 필터 (null이면 전체)
  * @param status   상태 필터 (null이면 서비스에서 OPEN 기본 적용)
  * @param keyword  아이템명 키워드 검색 (null이면 전체)
+ * @param itemId   아이템 ID 필터 (null이면 전체) — price-watch 집계에 사용
  * @param page     페이지 번호 (0부터 시작, 기본 0)
  * @param size     페이지당 결과 수 (기본 20, 최대 50)
  */
@@ -16,6 +17,7 @@ public record WantedSearchCondition(
         String server,
         WantedStatus status,
         String keyword,
+        Long itemId,
         Integer page,
         Integer size
 ) {

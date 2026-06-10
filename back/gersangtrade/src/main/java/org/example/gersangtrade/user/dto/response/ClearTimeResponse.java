@@ -6,21 +6,18 @@ import java.time.LocalDateTime;
 
 /**
  * 클리어타임 저장 응답 DTO.
- *
- * @param id                저장된 클리어타임 ID
- * @param monsterId         몬스터 ID
- * @param monsterName       몬스터명
- * @param deckId            사용한 덱 ID (null: 미지정)
- * @param clearTimeSeconds  클리어 소요 시간 (초)
- * @param expEarned         지급된 EXP
- * @param recordedAt        기록 일시
  */
 public record ClearTimeResponse(
         Long id,
         Long monsterId,
         String monsterName,
         Long deckId,
+        Long deckSnapshotId,
         Integer clearTimeSeconds,
+        long rawDps,
+        long adjustDps,
+        long finalDps,
+        boolean isPublic,
         long expEarned,
         LocalDateTime recordedAt
 ) {
@@ -30,7 +27,12 @@ public record ClearTimeResponse(
                 clearTime.getMonster().getId(),
                 clearTime.getMonster().getName(),
                 clearTime.getDeckId(),
+                clearTime.getDeckSnapshot().getId(),
                 clearTime.getClearTimeSeconds(),
+                clearTime.getRawDps() != null ? clearTime.getRawDps() : 0L,
+                clearTime.getAdjustDps() != null ? clearTime.getAdjustDps() : 0L,
+                clearTime.getFinalDps(),
+                clearTime.isPublic(),
                 expEarned,
                 clearTime.getRecordedAt()
         );

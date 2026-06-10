@@ -38,7 +38,7 @@ public record ListingSummaryResponse(
      * 번들 요약 정보.
      *
      * @param bundleType    번들 유형
-     * @param displayTitle  표시 제목 (titleOverride가 있으면 우선, 없으면 시스템 자동 제목)
+     * @param displayTitle  표시 제목 (EQUIPMENT_SET은 라인·주술 기반 재계산, 그 외는 titleOverride 또는 아이템명)
      */
     public record BundleSummary(
             BundleType bundleType,
@@ -59,8 +59,7 @@ public record ListingSummaryResponse(
         }
     }
 
-    public static ListingSummaryResponse from(TradeListing listing, List<ListingBundle> bundles,
-                                              Map<Long, List<BundleLine>> linesByBundleId) {
+    public static ListingSummaryResponse from(TradeListing listing, List<BundleSummary> bundleSummaries) {
         return new ListingSummaryResponse(
                 listing.getId(),
                 listing.getSeller().getId(),
@@ -70,9 +69,7 @@ public record ListingSummaryResponse(
                 listing.getServer(),
                 listing.getStatus(),
                 listing.getPrice(),
-                bundles.stream()
-                        .map(b -> BundleSummary.from(b, linesByBundleId.getOrDefault(b.getId(), List.of())))
-                        .toList(),
+                bundleSummaries,
                 listing.getCreatedAt()
         );
     }

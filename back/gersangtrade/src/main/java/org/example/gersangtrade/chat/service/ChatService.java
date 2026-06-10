@@ -28,11 +28,23 @@ import org.example.gersangtrade.domain.user.UserRepository;
 import org.example.gersangtrade.domain.user.enums.UserStatus;
 import org.example.gersangtrade.domain.wanted.WantedListing;
 import org.example.gersangtrade.domain.wanted.enums.WantedStatus;
+import org.example.gersangtrade.catalog.repository.EquipmentItemRepository;
+import org.example.gersangtrade.domain.catalog.EquipmentItem;
+import org.example.gersangtrade.domain.listing.BundleEquipmentDetail;
+import org.example.gersangtrade.domain.listing.BundleEquipmentRitual;
+import org.example.gersangtrade.domain.listing.enums.BundleType;
+import org.example.gersangtrade.domain.user.enums.SetComposition;
+import org.example.gersangtrade.listing.repository.BundleEquipmentDetailRepository;
+import org.example.gersangtrade.listing.repository.BundleEquipmentRitualRepository;
 import org.example.gersangtrade.listing.repository.BundleLineRepository;
 import org.example.gersangtrade.listing.repository.ListingBundleRepository;
 import org.example.gersangtrade.listing.repository.TradeListingRepository;
+import org.example.gersangtrade.listing.service.SetTitleGenerator;
+import org.example.gersangtrade.watchlist.service.WatchKeyBuilder;
 import org.example.gersangtrade.notification.service.NotificationService;
 import org.example.gersangtrade.report.service.KeywordDetectionService;
+import org.example.gersangtrade.catalog.repository.ServerRepository;
+import org.example.gersangtrade.domain.catalog.Server;
 import org.example.gersangtrade.trade.repository.TradeConfirmedRepository;
 import org.example.gersangtrade.trade.repository.TradeReviewRepository;
 import org.example.gersangtrade.trade.service.TradeStatService;
@@ -70,10 +82,14 @@ public class ChatService {
     private final WantedListingRepository wantedListingRepository;
     private final ListingBundleRepository listingBundleRepository;
     private final BundleLineRepository bundleLineRepository;
+    private final BundleEquipmentDetailRepository bundleEquipmentDetailRepository;
+    private final BundleEquipmentRitualRepository bundleEquipmentRitualRepository;
+    private final EquipmentItemRepository equipmentItemRepository;
     private final WantedItemRepository wantedItemRepository;
     private final TradeConfirmedRepository tradeConfirmedRepository;
     private final TradeReviewRepository tradeReviewRepository;
     private final TradeStatService tradeStatService;
+    private final ServerRepository serverRepository;
     private final NotificationService notificationService;
     private final KeywordDetectionService keywordDetectionService;
     private final SimpMessagingTemplate messagingTemplate;
@@ -373,7 +389,11 @@ public class ChatService {
                 .build();
         tradeConfirmedRepository.saveAndFlush(confirmed);
 
-        tradeStatService.upsertDailyStat(statKeySnapshot, confirmedPrice, 1L, LocalDate.now());
+        // 서버명으로 Server 엔티티 조회 후 일별 통계 upsert (서버 미확인 시 통계 생략)
+        serverRepository.findByName(serverSnapshot).ifPresentOrElse(
+                server -> tradeStatService.upsertDailyStat(statKeySnapshot, confirmedPrice, 1L, LocalDate.now(), server),
+                () -> log.warn("서버명으로 Server 조회 실패 — serverSnapshot={}, statKey={}", serverSnapshot, statKeySnapshot)
+        );
 
         // stat upsert(@Modifying) 이후에도 managed User를 사용하기 위해 재조회
         poster = loadManagedUser(posterId);
@@ -630,35 +650,111 @@ public class ChatService {
 
     /**
      * 거래 통계 집계 키를 결정한다.
-     * 게시물의 첫 번째 아이템 ID를 기준으로 "ITEM:{itemId}" 형식의 키를 반환한다.
+     * EQUIPMENT_SET 번들은 SET:{setId}:COMP:...:RC:...:MARK:... 형식,
+     * 단품/재료는 ITEM:{itemId} 형식을 반환한다.
      * 아이템을 찾을 수 없는 경우 listingType:listingId 형식으로 fallback한다.
      */
     private String resolveStatKey(ChatRoom room) {
         try {
             if (room.getListingType() == ListingType.SELL) {
-                // 판매 등록글: 첫 번째 번들의 첫 번째 라인 아이템 ID
-                List<org.example.gersangtrade.domain.listing.ListingBundle> bundles =
-                        listingBundleRepository.findByListingIdOrderByIdAsc(room.getListingId());
-                if (!bundles.isEmpty()) {
-                    List<org.example.gersangtrade.domain.listing.BundleLine> lines =
-                            bundleLineRepository.findByBundleIdOrderBySortOrderAsc(bundles.get(0).getId());
-                    if (!lines.isEmpty()) {
-                        return "ITEM:" + lines.get(0).getItem().getId();
-                    }
-                }
+                return resolveStatKeySell(room.getListingId());
             } else {
-                // 구매 희망 등록글: 첫 번째 WantedItem의 아이템 ID
-                List<org.example.gersangtrade.domain.wanted.WantedItem> items =
-                        wantedItemRepository.findByWantedListingIdOrderBySortOrderAsc(room.getListingId());
-                if (!items.isEmpty()) {
-                    return "ITEM:" + items.get(0).getItem().getId();
-                }
+                return resolveStatKeyBuy(room.getListingId());
             }
         } catch (Exception ignored) {
             // 아이템 조회 실패 시 fallback
         }
-        // fallback: listingType:listingId
         return room.getListingType().name() + ":" + room.getListingId();
+    }
+
+    private String resolveStatKeySell(Long listingId) {
+        var bundles = listingBundleRepository.findByListingIdOrderByIdAsc(listingId);
+        if (bundles.isEmpty()) return null;
+
+        var firstBundle = bundles.get(0);
+
+        if (firstBundle.getBundleType() == BundleType.EQUIPMENT_SET
+                && firstBundle.getEquipmentSet() != null) {
+            return resolveSetStatKey(firstBundle);
+        }
+
+        // 단품·재료
+        var lines = bundleLineRepository.findByBundleIdOrderBySortOrderAsc(firstBundle.getId());
+        if (lines.isEmpty()) return null;
+        return WatchKeyBuilder.itemKey(lines.get(0).getItem().getId());
+    }
+
+    private String resolveSetStatKey(org.example.gersangtrade.domain.listing.ListingBundle bundle) {
+        Long setId = bundle.getEquipmentSet().getId();
+        var lines = bundleLineRepository.findByBundleIdOrderBySortOrderAsc(bundle.getId());
+        if (lines.isEmpty()) return WatchKeyBuilder.itemKey(setId); // fallback
+
+        var lineIds = lines.stream().map(l -> l.getId()).toList();
+        var detailMap = bundleEquipmentDetailRepository.findWithEquipmentSetByBundleLineIdIn(lineIds)
+                .stream().collect(java.util.stream.Collectors.toMap(BundleEquipmentDetail::getBundleLineId, d -> d));
+        var ritualMap = bundleEquipmentRitualRepository.findWithRitualByBundleLineIdIn(lineIds)
+                .stream().collect(java.util.stream.Collectors.groupingBy(r -> r.getBundleLine().getId()));
+
+        var pieces = lines.stream()
+                .sorted(java.util.Comparator.comparingInt(l -> l.getSortOrder()))
+                .map(line -> {
+                    BundleEquipmentDetail detail = detailMap.get(line.getId());
+                    if (detail == null) return null;
+                    String mark = null;
+                    if (detail.isHasRitual()) {
+                        var rituals = ritualMap.getOrDefault(line.getId(), java.util.List.of());
+                        if (!rituals.isEmpty()) {
+                            BundleEquipmentRitual r = rituals.get(0);
+                            mark = SetTitleGenerator.buildTitleMark(r.getRitual(), r.getOutcome());
+                        }
+                    }
+                    return new SetTitleGenerator.PieceTitleInput(detail.getEquipmentItem().getSlot(), mark);
+                })
+                .filter(java.util.Objects::nonNull)
+                .toList();
+
+        SetTitleGenerator.WatchInfo info = SetTitleGenerator.resolveWatchInfo(pieces);
+        if (info == null) return WatchKeyBuilder.itemKey(setId); // fallback
+        return WatchKeyBuilder.setKey(setId, info.composition(), info.ritualCount(), info.mark());
+    }
+
+    // BUY: 첫 번째 WantedItem이 세트 피스이면 SET watchKey (RC:0:MARK:ANY), 아니면 ITEM watchKey
+    private String resolveStatKeyBuy(Long wantedListingId) {
+        var items = wantedItemRepository.findByWantedListingIdOrderBySortOrderAsc(wantedListingId);
+        if (items.isEmpty()) return null;
+
+        // 모든 WantedItem의 EquipmentItem을 조회해 동일 set 여부 확인
+        var equipmentItems = items.stream()
+                .map(wi -> equipmentItemRepository.findWithItemByItemId(wi.getItem().getId()).orElse(null))
+                .filter(java.util.Objects::nonNull)
+                .toList();
+
+        if (equipmentItems.isEmpty()) {
+            return WatchKeyBuilder.itemKey(items.get(0).getItem().getId());
+        }
+
+        var setIds = equipmentItems.stream()
+                .map(EquipmentItem::getEquipmentSet)
+                .filter(java.util.Objects::nonNull)
+                .map(s -> s.getId())
+                .distinct()
+                .toList();
+
+        if (setIds.size() != 1) {
+            // 단품 또는 혼합 → 첫 번째 아이템 ITEM 키
+            return WatchKeyBuilder.itemKey(items.get(0).getItem().getId());
+        }
+
+        Long setId = setIds.get(0);
+        var pieces = equipmentItems.stream()
+                .filter(e -> e.getEquipmentSet() != null && e.getEquipmentSet().getId().equals(setId))
+                .map(e -> new SetTitleGenerator.PieceTitleInput(e.getSlot(), null))
+                .toList();
+
+        SetTitleGenerator.WatchInfo info = SetTitleGenerator.resolveWatchInfo(pieces);
+        if (info == null) return WatchKeyBuilder.itemKey(items.get(0).getItem().getId());
+        // BUY 측은 ritual 정보 없이 RC:0:MARK:NONE 저장
+        return WatchKeyBuilder.setKey(setId, info.composition(), 0, null);
     }
 
     /**

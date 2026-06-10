@@ -31,8 +31,8 @@ import java.util.Set;
  *
  * <p>URL: https://www.gersangjjang.com/yongbing/index.asp
  *
- * <p>역할: 거니버스 크롤링이 primary source다. 거상짱은 거니버스 이후 실행되어
- * 누락된 용병·스탯·스킬을 보완하는 보조 역할만 수행한다.
+ * <p>역할: 시더 미관리 용병(1·2차 장수, 고용몬 등)만 보완 수집한다.
+ * 사천왕·명왕·전설장수·주인공은 각 Seeder가 담당하며, 파서에서 해당 카테고리를 제외한다.
  *
  * <p>처리 흐름:
  * <ol>

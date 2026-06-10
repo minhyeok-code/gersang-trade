@@ -1,4 +1,0 @@
--- ChatRoomStatus enum 개명: POSTER_CONFIRMED → AWAITING_PARTNER
-UPDATE chat_rooms
-SET status = 'AWAITING_PARTNER'
-WHERE status = 'POSTER_CONFIRMED';

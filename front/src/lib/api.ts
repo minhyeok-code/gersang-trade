@@ -105,11 +105,15 @@ export const api = {
     return request<ItemSearchResult[]>(`/api/items/search?${sp}`);
   },
   getItemRituals: (itemId: number) => request<RitualDto[]>(`/api/items/${itemId}/rituals`),
+  getRituals: () => request<RitualDto[]>('/api/rituals'),
   getItemPriceHistory: (itemId: number, days?: number) => {
     const sp = days ? `?days=${days}` : '';
     return request<PriceHistoryDto>(`/api/items/${itemId}/price-history${sp}`);
   },
   getEquipmentBySlot: (slot: string) => request<EquipmentItemDto[]>(`/api/items/equipment?slot=${slot}`),
+  /** 용병 전용장비 — restriction 기준 조회 (덱 장비 선택 UI) */
+  getExclusiveEquipment: (mercenaryId: number, slot: string) =>
+    request<EquipmentItemDto[]>(`/api/mercenaries/${mercenaryId}/exclusive-equipment?slot=${slot}`),
   /** 덱 설정 페이지 초기 로딩 — 슬롯별 장비 API를 병렬 호출 */
   getEquipmentByAllSlots: async (slots: string[]) => {
     const results = await Promise.all(
@@ -121,8 +125,12 @@ export const api = {
     );
     return Object.fromEntries(results.map(({ slot, items }) => [slot, items])) as Record<string, EquipmentItemDto[]>;
   },
-  getSets: () => request<unknown[]>('/api/sets'),
-  getSet: (setId: number) => request<unknown>(`/api/sets/${setId}`),
+  getSets: (name?: string) => {
+    const sp = new URLSearchParams({ size: '20' });
+    if (name) sp.set('name', name);
+    return request<{ content: SetSummaryDto[]; totalElements: number }>(`/api/sets?${sp}`);
+  },
+  getSet: (setId: number) => request<SetDetailDto>(`/api/sets/${setId}`),
 
   // ── 거래 리스팅 ──
   getListings: (params?: Record<string, string>) => {
@@ -217,6 +225,8 @@ export const api = {
     request<unknown>(`/api/decks/${deckId}/members`, { method: 'POST', body: JSON.stringify(body) }),
   removeDeckMember: (deckId: number, memberId: number) =>
     request<void>(`/api/decks/${deckId}/members/${memberId}`, { method: 'DELETE' }),
+  getDeckMemberElementValues: (deckId: number) =>
+    request<MemberElementValueDto[]>(`/api/decks/${deckId}/members/element-values`),
   getDeckMemberStats: (deckId: number, memberId: number) =>
     request<MemberStatsDto>(`/api/decks/${deckId}/members/${memberId}/stats`),
   getDeckMemberCharacteristics: (deckId: number, memberId: number) =>
@@ -254,17 +264,41 @@ export const api = {
     const qs = sp.toString() ? `?${sp}` : '';
     return request<MercenaryDto[]>(`/api/mercenaries${qs}`);
   },
+  getMercenaryCharacteristics: (mercenaryId: number) =>
+    request<MercenaryCharacteristicCatalogDto>(`/api/mercenaries/${mercenaryId}/characteristics`),
+  getMercenaryCharacteristicSetup: (mercenaryId: number) =>
+    request<MercenaryCharacteristicSetupDto>(`/api/mercenaries/${mercenaryId}/characteristics/setup`),
 
   // ── DPS 계산기 ──
   calcDps: (body: unknown) =>
     request<DpsResultDto>('/api/calculator/dps', { method: 'POST', body: JSON.stringify(body) }),
+  evaluateDpsValue: (body: DpsEvaluationRequestBody) =>
+    request<DpsValueEvaluationResponseDto>('/api/calculator/dps/evaluations', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  getMyDpsEvaluations: (page = 0, size = 20) =>
+    request<PageDto<DpsEvaluationSummaryDto>>(
+      `/api/calculator/dps/evaluations?page=${page}&size=${size}`
+    ),
+  getMyDpsEvaluation: (id: number) =>
+    request<DpsValueEvaluationResponseDto>(`/api/calculator/dps/evaluations/${id}`),
+  deleteMyDpsEvaluation: (id: number) =>
+    request<void>(`/api/calculator/dps/evaluations/${id}`, { method: 'DELETE' }),
   getMonsters: () => request<MonsterDto[]>('/api/monsters'),
   getMonster: (id: number) => request<MonsterDto>(`/api/monsters/${id}`),
 
   // ── 기타 유저 ──
   getUserReviews: (userId: number) => request<unknown[]>(`/api/users/${userId}/reviews`),
-  submitClearTime: (body: unknown) =>
-    request<unknown>('/api/users/me/clear-time', { method: 'POST', body: JSON.stringify(body) }),
+  submitClearTime: (body: ClearTimeSubmitBody) =>
+    request<ClearTimeResponseDto>('/api/users/me/clear-time', { method: 'POST', body: JSON.stringify(body) }),
+  getMyClearTimes: () => request<MyClearTimeDto[]>('/api/users/me/clear-times'),
+  getHuntHubStatus: () => request<HuntHubStatusDto>('/api/users/me/hunt-hub-status'),
+  getHuntMonsters: () => request<HuntMonsterSummaryDto[]>('/api/hunt/monsters'),
+  getHuntMonsterRecords: (monsterId: number) =>
+    request<HuntPublicRecordDto[]>(`/api/hunt/monsters/${monsterId}/records`),
+  getHuntSnapshot: (snapshotId: number) =>
+    request<HuntSnapshotDto>(`/api/hunt/snapshots/${snapshotId}`),
   getMyReports: () => request<unknown[]>('/api/reports/me'),
   submitReview: (reviewId: number, body: { rating: string }) =>
     request<void>(`/api/reviews/${reviewId}`, { method: 'POST', body: JSON.stringify(body) }),
@@ -289,6 +323,8 @@ export interface ItemSearchResult {
   stackUnitName?: string;
   imageUrl?: string;
   equipSlot?: string;
+  exclusiveMercenaryId?: number;
+  restrictionMercenaryIds?: number[];
 }
 
 export interface PriceHistoryDto {
@@ -476,6 +512,117 @@ export interface MemberDpsResultDto {
 }
 
 /** DPS 계산 응답 — rawTotalDps(순수 계수), adjustTotalDps(속성 보정), totalDps(저항 포함 최종) */
+export interface ClearTimeSubmitBody {
+  monsterId: number;
+  deckId: number;
+  clearTimeSeconds: number;
+  isPublic?: boolean;
+}
+
+export interface MyClearTimeDto {
+  id: number;
+  monsterId: number;
+  monsterName: string;
+  clearTimeSeconds: number;
+  totalResistPierce?: number | null;
+  totalElementPierce?: number | null;
+  rawDps?: number | null;
+  adjustDps?: number | null;
+  finalDps: number;
+  resistAfterDebuff?: number | null;
+  effectiveMonsterElement?: number | null;
+  resistPassRate?: number | null;
+  deckSnapshotId: number;
+  isPublic: boolean;
+  recordedAt: string;
+}
+
+export interface HuntHubStatusDto {
+  distinctMonsterCount: number;
+  requiredDistinctMonsters: number;
+  unlocked: boolean;
+}
+
+export interface HuntMonsterSummaryDto {
+  monsterId: number;
+  monsterName: string;
+  publicRecordCount: number;
+}
+
+export interface HuntPublicRecordDto {
+  id: number;
+  monsterId: number;
+  monsterName: string;
+  clearTimeSeconds: number;
+  totalResistPierce?: number | null;
+  totalElementPierce?: number | null;
+  rawDps?: number | null;
+  adjustDps?: number | null;
+  finalDps: number;
+  resistAfterDebuff?: number | null;
+  effectiveMonsterElement?: number | null;
+  resistPassRate?: number | null;
+  deckSnapshotId: number;
+  authorNickname: string;
+  recordedAt: string;
+}
+
+/** 백엔드 DeckSnapshotContent — 클리어타임 저장 시 고정되는 덱 JSON */
+export interface DeckSnapshotCharacteristicSelectionDto {
+  characteristicId: number;
+  selectedLevel: number;
+}
+
+export interface DeckSnapshotMemberDto {
+  member: DeckDetailDto['members'][number];
+  characteristics: DeckSnapshotCharacteristicSelectionDto[];
+}
+
+export interface DeckSnapshotDpsContextDto {
+  resistanceType: 'HITTING' | 'MAGIC';
+  memberInputs: {
+    memberId: number;
+    level: number;
+    bonusTarget: BonusStatTargetDto;
+    bonusAmount: number;
+  }[];
+  memberElementValues?: {
+    memberId: number;
+    elementValue: number;
+  }[];
+}
+
+export interface DeckSnapshotContentDto {
+  deckId: number;
+  deckName: string;
+  attrXValue?: number | null;
+  totalResDown?: number | null;
+  effects?: DeckEffectDto | null;
+  members: DeckSnapshotMemberDto[];
+  dpsContext: DeckSnapshotDpsContextDto;
+}
+
+export interface HuntSnapshotDto {
+  id: number;
+  content: DeckSnapshotContentDto;
+  createdAt: string;
+}
+
+export interface ClearTimeResponseDto {
+  id: number;
+  monsterId: number;
+  monsterName: string;
+  deckId: number;
+  deckSnapshotId: number;
+  clearTimeSeconds: number;
+  rawDps: number;
+  adjustDps: number;
+  finalDps: number;
+  isPublic: boolean;
+  expEarned: number;
+  recordedAt: string;
+}
+
 export interface DpsResultDto {
   monsterId: number;
   monsterName: string;
@@ -488,6 +635,109 @@ export interface DpsResultDto {
   adjustTotalDps: number;
   totalDps: number;
   memberResults: MemberDpsResultDto[];
+}
+
+/** Spring Data Page 응답 */
+export interface PageDto<T> {
+  content: T[];
+  totalElements: number;
+  totalPages: number;
+  number: number;
+  size: number;
+}
+
+export type ScenarioItemTypeDto = 'ITEM_SINGLE' | 'ITEM_SET' | 'MERCENARY';
+export type MercenaryModeDto = 'REPLACE' | 'APPEND';
+export type PriceSourceDto = 'USER_INPUT' | 'TRADE_STAT' | 'MIXED' | 'MISSING';
+export type ResistanceTypeDto = 'HITTING' | 'MAGIC';
+
+export interface DpsTripleDto {
+  raw: number;
+  adjust: number;
+  finalDps: number;
+}
+
+export interface DpsRateTripleDto {
+  raw: number;
+  adjust: number;
+  finalDps: number;
+}
+
+export interface EfficiencyTripleDto {
+  raw: number | null;
+  adjust: number | null;
+  finalDps: number | null;
+}
+
+export interface DpsValueEvaluationResponseDto {
+  persisted: boolean;
+  evaluationId: number | null;
+  scenarioDeckSnapshotId: number | null;
+  before: DpsTripleDto;
+  after: DpsTripleDto;
+  delta: DpsTripleDto;
+  increaseRate: DpsRateTripleDto;
+  efficiencyPerEok: EfficiencyTripleDto;
+  price: number | null;
+  formattedPrice: string | null;
+  priceSource: PriceSourceDto;
+  tradeCount: number | null;
+}
+
+export interface DpsEvaluationSummaryDto {
+  evaluationId: number;
+  candidateType: ScenarioItemTypeDto;
+  candidateLabel: string;
+  candidateRef: number;
+  mercenaryMode: MercenaryModeDto | null;
+  monsterId: number;
+  monsterName: string;
+  finalDpsIncreaseRate: number;
+  efficiencyPerEokFinal: number | null;
+  price: number | null;
+  formattedPrice: string | null;
+  priceSource: PriceSourceDto;
+  createdAt: string;
+}
+
+export interface ScenarioLineBody {
+  itemId: number;
+  quantity: number;
+  sortOrder: number;
+  equipmentDetail?: {
+    enhanceLevel?: number;
+    hasRitual?: boolean;
+    rituals?: { ritualId: number; outcome: 'SUCCESS' | 'GREAT_SUCCESS' }[];
+  };
+}
+
+export interface ScenarioRequestBody {
+  type: ScenarioItemTypeDto;
+  setId?: number | null;
+  affectedMemberId?: number | null;
+  lines?: ScenarioLineBody[];
+  mercenaryId?: number | null;
+  mode?: MercenaryModeDto | null;
+  level?: number | null;
+  bonusTarget?: BonusStatTargetDto | null;
+  bonusAmount?: number | null;
+  characteristics?: { characteristicId: number; selectedLevel: number }[];
+}
+
+export interface DpsEvaluationRequestBody {
+  deckId: number;
+  monsterId: number;
+  resistanceType: ResistanceTypeDto;
+  scenario: ScenarioRequestBody;
+  priceOverrides?: Record<string, number>;
+  price?: number | null;
+  memberInputs: {
+    memberId: number;
+    level: 250 | 260;
+    bonusTarget: BonusStatTargetDto;
+    bonusAmount: number;
+  }[];
+  persist: boolean;
 }
 
 export interface MonsterDto {
@@ -512,6 +762,42 @@ export interface MercenaryDto {
   elementValue?: number;
   imageUrl?: string;
   nation?: string;
+}
+
+export interface MercenaryCharacteristicCatalogDto {
+  mercenaryId: number;
+  characteristics: {
+    characteristicId: number;
+    name: string;
+    levels: { level: number; label: string | null }[];
+  }[];
+}
+
+export interface MercenaryCharacteristicSetupDto {
+  mercenaryId: number;
+  maxCharacteristicPoints: number;
+  characteristics: {
+    characteristicId: number;
+    key: string;
+    name: string;
+    point?: number | null;
+    description?: string | null;
+    requiredCharacteristicKey?: string | null;
+    applyType: string;
+    levels: {
+      label?: string | null;
+      level: number;
+      amount?: string | null;
+      amountValue?: number | null;
+      statType?: string | null;
+      element?: string | null;
+    }[];
+  }[];
+}
+
+export interface MemberElementValueDto {
+  memberId: number;
+  elementValue: number;
 }
 
 export type BonusStatTargetDto = 'MAIN_STAT' | 'VITALITY';
@@ -563,6 +849,9 @@ export interface MemberStatsDto {
     statUnit?: 'FLAT' | 'PERCENT';
   }[];
   totalStats: { statType: string; value: number }[];
+  partyItemBuffStats?: { statType: string; value: number }[] | null;
+  lgAllyElementalStats?: { statKey: string; value: number }[] | null;
+  lgAllyDetails?: { mercenaryName: string; statKey: string; value: number }[] | null;
   slots: {
     slot: string;
     itemId: number;
@@ -603,6 +892,8 @@ export interface DeckEffectDto {
   spirits: DeckEffectSpiritDto[];
   jinbeop?: DeckBuffSourceDto | null;
   cheungjin?: DeckBuffSourceDto | null;
+  gonmyeongLevel?: number | null;
+  gahoLevel?: number | null;
   stats: { statType: string; value: number }[];
 }
 
@@ -617,6 +908,8 @@ export interface DeckEffectUpdateBody {
   spirit2Id?: number | null;
   jinbeopSourceId?: number | null;
   cheungjinSourceId?: number | null;
+  gonmyeongLevel?: number | null;
+  gahoLevel?: number | null;
 }
 
 export interface MemberCharacteristicDto {
@@ -634,11 +927,12 @@ export interface MemberCharacteristicDto {
     applyType: string;
     selectedLevel?: number | null;
     levels: {
-      label: string;
+      label?: string | null;
       level: number;
-      amount: string;
+      amount?: string | null;
       amountValue?: number | null;
       statType?: string | null;
+      element?: string | null;
     }[];
   }[];
 }
@@ -681,6 +975,28 @@ export interface SlotRitualDto {
   outcome: 'SUCCESS' | 'GREAT_SUCCESS';
 }
 
+export interface SetSummaryDto {
+  id: number;
+  name: string;
+  totalPieces: number;
+}
+
+export interface SetPieceDto {
+  itemId: number;
+  itemName: string;
+  imageUrl?: string;
+  slot: string;
+  equipSlot?: string;
+  ritualApplicable: boolean;
+}
+
+export interface SetDetailDto {
+  id: number;
+  name: string;
+  totalPieces: number;
+  pieces: SetPieceDto[];
+}
+
 export interface EquipmentItemDto {
   id?: number;
   itemId: number;
@@ -693,5 +1009,8 @@ export interface EquipmentItemDto {
   hasSlotOption?: boolean;
   setId?: number;
   setName?: string;
+  exclusiveMercenaryId?: number | null;
+  exclusiveMercenaryName?: string | null;
+  restrictionMercenaryIds?: number[];
   stats?: { statType: string; value: number; element?: string; scope?: string }[];
 }

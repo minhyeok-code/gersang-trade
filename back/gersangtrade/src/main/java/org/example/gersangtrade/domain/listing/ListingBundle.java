@@ -44,9 +44,9 @@ public class ListingBundle {
     private EquipmentSet equipmentSet;
 
     /**
-     * 사용자 임의 제목 오버라이드.
-     * null: 시스템이 번들 구성을 기반으로 자동 생성한 제목을 사용.
-     * non-null: 판매자가 직접 입력한 제목으로 표시.
+     * 번들 표시 제목.
+     * EQUIPMENT_SET: 등록 시 자동 생성 제목이 저장되나, 조회 시 라인·주술 데이터로 재계산한다.
+     * EQUIPMENT_SINGLE 등: 판매자 입력 또는 시스템 생성 제목을 그대로 사용한다.
      */
     @Column(name = "title_override", length = 200)
     private String titleOverride;

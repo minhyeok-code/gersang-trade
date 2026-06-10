@@ -10,7 +10,9 @@ import org.example.gersangtrade.listing.dto.request.ListingSearchCondition;
 import org.springframework.stereotype.Repository;
 import org.springframework.util.StringUtils;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.example.gersangtrade.domain.listing.QBundleLine.bundleLine;
 import static org.example.gersangtrade.domain.listing.QListingBundle.listingBundle;
@@ -93,6 +95,66 @@ public class ListingQueryRepository {
                 itemNameContains(cond.keyword())
         ).fetchOne();
         return result != null ? result : 0L;
+    }
+
+    /**
+     * 관심 SET 시세 조회용 — 특정 setId의 EQUIPMENT_SET 번들 포함 판매 등록글 후보 조회.
+     * 2차 필터(SetWatchMatcher)에서 composition·ritual 매칭을 위해 넉넉히 fetch한다.
+     */
+    public List<TradeListing> searchLatestBySetId(
+            String server, ListingStatus status, Long setId, int limit) {
+        return queryFactory
+                .selectDistinct(tradeListing)
+                .from(tradeListing)
+                .leftJoin(tradeListing.seller).fetchJoin()
+                .leftJoin(listingBundle).on(listingBundle.listing.eq(tradeListing))
+                .where(
+                        isNotDeleted(),
+                        isNotHidden(),
+                        serverEq(server),
+                        statusEq(status),
+                        listingBundle.bundleType.eq(BundleType.EQUIPMENT_SET),
+                        listingBundle.equipmentSet.id.eq(setId)
+                )
+                .orderBy(tradeListing.createdAt.desc())
+                .limit(limit)
+                .fetch();
+    }
+
+    /**
+     * 관심 아이템 시세 조회용 배치 메서드 — 판매 등록글 대상.
+     * 주어진 itemId 목록에 대해 서버·상태 조건으로 최신 판매글을 limitPerItem개씩 반환한다.
+     * 관심 아이템 수가 최대 5개이므로 itemId별 개별 쿼리로 처리한다.
+     */
+    public Map<Long, List<TradeListing>> searchLatestPerItemIds(
+            String server, ListingStatus status, List<Long> itemIds, int limitPerItem) {
+        if (itemIds == null || itemIds.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<Long, List<TradeListing>> result = new LinkedHashMap<>();
+        for (Long itemId : itemIds) {
+            List<TradeListing> listings = queryFactory
+                    .selectDistinct(tradeListing)
+                    .from(tradeListing)
+                    .leftJoin(tradeListing.seller).fetchJoin()
+                    .leftJoin(listingBundle).on(listingBundle.listing.eq(tradeListing))
+                    .leftJoin(bundleLine).on(bundleLine.bundle.eq(listingBundle))
+                    .where(
+                            isNotDeleted(),
+                            isNotHidden(),
+                            serverEq(server),
+                            statusEq(status),
+                            // 세트 번들 제외 — 단품·재료 시세에 세트 가격 섞임 방지
+                            listingBundle.bundleType.ne(BundleType.EQUIPMENT_SET),
+                            bundleLine.item.id.eq(itemId)
+                    )
+                    .orderBy(tradeListing.createdAt.desc())
+                    .limit(limitPerItem)
+                    .fetch();
+            result.put(itemId, listings);
+        }
+        return result;
     }
 
     /** 소프트 삭제되지 않은 항목만 조회 */

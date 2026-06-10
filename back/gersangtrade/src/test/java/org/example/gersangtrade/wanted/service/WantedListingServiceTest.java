@@ -393,7 +393,7 @@ class WantedListingServiceTest {
     @DisplayName("getWantedListings_정상조회_요약목록반환")
     void getWantedListings_정상조회_요약목록반환() {
         // 준비: Mock WantedListing과 WantedItem 설정
-        WantedSearchCondition cond = new WantedSearchCondition(null, null, null, 0, 20);
+        WantedSearchCondition cond = new WantedSearchCondition(null, null, null, null, 0, 20);
 
         WantedListing listing = mock(WantedListing.class);
         when(listing.getId()).thenReturn(1L);
@@ -426,7 +426,7 @@ class WantedListingServiceTest {
     @DisplayName("getWantedListings_결과없음_빈목록반환")
     void getWantedListings_결과없음_빈목록반환() {
         // 준비: 검색 결과 없는 조건
-        WantedSearchCondition cond = new WantedSearchCondition("없는서버", null, null, 0, 20);
+        WantedSearchCondition cond = new WantedSearchCondition("없는서버", null, null, null, 0, 20);
 
         when(wantedListingQueryRepository.search(cond)).thenReturn(Collections.emptyList());
 

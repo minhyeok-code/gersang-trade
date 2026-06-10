@@ -40,4 +40,35 @@ public interface TradeConfirmedRepository extends JpaRepository<TradeConfirmed, 
            "AND (t.seller.id = :userId OR t.buyer.id = :userId) " +
            "ORDER BY t.confirmedAt DESC")
     List<TradeConfirmed> findByUserId(@Param("userId") Long userId);
+
+    /**
+     * 관심 아이템 시세 — 단일 statKey의 최근 거래 N건 조회.
+     * idx_tc_statkey_server_confirmed 인덱스 활용.
+     */
+    @Query("SELECT t FROM TradeConfirmed t " +
+           "WHERE t.cancelled = false " +
+           "AND t.statKeySnapshot = :statKey " +
+           "AND t.serverSnapshot = :server " +
+           "ORDER BY t.confirmedAt DESC " +
+           "LIMIT :limit")
+    List<TradeConfirmed> findRecentByStatKeyAndServer(
+            @Param("statKey") String statKey,
+            @Param("server") String server,
+            @Param("limit") int limit);
+
+    /**
+     * 관심 아이템 시세 — 복수 statKey의 최근 거래 조회 (배치용).
+     * 앱 레벨에서 statKey별로 그루핑하여 최신 limitPerKey건을 선별한다.
+     * limit = statKeys.size() × limitPerKey 로 호출해 과잉 로드를 방지한다.
+     */
+    @Query("SELECT t FROM TradeConfirmed t " +
+           "WHERE t.cancelled = false " +
+           "AND t.statKeySnapshot IN :statKeys " +
+           "AND t.serverSnapshot = :server " +
+           "ORDER BY t.confirmedAt DESC " +
+           "LIMIT :limit")
+    List<TradeConfirmed> findRecentByStatKeysAndServer(
+            @Param("statKeys") List<String> statKeys,
+            @Param("server") String server,
+            @Param("limit") int limit);
 }

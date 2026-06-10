@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
  *   <li>POST /admin/crawler/sets        — 장비 세트만 수집</li>
  *   <li>POST /admin/crawler/rituals     — 주술만 수집 (아이템/세트 크롤러 완료 후)</li>
  *   <li>POST /admin/crawler/monsters    — 몬스터만 수집 (거상짱)</li>
+ *   <li>POST /admin/crawler/exclusive-equipment — 전용장비만 수집 (거상짱)</li>
  * </ul>
  */
 @Slf4j
@@ -39,6 +40,7 @@ public class CrawlerAdminController {
     private final Job setDataJob;
     private final Job ritualDataJob;
     private final Job monsterDataJob;
+    private final Job exclusiveEquipmentDataJob;
 
     public CrawlerAdminController(JobLauncher jobLauncher,
                                   @Qualifier("masterDataJob") Job masterDataJob,
@@ -47,7 +49,8 @@ public class CrawlerAdminController {
                                   @Qualifier("mercenaryDataJob") Job mercenaryDataJob,
                                   @Qualifier("setDataJob") Job setDataJob,
                                   @Qualifier("ritualDataJob") Job ritualDataJob,
-                                  @Qualifier("monsterDataJob") Job monsterDataJob) {
+                                  @Qualifier("monsterDataJob") Job monsterDataJob,
+                                  @Qualifier("exclusiveEquipmentDataJob") Job exclusiveEquipmentDataJob) {
         this.jobLauncher = jobLauncher;
         this.masterDataJob = masterDataJob;
         this.itemDataJob = itemDataJob;
@@ -56,6 +59,7 @@ public class CrawlerAdminController {
         this.setDataJob = setDataJob;
         this.ritualDataJob = ritualDataJob;
         this.monsterDataJob = monsterDataJob;
+        this.exclusiveEquipmentDataJob = exclusiveEquipmentDataJob;
     }
 
     /** 아이템 + 재료 + 세트 + 용병 + 주술 전체 수집 */
@@ -105,6 +109,13 @@ public class CrawlerAdminController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<String> triggerMonsterDataJob() {
         return runJob(monsterDataJob, "몬스터 수집");
+    }
+
+    /** 전용장비 수집 — mercenary 크롤러·시더 완료 후 실행 권장 */
+    @PostMapping("/exclusive-equipment")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<String> triggerExclusiveEquipmentDataJob() {
+        return runJob(exclusiveEquipmentDataJob, "전용장비 수집");
     }
 
     private ResponseEntity<String> runJob(Job job, String jobName) {

@@ -8,6 +8,10 @@ import org.example.gersangtrade.calculator.dto.request.ResistanceType;
 import org.example.gersangtrade.calculator.dto.response.DpsResponse;
 import org.example.gersangtrade.calculator.dto.response.MemberDpsResult;
 import org.example.gersangtrade.calculator.dto.response.SkillDpsResult;
+import org.example.gersangtrade.calculator.overlay.DeckCalculationState;
+import org.example.gersangtrade.calculator.overlay.DpsScenarioOverlay;
+import org.example.gersangtrade.calculator.overlay.LoadedDeckState;
+import org.example.gersangtrade.calculator.overlay.LoadedMember;
 import org.example.gersangtrade.catalog.repository.EquipmentSetEffectRepository;
 import org.example.gersangtrade.catalog.repository.EquipmentSetSkillEffectRepository;
 import org.example.gersangtrade.catalog.repository.ItemSkillEffectRepository;
@@ -60,6 +64,7 @@ import org.example.gersangtrade.domain.catalog.enums.SpiritGrade;
 import org.example.gersangtrade.domain.catalog.enums.StatSource;
 import org.example.gersangtrade.domain.catalog.enums.StatType;
 import org.example.gersangtrade.domain.catalog.enums.StatUnit;
+import org.example.gersangtrade.domain.catalog.enums.ValueType;
 import org.example.gersangtrade.domain.catalog.enums.TriggerSource;
 import org.example.gersangtrade.domain.deck.UserDeck;
 import org.example.gersangtrade.domain.deck.UserDeckMember;
@@ -67,6 +72,7 @@ import org.example.gersangtrade.domain.deck.UserDeckMemberCharacteristic;
 import org.example.gersangtrade.domain.deck.UserDeckMemberSlot;
 import org.example.gersangtrade.domain.listing.enums.RitualOutcome;
 import org.springframework.http.HttpStatus;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -78,6 +84,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -142,11 +149,41 @@ public class DpsCalculatorService {
     private final PlayerCharacterBuffCalculator playerCharacterBuffCalculator;
     private final AwakenedMyungwangBuffCalculator awakenedMyungwangBuffCalculator;
     private final MyungwangStatTransferCalculator myungwangStatTransferCalculator;
+    private final BudongMyungwangWeaponTransferCalculator budongMyungwangWeaponTransferCalculator;
+    private final MyungwangWeaponElementShareCalculator myungwangWeaponElementShareCalculator;
+    private final DeckStateMerger deckStateMerger;
 
     /** (ritualId, outcome, setId) 복합 키 — 주술 세트효과 맵 조회에 사용 */
     private record RitualSetKey(Long ritualId, RitualOutcome outcome, Long setId) {}
 
     public DpsResponse calculate(DpsRequest req) {
+        return calculateWithOverlay(req, null);
+    }
+
+    /**
+     * 덱 상태를 로드하고 overlay를 적용한 {@link DeckCalculationState}를 반환한다.
+     * overlay가 null이면 현재 덱 상태 그대로 반환한다.
+     * 가성비 평가 서비스에서 저항 종류 자동 판별 및 스냅샷 생성에 사용한다.
+     */
+    public DeckCalculationState prepareState(DpsRequest req, @Nullable DpsScenarioOverlay overlay) {
+        LoadedDeckState loaded = loadDeckState(req);
+        return overlay == null ? loaded.toCalculationState() : deckStateMerger.merge(loaded, overlay);
+    }
+
+    /**
+     * overlay가 non-null이면 덱 상태에 적용 후 DPS를 계산한다.
+     * null이면 현재 덱 상태 그대로 계산 ({@link #calculate}와 동일).
+     */
+    public DpsResponse calculateWithOverlay(DpsRequest req, @Nullable DpsScenarioOverlay overlay) {
+        LoadedDeckState loadedState = loadDeckState(req);
+        DeckCalculationState calcState = overlay == null
+                ? loadedState.toCalculationState()
+                : deckStateMerger.merge(loadedState, overlay);
+        return executePipeline(req, calcState);
+    }
+
+    /** 덱·멤버·슬롯·특성을 DB에서 일괄 로드해 {@link LoadedDeckState}를 반환한다. */
+    private LoadedDeckState loadDeckState(DpsRequest req) {
         UserDeck deck = deckRepository.findById(req.deckId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "덱을 찾을 수 없습니다."));
 
@@ -155,18 +192,49 @@ public class DpsCalculatorService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "덱에 용병이 없습니다.");
         }
 
-        Map<Long, MemberDpsInput> inputMap = req.memberInputs() == null ? Map.of() :
-                req.memberInputs().stream().collect(Collectors.toMap(MemberDpsInput::memberId, i -> i));
-
-        // ── 배치 로드 ──────────────────────────────────────────────────────────
-
         List<Long> memberIds = members.stream().map(UserDeckMember::getId).toList();
-        List<Long> mercenaryIds = members.stream().map(m -> m.getMercenary().getId()).toList();
 
-        // 슬롯 (세트·주술 fetch 포함)
         List<UserDeckMemberSlot> allSlots = slotRepository.findByDeckMemberIdIn(memberIds);
         Map<Long, List<UserDeckMemberSlot>> slotsByMemberId = allSlots.stream()
                 .collect(Collectors.groupingBy(s -> s.getDeckMember().getId()));
+
+        List<UserDeckMemberCharacteristic> allChars = characteristicRepository.findByDeckMemberIdIn(memberIds);
+        Map<Long, List<UserDeckMemberCharacteristic>> charsByMemberId = allChars.stream()
+                .collect(Collectors.groupingBy(c -> c.getDeckMember().getId()));
+
+        // 요청에 없는 멤버는 UserDeckMember 기본값(레벨·보너스)으로 채운다.
+        Map<Long, MemberDpsInput> baseInputMap = req.memberInputs() == null ? Map.of() :
+                req.memberInputs().stream().collect(Collectors.toMap(MemberDpsInput::memberId, i -> i));
+        Map<Long, MemberDpsInput> memberInputs = new HashMap<>();
+        for (UserDeckMember m : members) {
+            memberInputs.put(m.getId(), baseInputMap.getOrDefault(m.getId(),
+                    new MemberDpsInput(m.getId(), m.getLevel(), m.getBonusTarget(), m.getBonusAmount())));
+        }
+
+        List<LoadedMember> loadedMembers = members.stream()
+                .map(m -> new LoadedMember(
+                        m.getId(),
+                        m.getMercenary(),
+                        slotsByMemberId.getOrDefault(m.getId(), List.of()),
+                        charsByMemberId.getOrDefault(m.getId(), List.of())))
+                .toList();
+
+        return new LoadedDeckState(req.deckId(), deck, loadedMembers, memberInputs);
+    }
+
+    /** DPS 계산 파이프라인 본체 — LoadedMember 기반으로 동작한다. */
+    private DpsResponse executePipeline(DpsRequest req, DeckCalculationState state) {
+        UserDeck deck = state.deck();
+        List<LoadedMember> members = state.members();
+        Map<Long, MemberDpsInput> inputMap = state.memberInputs();
+
+        // ── 배치 로드 ──────────────────────────────────────────────────────────
+
+        List<Long> mercenaryIds = members.stream().map(m -> m.mercenary().getId()).toList();
+
+        // 슬롯은 LoadedMember에서 직접 가져온다 (per-member는 member.slots() 사용).
+        List<UserDeckMemberSlot> allSlots = members.stream()
+                .flatMap(m -> m.slots().stream()).toList();
 
         // 용병 기본 스탯
         List<MercenaryStat> allMercStats = mercenaryStatRepository.findByMercenaryIdIn(mercenaryIds);
@@ -222,12 +290,9 @@ public class DpsCalculatorService {
         }
 
         // ── 특성 레벨 수치 배치 로드 ──────────────────────────────────────────
-        List<UserDeckMemberCharacteristic> allMemberChars =
-                characteristicRepository.findByDeckMemberIdIn(memberIds);
-        Map<Long, List<UserDeckMemberCharacteristic>> charsByMemberId = allMemberChars.stream()
-                .collect(Collectors.groupingBy(c -> c.getDeckMember().getId()));
-
-        List<Long> characteristicIds = allMemberChars.stream()
+        // 특성 목록은 LoadedMember에서 직접 가져온다.
+        List<Long> characteristicIds = members.stream()
+                .flatMap(m -> m.characteristics().stream())
                 .map(c -> c.getCharacteristic().getId()).distinct().toList();
         Map<Long, List<MercenaryCharacteristicLevel>> charLevelsByCharId = characteristicIds.isEmpty() ? Map.of() :
                 characteristicLevelRepository.findByCharacteristicIdIn(characteristicIds).stream()
@@ -286,6 +351,11 @@ public class DpsCalculatorService {
         int[] enemyMagicResistDebuff = {0};
         int[] enemyHittingResistDebuff = {0};
         int[] enemyElementDebuff = {0};
+        // 스킬 효과 PERCENT 타입 전용 — 곱연산으로 별도 적용
+        int[] enemyResistPiercePercentHolder = {0};
+        int[] enemyMagicResistPercentDebuff = {0};
+        int[] enemyHittingResistPercentDebuff = {0};
+        int[] enemyElementPercentDebuff = {0};
 
         Map<Long, Map<StatType, Integer>> memberSelfFlatPref = new HashMap<>();
         Map<Long, Map<StatType, Integer>> memberSelfPercentPref = new HashMap<>();
@@ -299,33 +369,36 @@ public class DpsCalculatorService {
 
         Map<Long, Map<Long, Integer>> charIndexByMercId = buildCharacteristicIndexByMercId(mercenaryIds);
 
-        for (UserDeckMember member : members) {
-            memberSelfFlatPref.put(member.getId(), new EnumMap<>(StatType.class));
-            memberSelfPercentPref.put(member.getId(), new EnumMap<>(StatType.class));
-            memberDamagePercentSum.put(member.getId(), 0);
-            memberSkillDamageBonus.put(member.getId(), new HashMap<>());
+        for (LoadedMember member : members) {
+            memberSelfFlatPref.put(member.memberId(), new EnumMap<>(StatType.class));
+            memberSelfPercentPref.put(member.memberId(), new EnumMap<>(StatType.class));
+            memberDamagePercentSum.put(member.memberId(), 0);
+            memberSkillDamageBonus.put(member.memberId(), new HashMap<>());
 
+            int memberLevel = inputMap.getOrDefault(member.memberId(),
+                    new MemberDpsInput(member.memberId(), 250, BonusStatTarget.MAIN_STAT, 0)).level();
             accumulateMemberCharacteristicBuffs(
                     member,
-                    charsByMemberId.getOrDefault(member.getId(), List.of()),
+                    member.characteristics(),
                     charLevelsByCharId,
-                    charIndexByMercId.getOrDefault(member.getMercenary().getId(), Map.of()),
-                    memberSelfFlatPref.get(member.getId()),
-                    memberSelfPercentPref.get(member.getId()),
+                    charIndexByMercId.getOrDefault(member.mercenary().getId(), Map.of()),
+                    memberSelfFlatPref.get(member.memberId()),
+                    memberSelfPercentPref.get(member.memberId()),
                     memberDamagePercentSum,
-                    memberSkillDamageBonus.get(member.getId()),
+                    memberSkillDamageBonus.get(member.memberId()),
                     partyFlatBonus,
                     partyPercentBonus,
                     partySkillDamageBuffs,
                     enemyResistPierceHolder,
                     enemyMagicResistDebuff,
                     enemyHittingResistDebuff,
-                    enemyElementDebuff
+                    enemyElementDebuff,
+                    memberLevel
             );
 
             // SELF_AUTO 각성 특성 자동 적용 (포인트 배분 불필요, 항상 활성)
-            Map<StatType, Integer> membSelfFlat = memberSelfFlatPref.get(member.getId());
-            for (MercenaryCharacteristic selfAutoChar : selfAutoCharsByMercId.getOrDefault(member.getMercenary().getId(), List.of())) {
+            Map<StatType, Integer> membSelfFlat = memberSelfFlatPref.get(member.memberId());
+            for (MercenaryCharacteristic selfAutoChar : selfAutoCharsByMercId.getOrDefault(member.mercenary().getId(), List.of())) {
                 for (MercenaryCharacteristicLevel lvl : selfAutoLevelsByCharId.getOrDefault(selfAutoChar.getId(), List.of())) {
                     if (lvl.getStatType() == null || lvl.getAmountValue() == null) continue;
                     accumulate(membSelfFlat, lvl.getStatType(), Math.round(lvl.getAmountValue()));
@@ -338,9 +411,9 @@ public class DpsCalculatorService {
         List<HeavenlyKingBuff> heavenlyKingBuffs = new ArrayList<>();
 
         // 장비·세트 ALLY/ENEMY scope
-        for (UserDeckMember member : members) {
-            Nature nature = member.getMercenary().getNature();
-            List<UserDeckMemberSlot> memberSlots = slotsByMemberId.getOrDefault(member.getId(), List.of());
+        for (LoadedMember member : members) {
+            Nature nature = member.mercenary().getNature();
+            List<UserDeckMemberSlot> memberSlots = member.slots();
 
             for (UserDeckMemberSlot slot : memberSlots) {
                 for (ItemStat stat : itemStatsByItemId.getOrDefault(slot.getEquipmentItem().getItemId(), List.of())) {
@@ -389,35 +462,48 @@ public class DpsCalculatorService {
         }
 
         // ── 스킬 효과 기반 적 디버프 집계 ─────────────────────────────────────
-        // 아이템 스킬 우선 — SkillCoefficient 미측정 여부와 무관하게 ItemSkillMapping 존재 시 대체
+        // 아이템 스킬 효과 우선 적용. 명왕 전용 장비 등 매핑은 있으나 item_skill_effects 미등록이면
+        // 용병 스킬 효과(mercenary_skill_effects)로 fallback — 계수 대체와 달리 디버프는 별도 테이블이다.
         Set<Long> itemIdsWithSkillMapping = skillMappings.stream()
                 .map(m -> m.getItem().getId())
                 .collect(Collectors.toSet());
 
-        for (UserDeckMember member : members) {
-            List<UserDeckMemberSlot> memberSlots = slotsByMemberId.getOrDefault(member.getId(), List.of());
+        for (LoadedMember member : members) {
+            List<UserDeckMemberSlot> memberSlots = member.slots();
 
-            boolean usedItemSkill = false;
+            boolean hasItemSkillMapping = false;
+            boolean appliedItemSkillEffect = false;
+
             for (UserDeckMemberSlot slot : memberSlots) {
                 Long itemId = slot.getEquipmentItem().getItemId();
-                if (itemIdsWithSkillMapping.contains(itemId)) {
-                    skillMappings.stream()
-                            .filter(m -> m.getItem().getId().equals(itemId))
-                            .map(m -> m.getSkill().getId())
-                            .flatMap(skillId -> itemSkillEffectsBySkillId.getOrDefault(skillId, List.of()).stream())
-                            .forEach(eff -> applyEnemyDebuff(eff.getStatKey(), eff.getStatValue(),
-                                    enemyResistPierceHolder, enemyMagicResistDebuff,
-                                    enemyHittingResistDebuff, enemyElementDebuff));
-                    usedItemSkill = true;
-                    break;
+                if (!itemIdsWithSkillMapping.contains(itemId)) continue;
+
+                hasItemSkillMapping = true;
+                List<ItemSkillEffect> itemEffects = skillMappings.stream()
+                        .filter(m -> m.getItem().getId().equals(itemId))
+                        .map(m -> m.getSkill().getId())
+                        .flatMap(skillId -> itemSkillEffectsBySkillId.getOrDefault(skillId, List.of()).stream())
+                        .toList();
+
+                if (!itemEffects.isEmpty()) {
+                    appliedItemSkillEffect = true;
                 }
+                itemEffects.forEach(eff -> applyEnemyDebuff(eff.getStatKey(), eff.getStatValue(),
+                        eff.getValueType(),
+                        enemyResistPierceHolder, enemyResistPiercePercentHolder,
+                        enemyMagicResistDebuff, enemyMagicResistPercentDebuff,
+                        enemyHittingResistDebuff, enemyHittingResistPercentDebuff,
+                        enemyElementDebuff, enemyElementPercentDebuff));
             }
 
-            if (!usedItemSkill) {
-                mercSkillEffectsByMercId.getOrDefault(member.getMercenary().getId(), List.of())
+            if (!hasItemSkillMapping || !appliedItemSkillEffect) {
+                mercSkillEffectsByMercId.getOrDefault(member.mercenary().getId(), List.of())
                         .forEach(eff -> applyEnemyDebuff(eff.getStatKey(), eff.getStatValue(),
-                                enemyResistPierceHolder, enemyMagicResistDebuff,
-                                enemyHittingResistDebuff, enemyElementDebuff));
+                                eff.getValueType(),
+                                enemyResistPierceHolder, enemyResistPiercePercentHolder,
+                                enemyMagicResistDebuff, enemyMagicResistPercentDebuff,
+                                enemyHittingResistDebuff, enemyHittingResistPercentDebuff,
+                                enemyElementDebuff, enemyElementPercentDebuff));
             }
         }
 
@@ -426,14 +512,18 @@ public class DpsCalculatorService {
 
         // ── 멤버별 유효 스탯 산출 ─────────────────────────────────────────────
         Map<Long, Map<StatType, Integer>> effectiveStatsByMemberId = new HashMap<>();
+        BudongMyungwangWeaponTransferCalculator.WeaponContext budongWeapon = null;
+        int budongSourceTotal = 0;
+        List<MyungwangWeaponElementShareCalculator.ShareContext> awakenedWeaponShares = new ArrayList<>();
+        Map<Long, Integer> awakenedWeaponSourceEvByMemberId = new HashMap<>();
 
-        for (UserDeckMember member : members) {
-            Nature nature = member.getMercenary().getNature();
-            List<UserDeckMemberSlot> memberSlots = slotsByMemberId.getOrDefault(member.getId(), List.of());
-            Map<StatType, Integer> base = baseStatsByMercId.getOrDefault(member.getMercenary().getId(), Map.of());
+        for (LoadedMember member : members) {
+            Nature nature = member.mercenary().getNature();
+            List<UserDeckMemberSlot> memberSlots = member.slots();
+            Map<StatType, Integer> base = baseStatsByMercId.getOrDefault(member.mercenary().getId(), Map.of());
 
-            Map<StatType, Integer> selfFlat = new EnumMap<>(memberSelfFlatPref.getOrDefault(member.getId(), Map.of()));
-            Map<StatType, Integer> selfPercent = new EnumMap<>(memberSelfPercentPref.getOrDefault(member.getId(), Map.of()));
+            Map<StatType, Integer> selfFlat = new EnumMap<>(memberSelfFlatPref.getOrDefault(member.memberId(), Map.of()));
+            Map<StatType, Integer> selfPercent = new EnumMap<>(memberSelfPercentPref.getOrDefault(member.memberId(), Map.of()));
 
             // SELF 아이템 스탯
             for (UserDeckMemberSlot slot : memberSlots) {
@@ -481,6 +571,36 @@ public class DpsCalculatorService {
                 }
             }
 
+            // 각성 명왕 무기 속성값 공유 소스 — 아이템(장비·세트·주술)만, 특성 제외
+            MyungwangWeaponElementShareCalculator.findShareContext(member, itemStatsByItemId)
+                    .ifPresent(ctx -> {
+                        awakenedWeaponShares.add(ctx);
+                        int sourceEv = MyungwangWeaponElementShareCalculator.computeSourceElementValue(
+                                base,
+                                selfFlat,
+                                memberSelfFlatPref.getOrDefault(member.memberId(), Map.of()));
+                        awakenedWeaponSourceEvByMemberId.put(member.memberId(), sourceEv);
+                    });
+
+            // 부동명왕 무기 올스텟 소스 — 아이템(장비·세트·주술)만, 특성·진법·정령·명왕부 제외
+            if (budongWeapon == null) {
+                Optional<BudongMyungwangWeaponTransferCalculator.WeaponContext> weaponCtx =
+                        BudongMyungwangWeaponTransferCalculator.findWeaponContext(member);
+                if (weaponCtx.isPresent()) {
+                    MemberDpsInput budongInput = inputMap.getOrDefault(member.memberId(),
+                            new MemberDpsInput(member.memberId(), 250, BonusStatTarget.MAIN_STAT, 0));
+                    Map<StatType, Integer> itemFlat = BudongMyungwangWeaponTransferCalculator.subtractStatMaps(
+                            selfFlat, memberSelfFlatPref.getOrDefault(member.memberId(), Map.of()));
+                    Map<StatType, Integer> itemPercent = BudongMyungwangWeaponTransferCalculator.subtractStatMaps(
+                            selfPercent, memberSelfPercentPref.getOrDefault(member.memberId(), Map.of()));
+                    budongWeapon = weaponCtx.get();
+                    budongSourceTotal = BudongMyungwangWeaponTransferCalculator.computeSourceTotal(
+                            base, itemFlat, itemPercent,
+                            BudongMyungwangWeaponTransferCalculator.resolveLevelStat(budongInput),
+                            BudongMyungwangWeaponTransferCalculator.resolveBonusAmount(budongInput));
+                }
+            }
+
             // ③ 진법/층진 속성 지정 버프 (NONE/ADAPTIVE는 partyBonus에 이미 포함)
             applyDeckBuffSourcePerMember(deck.getJinbeopSource(), nature, selfFlat, selfPercent);
             applyDeckBuffSourcePerMember(deck.getCheungjinSource(), nature, selfFlat, selfPercent);
@@ -495,7 +615,7 @@ public class DpsCalculatorService {
             }
 
             // ⑤ 명왕부 버프 — 사천왕 카테고리이고 명왕 속성과 일치할 때 적용
-            if (nature != null && isHeavenlyKingCategory(member.getMercenary().getCategory())) {
+            if (nature != null && isHeavenlyKingCategory(member.mercenary().getCategory())) {
                 for (HeavenlyKingBuff hkBuff : heavenlyKingBuffs) {
                     if (hkBuff.element() == null) continue;
                     if (!isElementApplicable(hkBuff.element(), nature)) continue;
@@ -519,18 +639,74 @@ public class DpsCalculatorService {
             // 각성 명왕 공통 아군 속성값 버프
             applyAwakenedMyeongwangAllyBuff(members, member, effectiveStats);
 
-            effectiveStatsByMemberId.put(member.getId(), effectiveStats);
+            effectiveStatsByMemberId.put(member.memberId(), effectiveStats);
         }
 
         // ── 명왕 스탯 이전 패스 ─────────────────────────────────────────────────
         MyungwangStatTransferCalculator.ComputedTransfers myungwangTransfers =
                 myungwangStatTransferCalculator.computeReceivedTransfers(
-                        members, charsByMemberId, charLevelsByCharId, effectiveStatsByMemberId);
+                        members, charLevelsByCharId, effectiveStatsByMemberId);
         myungwangTransfers.receivedByMemberId().forEach((targetId, stats) -> {
             Map<StatType, Integer> targetStats = effectiveStatsByMemberId.get(targetId);
             if (targetStats == null) return;
             stats.forEach((statType, amount) -> targetStats.merge(statType, amount, Integer::sum));
         });
+
+        // ── 부동명왕 무기 주스텟 이전 패스 ─────────────────────────────────────
+        if (budongWeapon != null && budongSourceTotal > 0) {
+            BudongMyungwangWeaponTransferCalculator.ComputedTransfers budongTransfers =
+                    budongMyungwangWeaponTransferCalculator.compute(
+                            members, budongWeapon, budongSourceTotal, inputMap,
+                            target -> {
+                                List<SkillCoefficient> coefs = resolveSkillCoefs(
+                                        target, target.slots(), coefsByMercId, coefsByItemId,
+                                        setSkillEffectsBySetId, coefsBySetGrantedSkillId);
+                                return coefs.isEmpty()
+                                        ? StatType.VITALITY
+                                        : MemberBuildStatCalculator.resolveMainStat(coefs.getFirst());
+                            });
+            budongTransfers.receivedByMemberId().forEach((targetId, stats) -> {
+                Map<StatType, Integer> targetStats = effectiveStatsByMemberId.get(targetId);
+                if (targetStats == null) return;
+                stats.forEach((statType, amount) -> targetStats.merge(statType, amount, Integer::sum));
+            });
+        }
+
+        // ── 각성 명왕 무기 속성값 % 공유 패스 ───────────────────────────────────
+        if (!awakenedWeaponShares.isEmpty()) {
+            MyungwangWeaponElementShareCalculator.ComputedShares weaponShares =
+                    myungwangWeaponElementShareCalculator.compute(
+                            members, awakenedWeaponShares, awakenedWeaponSourceEvByMemberId);
+            weaponShares.receivedElementValueByMemberId().forEach((targetId, amount) -> {
+                Map<StatType, Integer> targetStats = effectiveStatsByMemberId.get(targetId);
+                if (targetStats == null) return;
+                targetStats.merge(StatType.ELEMENT_VALUE, amount, Integer::sum);
+            });
+        }
+
+        // 민첩 1000당 크리티컬확률 2%p — 레벨/보너스 분배 민첩 포함
+        for (LoadedMember member : members) {
+            Map<StatType, Integer> stats = effectiveStatsByMemberId.get(member.memberId());
+            if (stats == null) continue;
+
+            MemberDpsInput input = inputMap.getOrDefault(member.memberId(),
+                    new MemberDpsInput(member.memberId(), 250, BonusStatTarget.MAIN_STAT, 0));
+            int levelStat = input.level() == 260 ? LEVEL_STAT_260 : LEVEL_STAT_250;
+
+            List<SkillCoefficient> primaryCoefs = resolveSkillCoefs(
+                    member, member.slots(), coefsByMercId, coefsByItemId,
+                    setSkillEffectsBySetId, coefsBySetGrantedSkillId);
+            StatType mainStat = primaryCoefs.isEmpty()
+                    ? StatType.VITALITY
+                    : MemberBuildStatCalculator.resolveMainStat(primaryCoefs.getFirst());
+
+            int totalDex = DexterityCriticalChanceCalculator.resolveTotalDexterity(
+                    stats, mainStat, levelStat, input.bonusTarget(), input.bonusAmount());
+            int dexCrit = DexterityCriticalChanceCalculator.fromDexterity(totalDex);
+            if (dexCrit > 0) {
+                stats.merge(StatType.CRITICAL_CHANCE, dexCrit, Integer::sum);
+            }
+        }
 
         // ── 총 저항깎 · 총 속성깎 · 저항 통과율 ─────────────────────────────────
         Monster monster = monsterRepository.findById(req.monsterId())
@@ -545,26 +721,44 @@ public class DpsCalculatorService {
         int memberElementPierce = effectiveStatsByMemberId.values().stream()
                 .mapToInt(m -> m.getOrDefault(StatType.ELEMENT_PIERCE, 0))
                 .sum();
-        int totalElementPierce = memberElementPierce + Math.abs(enemyElementDebuff[0]);
 
-        ResistanceType resistType = req.resistanceType() != null ? req.resistanceType() : ResistanceType.HITTING;
+        ResistanceType resistType = req.resistanceType() != null
+                ? req.resistanceType()
+                : DeckResistanceTypeResolver.resolveLoaded(members);
         int monsterResist = resistType == ResistanceType.MAGIC
                 ? (monster.getMagicResistance() != null ? monster.getMagicResistance() : 0)
                 : (monster.getHittingResistance() != null ? monster.getHittingResistance() : 0);
 
         if (resistType == ResistanceType.MAGIC) {
             monsterResist -= enemyMagicResistDebuff[0];
+            if (enemyMagicResistPercentDebuff[0] > 0) {
+                monsterResist = (int) Math.round(monsterResist * (1.0 - enemyMagicResistPercentDebuff[0] / 100.0));
+            }
         } else {
             monsterResist -= enemyHittingResistDebuff[0];
+            if (enemyHittingResistPercentDebuff[0] > 0) {
+                monsterResist = (int) Math.round(monsterResist * (1.0 - enemyHittingResistPercentDebuff[0] / 100.0));
+            }
         }
 
         int resistAfterDebuff = monsterResist - memberResistPierce - enemyResistPierceBonus;
+        // PERCENT 저항깎은 flat 차감 후 남은 저항에 곱연산 적용
+        if (enemyResistPiercePercentHolder[0] > 0) {
+            resistAfterDebuff = (int) Math.round(resistAfterDebuff * (1.0 - enemyResistPiercePercentHolder[0] / 100.0));
+        }
         double resistPassRate = calcResistPassRate(resistAfterDebuff);
 
         Element monsterElement = monster.getElement();
+        // percent 우선 flat 변환(base 기준) 후 flat과 합산 — 순서: percent(base 기준) → + flat
+        int flatEquivElemDebuff = 0;
+        if (enemyElementPercentDebuff[0] > 0 && monster.getElementValue() != null) {
+            flatEquivElemDebuff = (int) Math.round(monster.getElementValue() * enemyElementPercentDebuff[0] / 100.0);
+        }
+        flatEquivElemDebuff += Math.abs(enemyElementDebuff[0]);
+        int totalElementPierce = memberElementPierce + flatEquivElemDebuff;
         int effectiveMonsterElement = ElementBonusCalculator.hasElementAttribute(monsterElement)
                 ? ElementBonusCalculator.effectiveMonsterElementValue(
-                        monster.getElementValue(), memberElementPierce, Math.abs(enemyElementDebuff[0]))
+                        monster.getElementValue(), memberElementPierce, flatEquivElemDebuff)
                 : 0;
 
         // ── 1패스: 멤버별 DPS 계산 (damageShare 제외) ─────────────────────────
@@ -577,18 +771,14 @@ public class DpsCalculatorService {
 
         List<MemberIntermediate> intermediates = new ArrayList<>();
 
-        for (UserDeckMember member : members) {
-            MemberDpsInput input = inputMap.getOrDefault(member.getId(),
-                    new MemberDpsInput(
-                            member.getId(),
-                            member.getLevel(),
-                            member.getBonusTarget(),
-                            member.getBonusAmount()));
+        for (LoadedMember member : members) {
+            MemberDpsInput input = inputMap.getOrDefault(member.memberId(),
+                    new MemberDpsInput(member.memberId(), 250, BonusStatTarget.MAIN_STAT, 0));
 
             int level = (input.level() == 260) ? 260 : 250;
             int levelStat = (level == 260) ? LEVEL_STAT_260 : LEVEL_STAT_250;
 
-            Map<StatType, Integer> stats = effectiveStatsByMemberId.getOrDefault(member.getId(), Map.of());
+            Map<StatType, Integer> stats = effectiveStatsByMemberId.getOrDefault(member.memberId(), Map.of());
 
             int baseStr = stats.getOrDefault(StatType.STRENGTH, 0);
             int baseDex = stats.getOrDefault(StatType.DEXTERITY, 0);
@@ -599,9 +789,8 @@ public class DpsCalculatorService {
                     + (stats.getOrDefault(StatType.MIN_POWER, 0)
                     + stats.getOrDefault(StatType.MAX_POWER, 0)) / 2;
 
-            List<UserDeckMemberSlot> memberSlots = slotsByMemberId.getOrDefault(member.getId(), List.of());
             List<SkillCoefficient> skillCoefs = resolveSkillCoefs(
-                    member, memberSlots, coefsByMercId, coefsByItemId,
+                    member, member.slots(), coefsByMercId, coefsByItemId,
                     setSkillEffectsBySetId, coefsBySetGrantedSkillId);
 
             List<SkillDpsResult> skillResults = new ArrayList<>();
@@ -689,7 +878,7 @@ public class DpsCalculatorService {
             long memberAdjustedDps           = Math.round(memberElementAdjustedDps * (resistPassRate / 100.0));
 
             intermediates.add(new MemberIntermediate(
-                    member.getId(), member.getMercenary().getId(), member.getMercenary().getName(),
+                    member.memberId(), member.mercenary().getId(), member.mercenary().getName(),
                     memberElementValue, elementBonus,
                     memberRawDpsRounded, memberElementAdjustedDps, memberAdjustedDps,
                     skillResults));
@@ -802,7 +991,7 @@ public class DpsCalculatorService {
      * 추가: 세트 부여 스킬 (StatSource.AFFINITY / TriggerSource.MERCENARY 제외).
      */
     private List<SkillCoefficient> resolveSkillCoefs(
-            UserDeckMember member,
+            LoadedMember member,
             List<UserDeckMemberSlot> slots,
             Map<Long, List<SkillCoefficient>> coefsByMercId,
             Map<Long, List<SkillCoefficient>> coefsByItemId,
@@ -822,7 +1011,7 @@ public class DpsCalculatorService {
 
         // 아이템 스킬 없으면 용병 스킬
         if (result.isEmpty()) {
-            result.addAll(coefsByMercId.getOrDefault(member.getMercenary().getId(), List.of()));
+            result.addAll(coefsByMercId.getOrDefault(member.mercenary().getId(), List.of()));
         }
 
         // 세트 부여 스킬 추가 (인연 연결 미지원 항목 제외)
@@ -980,7 +1169,7 @@ public class DpsCalculatorService {
      * 멤버 특성·전설장수 효과를 scope에 따라 SELF/ALLY/ENEMY 버킷에 분배한다.
      */
     private void accumulateMemberCharacteristicBuffs(
-            UserDeckMember member,
+            LoadedMember member,
             List<UserDeckMemberCharacteristic> memberChars,
             Map<Long, List<MercenaryCharacteristicLevel>> charLevelsByCharId,
             Map<Long, Integer> charIndexByCharId,
@@ -994,9 +1183,10 @@ public class DpsCalculatorService {
             int[] enemyResistPierceHolder,
             int[] enemyMagicResistDebuff,
             int[] enemyHittingResistDebuff,
-            int[] enemyElementDebuff) {
+            int[] enemyElementDebuff,
+            int level) {
 
-        MercenaryCategory category = member.getMercenary().getCategory();
+        MercenaryCategory category = member.mercenary().getCategory();
 
         // MercenaryCharacteristicLevel 기반 (사천왕·명왕·주인공 등)
         for (UserDeckMemberCharacteristic mc : memberChars) {
@@ -1012,8 +1202,8 @@ public class DpsCalculatorService {
 
                 int value = Math.round(lvl.getAmountValue());
                 applyScopedEffect(
-                        scoped, lvl.getStatType(), value, member.getMercenary().getNature(),
-                        selfFlat, selfPercent, member.getId(), memberDamagePercentSum, skillDamageBonus,
+                        scoped, lvl.getStatType(), value, member.mercenary().getNature(),
+                        selfFlat, selfPercent, member.memberId(), memberDamagePercentSum, skillDamageBonus,
                         partyFlatBonus, partyPercentBonus, partySkillDamageBuffs,
                         enemyResistPierceHolder, enemyMagicResistDebuff,
                         enemyHittingResistDebuff, enemyElementDebuff, Element.NONE);
@@ -1022,9 +1212,9 @@ public class DpsCalculatorService {
 
         // 전설장수 — CharacteristicEffect에 명시된 target 사용
         if (category == MercenaryCategory.LEGENDARY_GENERAL) {
-            legendGeneralLoadService.loadForCalculation(member.getMercenary().getId())
+            legendGeneralLoadService.loadForCalculation(member.mercenary().getId())
                     .ifPresent(lg -> applyLegendGeneralBuffs(
-                            lg, member, charIndexByCharId, memberChars,
+                            lg, member, level, charIndexByCharId, memberChars,
                             selfFlat, selfPercent, memberDamagePercentSum,
                             partyFlatBonus, partyPercentBonus, partySkillDamageBuffs,
                             enemyResistPierceHolder, enemyMagicResistDebuff,
@@ -1034,7 +1224,8 @@ public class DpsCalculatorService {
 
     private void applyLegendGeneralBuffs(
             LegendGeneral legendGeneral,
-            UserDeckMember member,
+            LoadedMember member,
+            int level,
             Map<Long, Integer> charIndexByCharId,
             List<UserDeckMemberCharacteristic> memberChars,
             Map<StatType, Integer> selfFlat,
@@ -1057,15 +1248,15 @@ public class DpsCalculatorService {
         }
 
         Map<BuffKey, Float> deckBuffs = legendGeneralBuffCalculator.calculate(
-                legendGeneral, member.getLevel(), pointsMap);
+                legendGeneral, level, pointsMap);
         for (Map.Entry<BuffKey, Float> entry : deckBuffs.entrySet()) {
             BuffKey key = entry.getKey();
             int value = Math.round(entry.getValue());
             ScopedEffect scoped = new ScopedEffect(key.target(),
                     isSkillDamageStat(key.statType()) ? ApplicationMode.SKILL_DAMAGE : ApplicationMode.STAT,
                     isPercentStatType(key.statType()));
-            applyScopedEffect(scoped, key.statType(), value, member.getMercenary().getNature(),
-                    selfFlat, selfPercent, member.getId(), memberDamagePercentSum, Map.of(),
+            applyScopedEffect(scoped, key.statType(), value, member.mercenary().getNature(),
+                    selfFlat, selfPercent, member.memberId(), memberDamagePercentSum, Map.of(),
                     partyFlatBonus, partyPercentBonus, partySkillDamageBuffs,
                     enemyResistPierceHolder, enemyMagicResistDebuff,
                     enemyHittingResistDebuff, enemyElementDebuff, key.element());
@@ -1078,8 +1269,8 @@ public class DpsCalculatorService {
             ScopedEffect scoped = new ScopedEffect(BuffTarget.SELF,
                     isSkillDamageStat(key.statType()) ? ApplicationMode.SKILL_DAMAGE : ApplicationMode.STAT,
                     isPercentStatType(key.statType()));
-            applyScopedEffect(scoped, key.statType(), value, member.getMercenary().getNature(),
-                    selfFlat, selfPercent, member.getId(), memberDamagePercentSum, Map.of(),
+            applyScopedEffect(scoped, key.statType(), value, member.mercenary().getNature(),
+                    selfFlat, selfPercent, member.memberId(), memberDamagePercentSum, Map.of(),
                     partyFlatBonus, partyPercentBonus, partySkillDamageBuffs,
                     enemyResistPierceHolder, enemyMagicResistDebuff,
                     enemyHittingResistDebuff, enemyElementDebuff, key.element());
@@ -1154,6 +1345,27 @@ public class DpsCalculatorService {
         }
     }
 
+    /** ValueType 인식 오버로드 — PERCENT는 별도 홀더에 누적해 곱연산으로 적용된다. */
+    private void applyEnemyDebuff(StatType statType, int value, ValueType valueType,
+                                int[] enemyResistPierceHolder, int[] enemyResistPiercePercentHolder,
+                                int[] enemyMagicResistDebuff, int[] enemyMagicResistPercentDebuff,
+                                int[] enemyHittingResistDebuff, int[] enemyHittingResistPercentDebuff,
+                                int[] enemyElementDebuff, int[] enemyElementPercentDebuff) {
+        if (valueType != ValueType.PERCENT) {
+            applyEnemyDebuff(statType, value,
+                    enemyResistPierceHolder, enemyMagicResistDebuff,
+                    enemyHittingResistDebuff, enemyElementDebuff);
+            return;
+        }
+        switch (statType) {
+            case RESIST_PIERCE -> enemyResistPiercePercentHolder[0] += Math.abs(value);
+            case MAGIC_RESISTANCE, MAGIC_RESISTANCE_PIERCE -> enemyMagicResistPercentDebuff[0] += Math.abs(value);
+            case HITTING_RESISTANCE, HITTING_RESISTANCE_PIERCE -> enemyHittingResistPercentDebuff[0] += Math.abs(value);
+            case ELEMENT_VALUE, ELEMENT_PIERCE -> enemyElementPercentDebuff[0] += Math.abs(value);
+            default -> {}
+        }
+    }
+
     private boolean isSkillDamageStat(StatType statType) {
         return statType == StatType.SKILL_DAMAGE_PERCENT
                 || statType == StatType.DAMAGE_PERCENT
@@ -1175,53 +1387,53 @@ public class DpsCalculatorService {
 
     /** 스킬 DPS에 적용할 damage_percent 합산 배율 */
     private double damageMultiplier(
-            UserDeckMember member,
+            LoadedMember member,
             String skillName,
             Map<Long, Integer> memberDamagePercentSum,
             Map<Long, Map<String, Integer>> memberSkillDamageBonus,
             List<PartySkillDamageBuff> partySkillDamageBuffs) {
 
-        Nature nature = member.getMercenary().getNature();
+        Nature nature = member.mercenary().getNature();
         int partyPct = partySkillDamageBuffs.stream()
                 .filter(buff -> isElementApplicable(buff.element(), nature))
                 .mapToInt(PartySkillDamageBuff::percent)
                 .sum();
 
-        int selfPct = memberDamagePercentSum.getOrDefault(member.getId(), 0);
-        int skillPct = memberSkillDamageBonus.getOrDefault(member.getId(), Map.of())
+        int selfPct = memberDamagePercentSum.getOrDefault(member.memberId(), 0);
+        int skillPct = memberSkillDamageBonus.getOrDefault(member.memberId(), Map.of())
                 .getOrDefault(skillName, 0);
 
         return (100.0 + partyPct + selfPct + skillPct) / 100.0;
     }
 
     /** 덱 내 주인공 국가 속성 버프 — 해당 속성 용병 ELEMENT_VALUE 가산 */
-    private void applyProtagonistNationBuff(List<UserDeckMember> members,
-                                            UserDeckMember target,
+    private void applyProtagonistNationBuff(List<LoadedMember> members,
+                                            LoadedMember target,
                                             Map<StatType, Integer> effectiveStats) {
         members.stream()
-                .filter(m -> m.getMercenary().getCategory() == MercenaryCategory.PROTAGONIST)
+                .filter(m -> m.mercenary().getCategory() == MercenaryCategory.PROTAGONIST)
                 .findFirst()
                 .ifPresent(protagonist -> {
                     var nationBuff = playerCharacterBuffCalculator.getNationBuff(
-                            protagonist.getMercenary().getNation());
+                            protagonist.mercenary().getNation());
                     if (nationBuff.value() <= 0 || nationBuff.element() == Element.NONE) return;
-                    if (!nationBuff.element().name().equals(target.getMercenary().getNature().name())) return;
+                    if (!nationBuff.element().name().equals(target.mercenary().getNature().name())) return;
                     effectiveStats.merge(StatType.ELEMENT_VALUE,
                             Math.round(nationBuff.value()), Integer::sum);
                 });
     }
 
     /** 각성 명왕 N명 × (EARTH는 2, 그 외 5 — 대체 관계, N명이면 N배 중첩) */
-    private void applyAwakenedMyeongwangAllyBuff(List<UserDeckMember> members,
-                                                  UserDeckMember target,
+    private void applyAwakenedMyeongwangAllyBuff(List<LoadedMember> members,
+                                                  LoadedMember target,
                                                   Map<StatType, Integer> effectiveStats) {
         long awakenedCount = members.stream()
-                .filter(m -> m.getMercenary().getCategory() == MercenaryCategory.MYEONG_KING_AWAKENING)
+                .filter(m -> m.mercenary().getCategory() == MercenaryCategory.MYEONG_KING_AWAKENING)
                 .count();
         if (awakenedCount == 0) return;
 
         var allyBuff = awakenedMyungwangBuffCalculator.getCommonAllyBuff();
-        float perBuff = target.getMercenary().getNature() == Nature.EARTH
+        float perBuff = target.mercenary().getNature() == Nature.EARTH
                 ? allyBuff.earthValue()
                 : allyBuff.defaultValue();
         int bonus = (int) (Math.round(perBuff) * awakenedCount);
@@ -1230,7 +1442,9 @@ public class DpsCalculatorService {
 
     private double calcResistPassRate(int resistAfterDebuff) {
         if (resistAfterDebuff >= RESIST_CAP) return RESIST_CAP_PASS_RATE;
-        return Math.max(0.0, 100.0 - (resistAfterDebuff * 0.16 + 57.0));
+        // 저항이 음수가 돼도 통과율은 저항=0 기준 최대치(43%)로 고정
+        int clampedResist = Math.max(0, resistAfterDebuff);
+        return Math.max(0.0, 100.0 - (clampedResist * 0.16 + 57.0));
     }
 
     /** 명왕부 버프 — 명왕 속성(element)이 일치하는 사천왕에게만 적용 */

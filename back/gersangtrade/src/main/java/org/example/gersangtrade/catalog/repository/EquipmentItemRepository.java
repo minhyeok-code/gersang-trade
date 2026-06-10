@@ -76,6 +76,7 @@ public interface EquipmentItemRepository extends JpaRepository<EquipmentItem, Lo
             SELECT ei FROM EquipmentItem ei
             JOIN FETCH ei.item
             LEFT JOIN FETCH ei.equipmentSet
+            LEFT JOIN FETCH ei.mercenary
             WHERE ei.equipSlot = :slot
             """)
     List<EquipmentItem> findByEquipSlot(@Param("slot") EquipSlot slot);
@@ -88,6 +89,7 @@ public interface EquipmentItemRepository extends JpaRepository<EquipmentItem, Lo
             SELECT ei FROM EquipmentItem ei
             JOIN FETCH ei.item
             LEFT JOIN FETCH ei.equipmentSet
+            LEFT JOIN FETCH ei.mercenary
             WHERE ei.slot = :slot
             """)
     List<EquipmentItem> findBySlotWithItem(@Param("slot") EquipmentSlot slot);
@@ -97,6 +99,7 @@ public interface EquipmentItemRepository extends JpaRepository<EquipmentItem, Lo
             SELECT ei FROM EquipmentItem ei
             JOIN FETCH ei.item
             LEFT JOIN FETCH ei.equipmentSet
+            LEFT JOIN FETCH ei.mercenary
             """)
     List<EquipmentItem> findAllWithItem();
 
@@ -108,4 +111,15 @@ public interface EquipmentItemRepository extends JpaRepository<EquipmentItem, Lo
             WHERE ei.equipmentSet.id = :setId
             """)
     List<EquipmentItem> findBySetIdWithItem(@Param("setId") Long setId);
+
+    /** 전용 용병 FK 또는 item_mercenary_restrictions 대상 장비 일괄 조회 */
+    @Query("""
+            SELECT DISTINCT ei FROM EquipmentItem ei
+            JOIN FETCH ei.item i
+            LEFT JOIN FETCH ei.equipmentSet
+            LEFT JOIN FETCH ei.mercenary
+            LEFT JOIN ItemMercenaryRestriction r ON r.item = i AND r.mercenary.id = :mercenaryId
+            WHERE ei.mercenary.id = :mercenaryId OR r.id IS NOT NULL
+            """)
+    List<EquipmentItem> findExclusiveEquipmentByMercenaryId(@Param("mercenaryId") Long mercenaryId);
 }

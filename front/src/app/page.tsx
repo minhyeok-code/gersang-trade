@@ -1,9 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { api, getToken } from '@/lib/api';
+import { useRouter } from 'next/navigation';
+import { api, getToken, getServer } from '@/lib/api';
 import Link from 'next/link';
-import { TrendingUp, Sword, Users, BarChart2 } from 'lucide-react';
+import { TrendingUp, Sword, Users, BarChart2, Clock } from 'lucide-react';
+import SearchBar from '@/components/common/SearchBar';
 
 interface PriceWatchItem {
   itemId: number;
@@ -23,9 +25,11 @@ function formatPrice(price: number): string {
 }
 
 export default function Home() {
+  const router = useRouter();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [priceWatch, setPriceWatch] = useState<PriceWatchItem[]>([]);
   const [watchLoading, setWatchLoading] = useState(false);
+  const [noServerWarning, setNoServerWarning] = useState(false);
 
   useEffect(() => {
     const logged = !!getToken();
@@ -39,41 +43,79 @@ export default function Home() {
     }
   }, []);
 
+  function handleSearch(query: string, itemId: number | null) {
+    if (!getServer()) {
+      setNoServerWarning(true);
+      return;
+    }
+    setNoServerWarning(false);
+    const params = new URLSearchParams();
+    if (query) params.set('q', query);
+    if (itemId) params.set('itemId', String(itemId));
+    router.push(`/trade${params.size ? `?${params}` : ''}`);
+  }
+
   return (
     <div className="py-8">
-      {/* 속성 배너 */}
-      <div
-        className="rounded-xl mb-8 p-8 flex items-center justify-between"
-        style={{
-          background: 'linear-gradient(135deg, #8B6B4A 0%, #5a3e28 100%)',
-          border: '1px solid var(--brown)',
-        }}
-      >
-        <div>
-          <p style={{ color: 'var(--beige)', opacity: 0.8 }} className="text-sm mb-1">
-            거상 아이템 거래 플랫폼
-          </p>
-          <h1 className="font-serif text-3xl font-bold" style={{ color: 'var(--beige)' }}>
-            거상인
-          </h1>
-          <p style={{ color: 'var(--beige)', opacity: 0.7 }} className="text-sm mt-2">
-            아이템 거래 · 시세 조회 · DPS 계산기
-          </p>
+      {/* 검색 영역 */}
+      <div className="mb-8 flex flex-col items-center text-center pt-6">
+        <h1 className="font-serif text-3xl font-bold mb-1" style={{ color: 'var(--text)' }}>
+          거상인
+        </h1>
+        <p style={{ color: 'var(--text-muted)' }} className="text-sm mb-6">
+          아이템 거래 · 시세 조회 · DPS 계산기
+        </p>
+
+        {/* 서버 미선택 경고 */}
+        {noServerWarning && (
+          <div
+            className="mb-3 px-4 py-2 rounded text-sm font-medium"
+            style={{ background: 'var(--card)', color: 'var(--brown)', border: '1px solid var(--brown)' }}
+          >
+            먼저 상단에서 서버를 선택해주세요
+          </div>
+        )}
+
+        {/* 검색창 */}
+        <div className="w-full max-w-xl" onClick={() => setNoServerWarning(false)}>
+          <SearchBar
+            showSubmitButton
+            onSearch={(q, itemId) => handleSearch(q, itemId)}
+          />
         </div>
-        <div className="flex gap-3">
+
+        <div className="flex flex-wrap items-center justify-center gap-3 mt-4">
           <Link
             href="/trade"
-            style={{ background: 'var(--beige)', color: 'var(--brown)' }}
-            className="px-5 py-2.5 rounded font-semibold text-sm hover:opacity-90 transition-opacity"
+            style={{ color: 'var(--text-muted)' }}
+            className="text-xs hover:text-[var(--text)] transition-colors"
           >
-            거래 보기
+            전체 거래 보기 →
           </Link>
+          <span style={{ color: 'var(--border)' }}>|</span>
           <Link
             href="/deck"
-            style={{ border: '1px solid var(--beige)', color: 'var(--beige)' }}
-            className="px-5 py-2.5 rounded font-semibold text-sm hover:bg-white/10 transition-colors"
+            style={{ color: 'var(--text-muted)' }}
+            className="text-xs hover:text-[var(--text)] transition-colors"
           >
-            전투 계산기
+            전투 계산기 →
+          </Link>
+          <span style={{ color: 'var(--border)' }}>|</span>
+          <Link
+            href="/value-test"
+            style={{ color: 'var(--text-muted)' }}
+            className="text-xs hover:text-[var(--text)] transition-colors"
+          >
+            가성비테스트 →
+          </Link>
+          <span style={{ color: 'var(--border)' }}>|</span>
+          <Link
+            href="/clear-time"
+            style={{ background: 'var(--brown)', color: 'var(--beige)' }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium hover:opacity-90 transition-opacity"
+          >
+            <Clock style={{ width: 14, height: 14 }} />
+            사냥 허브
           </Link>
         </div>
       </div>

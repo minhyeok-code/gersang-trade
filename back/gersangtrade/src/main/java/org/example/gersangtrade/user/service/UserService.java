@@ -1,9 +1,7 @@
 package org.example.gersangtrade.user.service;
 
 import lombok.RequiredArgsConstructor;
-import org.example.gersangtrade.catalog.repository.MonsterRepository;
 import org.example.gersangtrade.catalog.repository.ServerRepository;
-import org.example.gersangtrade.domain.catalog.Monster;
 import org.example.gersangtrade.domain.catalog.Server;
 import org.example.gersangtrade.domain.chat.enums.ListingType;
 import org.example.gersangtrade.domain.listing.BundleLine;
@@ -11,8 +9,6 @@ import org.example.gersangtrade.domain.listing.ListingBundle;
 import org.example.gersangtrade.domain.listing.TradeListing;
 import org.example.gersangtrade.domain.trade.TradeConfirmed;
 import org.example.gersangtrade.domain.user.User;
-import org.example.gersangtrade.domain.user.UserClearTime;
-import org.example.gersangtrade.domain.user.UserClearTimeRepository;
 import org.example.gersangtrade.domain.user.UserRepository;
 import org.example.gersangtrade.domain.user.enums.UserStatus;
 import org.example.gersangtrade.domain.wanted.WantedItem;
@@ -20,16 +16,14 @@ import org.example.gersangtrade.listing.dto.response.ListingSummaryResponse;
 import org.example.gersangtrade.listing.repository.BundleLineRepository;
 import org.example.gersangtrade.listing.repository.ListingBundleRepository;
 import org.example.gersangtrade.listing.repository.TradeListingRepository;
+import org.example.gersangtrade.listing.service.ListingBundleTitleService;
 import org.example.gersangtrade.trade.dto.response.TradeHistoryResponse;
 import org.example.gersangtrade.trade.repository.TradeConfirmedRepository;
-import org.example.gersangtrade.user.dto.request.ClearTimeRequest;
 import org.example.gersangtrade.user.dto.request.UserProfileUpdateRequest;
 import org.example.gersangtrade.user.dto.request.UserServerUpdateRequest;
-import org.example.gersangtrade.user.dto.response.ClearTimeResponse;
 import org.example.gersangtrade.user.dto.response.MyGradeResponse;
 import org.example.gersangtrade.user.dto.response.PublicUserProfileResponse;
 import org.example.gersangtrade.user.dto.response.UserProfileResponse;
-import org.example.gersangtrade.user.util.ExpGradeCalculator;
 import org.example.gersangtrade.wanted.repository.WantedItemRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,8 +41,6 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class UserService {
 
-    private static final long CLEAR_TIME_EXP = 5L;
-
     private final UserRepository userRepository;
     private final TradeListingRepository tradeListingRepository;
     private final ListingBundleRepository listingBundleRepository;
@@ -56,8 +48,7 @@ public class UserService {
     private final WantedItemRepository wantedItemRepository;
     private final TradeConfirmedRepository tradeConfirmedRepository;
     private final ServerRepository serverRepository;
-    private final MonsterRepository monsterRepository;
-    private final UserClearTimeRepository clearTimeRepository;
+    private final ListingBundleTitleService listingBundleTitleService;
 
     /**
      * 내 프로필 조회.
@@ -96,10 +87,12 @@ public class UserService {
                 .collect(Collectors.groupingBy(l -> l.getBundle().getId()));
 
         return listings.stream()
-                .map(listing -> ListingSummaryResponse.from(
-                        listing,
-                        bundlesByListingId.getOrDefault(listing.getId(), List.of()),
-                        linesByBundleId))
+                .map(listing -> {
+                    List<ListingBundle> bundles = bundlesByListingId.getOrDefault(listing.getId(), List.of());
+                    List<ListingSummaryResponse.BundleSummary> bundleSummaries =
+                            listingBundleTitleService.buildSummaries(bundles, linesByBundleId);
+                    return ListingSummaryResponse.from(listing, bundleSummaries);
+                })
                 .toList();
     }
 
@@ -145,13 +138,9 @@ public class UserService {
                 List<ListingBundle> bundles = listingBundleRepository.findByListingIdOrderByIdAsc(listingId);
                 if (!bundles.isEmpty()) {
                     ListingBundle first = bundles.get(0);
-                    if (first.getTitleOverride() != null && !first.getTitleOverride().isBlank()) {
-                        return first.getTitleOverride();
-                    }
                     List<BundleLine> lines = bundleLineRepository.findByBundleIdOrderBySortOrderAsc(first.getId());
                     if (!lines.isEmpty()) {
-                        String name = lines.get(0).getItem().getName();
-                        return lines.size() > 1 ? name + " 외 " + (lines.size() - 1) + "개" : name;
+                        return listingBundleTitleService.resolveTitle(first, lines);
                     }
                 }
             } else {
@@ -254,36 +243,6 @@ public class UserService {
             throw new IllegalStateException("이미 탈퇴 처리된 계정입니다.");
         }
         user.softDelete();
-    }
-
-    /**
-     * 클리어타임 저장 및 EXP 지급.
-     * 데이터 기여 보상으로 {@value CLEAR_TIME_EXP} EXP를 지급한다.
-     *
-     * @param userId  유저 ID
-     * @param request 클리어타임 저장 요청
-     * @return 저장된 클리어타임 + 지급된 EXP
-     */
-    @Transactional
-    public ClearTimeResponse saveClearTime(Long userId, ClearTimeRequest request) {
-        User user = loadActiveUser(userId);
-        Monster monster = monsterRepository.findById(request.monsterId())
-                .orElseThrow(() -> new NoSuchElementException("존재하지 않는 몬스터입니다."));
-
-        UserClearTime clearTime = UserClearTime.builder()
-                .user(user)
-                .monster(monster)
-                .deckId(request.deckId())
-                .clearTimeSeconds(request.clearTimeSeconds())
-                .build();
-        clearTimeRepository.save(clearTime);
-
-        // EXP 지급 및 등급·호봉 재계산
-        ExpGradeCalculator.GradeAndStep result =
-                ExpGradeCalculator.calculate(user.getTotalExp(), CLEAR_TIME_EXP);
-        user.applyExp(CLEAR_TIME_EXP, result.grade(), result.step());
-
-        return ClearTimeResponse.of(clearTime, CLEAR_TIME_EXP);
     }
 
     // ──────────────────────────────────────────────────────────────────────

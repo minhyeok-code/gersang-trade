@@ -6,6 +6,7 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 서버 JPA 레포지토리.
@@ -16,4 +17,7 @@ public interface ServerRepository extends JpaRepository<Server, Integer> {
     /** 활성 서버 목록만 조회 — 거래 등록 시 서버 선택 드롭다운에 사용된다 */
     @Cacheable(CacheConfig.SERVERS)
     List<Server> findByIsActiveTrue();
+
+    /** 서버명으로 서버 조회 — 거래 확정 시 serverSnapshot 문자열에서 Server 엔티티 resolve에 사용된다 */
+    Optional<Server> findByName(String name);
 }

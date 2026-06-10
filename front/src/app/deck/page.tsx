@@ -2,8 +2,10 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import Link from 'next/link';
 import {
   api,
+  getToken,
   type MercenaryDto,
   type MonsterDto,
   type DeckDetailDto,
@@ -16,9 +18,18 @@ import {
   type RitualDto,
   type SlotRitualDto,
 } from '@/lib/api';
-import { equipmentItemKey, equipmentItemToSearchResult } from '@/lib/equipment';
+import {
+  buildDeckEquipmentDisplayItems,
+  equipmentItemKey,
+  equipmentItemToSearchResult,
+  isExclusiveForMercenary,
+} from '@/lib/equipment';
+import {
+  characteristicSelectionCost,
+  usedMemberCharacteristicPoints,
+} from '@/lib/mercenaryCharacteristicUi';
 import { DeckEffectPanel } from '@/components/deck/DeckEffectPanel';
-import { Plus, Trash2, Sword, Shield, Search, X, ChevronDown, ChevronUp, Zap, Sparkles } from 'lucide-react';
+import { Plus, Trash2, Sword, Shield, Search, X, ChevronDown, ChevronUp, Zap, Sparkles, Timer } from 'lucide-react';
 
 // ══════════ 상수 ══════════
 
@@ -100,6 +111,8 @@ const STAT_LABEL: Record<string, string> = {
   CRITICAL_CHANCE: '크리티컬확률',
   MAGIC_RESISTANCE: '마법저항',
   HITTING_RESISTANCE: '타격저항',
+  MAGIC_RESISTANCE_PIERCE: '마법저항깎',
+  HITTING_RESISTANCE_PIERCE: '타격저항깎',
   DAMAGE_PERCENT: '데미지증가',
   SKILL_DAMAGE_PERCENT: '스킬데미지증가',
   FIELD_MOVE_SPEED: '필드이동속도',
@@ -212,7 +225,10 @@ function isLegendaryMercenary(merc?: Pick<MercenaryDto, 'category'> | null) {
 const ELEMENT_SORT_ORDER = ['FIRE', 'WATER', 'THUNDER', 'WIND', 'EARTH'] as const;
 
 /** 덱 용병 선택 탭 표시 순서 */
-const DECK_MERCENARY_CATEGORY_ORDER = ['주인공', '각성사천왕', '사천왕', '각성명왕', '명왕', '전설장수'];
+const DECK_MERCENARY_CATEGORY_ORDER = ['주인공', '각성사천왕', '사천왕', '각성명왕', '명왕', '전설장수', '기타'];
+
+const MISC_CATEGORY = '기타';
+const MISC_MERCENARY_NAMES = ['원숭이 주술사', '코끼리 주술사', '염력사', '음양사'];
 
 /** 헤더(76px) 아래 sticky 여백 */
 const DECK_STICKY_TOP = 88;
@@ -223,6 +239,69 @@ function sortDeckMercenaryCategories(categories: string[]) {
     const bOrder = DECK_MERCENARY_CATEGORY_ORDER.indexOf(b);
     return (aOrder === -1 ? 999 : aOrder) - (bOrder === -1 ? 999 : bOrder);
   });
+}
+
+/** 덱 카드 표시 슬롯: 주인공(1) → 사천왕/각성사천왕(2) → 각성명왕/명왕 → 전설장수 → 기타 */
+function arrangeDeckDisplaySlots(
+  members: DeckMember[],
+  mercenaryById: Map<number, MercenaryDto>,
+  maxMembers: number,
+): (DeckMember | null)[] {
+  const used = new Set<number>();
+
+  const takeFirst = (predicate: (merc: MercenaryDto) => boolean): DeckMember | null => {
+    for (const member of members) {
+      if (used.has(member.id)) continue;
+      const merc = mercenaryById.get(member.mercenaryId);
+      if (merc && predicate(merc)) {
+        used.add(member.id);
+        return member;
+      }
+    }
+    return null;
+  };
+
+  const takeAll = (
+    predicate: (merc: MercenaryDto) => boolean,
+    sortFn?: (a: DeckMember, b: DeckMember) => number,
+  ): DeckMember[] => {
+    const picked = members.filter((member) => {
+      if (used.has(member.id)) return false;
+      const merc = mercenaryById.get(member.mercenaryId);
+      return merc != null && predicate(merc);
+    });
+    if (sortFn) picked.sort(sortFn);
+    picked.forEach((member) => used.add(member.id));
+    return picked;
+  };
+
+  const myeongwangSort = (a: DeckMember, b: DeckMember) => {
+    const ma = mercenaryById.get(a.mercenaryId);
+    const mb = mercenaryById.get(b.mercenaryId);
+    const aAwake = isAwakenedMyeongwangMercenary(ma) ? 0 : 1;
+    const bAwake = isAwakenedMyeongwangMercenary(mb) ? 0 : 1;
+    if (aAwake !== bAwake) return aAwake - bAwake;
+    return a.mercenaryName.localeCompare(b.mercenaryName, 'ko');
+  };
+
+  const legendarySort = (a: DeckMember, b: DeckMember) => {
+    const ma = mercenaryById.get(a.mercenaryId)!;
+    const mb = mercenaryById.get(b.mercenaryId)!;
+    const byElement = elementSortIndex(ma.element) - elementSortIndex(mb.element);
+    if (byElement !== 0) return byElement;
+    return a.mercenaryName.localeCompare(b.mercenaryName, 'ko');
+  };
+
+  const slots: (DeckMember | null)[] = [
+    takeFirst(isHeroMercenary),
+    takeFirst(isFourKingMercenary),
+    ...takeAll(isMyeongwangMercenary, myeongwangSort),
+    ...takeAll(isLegendaryMercenary, legendarySort),
+    ...members.filter((member) => !used.has(member.id)),
+  ];
+
+  while (slots.length < maxMembers) slots.push(null);
+  return slots.slice(0, maxMembers);
 }
 
 function elementSortIndex(element?: string | null) {
@@ -244,11 +323,21 @@ function isLegendaryPickerCategory(category: string) {
   return category.includes('전설');
 }
 
+function isMiscMercenary(merc: MercenaryDto) {
+  return MISC_MERCENARY_NAMES.includes(merc.name);
+}
+
+function displayMercenaryCategory(merc: MercenaryDto): string {
+  if (isMiscMercenary(merc)) return MISC_CATEGORY;
+  return mercenaryCategory(merc);
+}
+
 function isDeckSelectableMercenary(merc: MercenaryDto) {
   return isHeroMercenary(merc)
     || isFourKingMercenary(merc)
     || isMyeongwangMercenary(merc)
-    || isLegendaryMercenary(merc);
+    || isLegendaryMercenary(merc)
+    || isMiscMercenary(merc);
 }
 
 function roundedDamageShare(value?: number) {
@@ -261,7 +350,7 @@ function formatStatType(statType: string) {
 
 function statValue(
   stats: MemberStats | null,
-  section: 'baseStats' | 'equipStats' | 'setEffectStats' | 'characteristicStats' | 'partyCharacteristicStats' | 'enemyDebuffStats' | 'ritualStats' | 'ritualSetEffectStats' | 'deckBuffStats' | 'levelBonusStats' | 'bonusStats' | 'protagonistBuffStats' | 'awakenedMyeongwangBuffStats' | 'myungwangTransferStats' | 'totalStats',
+  section: 'baseStats' | 'equipStats' | 'setEffectStats' | 'characteristicStats' | 'partyCharacteristicStats' | 'enemyDebuffStats' | 'ritualStats' | 'ritualSetEffectStats' | 'deckBuffStats' | 'levelBonusStats' | 'bonusStats' | 'protagonistBuffStats' | 'awakenedMyeongwangBuffStats' | 'partyItemBuffStats' | 'myungwangTransferStats' | 'totalStats',
   statType: string
 ) {
   return stats?.[section]?.find((s) => s.statType === statType)?.value ?? 0;
@@ -277,10 +366,8 @@ function toSearchResult(item: EquipmentItemDto, selectedSlot: string): ItemSearc
 }
 
 function characteristicUsedPoints(characteristics: MemberCharacteristicDto | null) {
-  return characteristics?.characteristics.reduce((sum, characteristic) => {
-    if (!characteristic.selectedLevel) return sum;
-    return sum + ((characteristic.point ?? 0) * characteristic.selectedLevel);
-  }, 0) ?? 0;
+  if (!characteristics) return 0;
+  return usedMemberCharacteristicPoints(characteristics.characteristics);
 }
 
 function characteristicMaxPoints(characteristics: MemberCharacteristicDto | null) {
@@ -305,6 +392,42 @@ function formatStatValue(statType: string, value: number, statUnit?: 'FLAT' | 'P
     return `+${value}%`;
   }
   return `+${value}`;
+}
+
+const PERCENT_STAT_TYPES = new Set([
+  'DAMAGE_PERCENT', 'SKILL_DAMAGE_PERCENT', 'MAGIC_RESISTANCE', 'HITTING_RESISTANCE',
+  'CRITICAL_CHANCE', 'ATTACK_SPEED', 'DAMAGE_PERCENT_GROUND', 'DAMAGE_PERCENT_AIR',
+  'CRITICAL_DAMAGE', 'CRITICAL_RATE', 'HIT_RATE',
+]);
+
+const COMPOUND_STAT_LABEL: Record<string, string> = {
+  'DAMAGE_PERCENT_FIRE':    '화속성 데미지증가',
+  'DAMAGE_PERCENT_WIND':    '풍속성 데미지증가',
+  'DAMAGE_PERCENT_WATER':   '수속성 데미지증가',
+  'DAMAGE_PERCENT_THUNDER': '뇌속성 데미지증가',
+  'DAMAGE_PERCENT_EARTH':   '지속성 데미지증가',
+};
+
+// compound key (예: DAMAGE_PERCENT_FIRE) → 기반 StatType (예: DAMAGE_PERCENT)
+function baseStatFromCompoundKey(statKey: string): string {
+  for (const base of Object.keys(STAT_LABEL)) {
+    if (statKey.startsWith(base + '_')) return base;
+  }
+  return statKey;
+}
+
+type LevelEntryLike = { label?: string | null; amount?: string | null; amountValue?: number | null; statType?: string | null; element?: string | null };
+
+function formatLevelEntryAmount(entry: LevelEntryLike): string {
+  if (entry.label && entry.amount) return `${entry.label} ${entry.amount}`;
+  if (entry.amount) return entry.amount;
+  if (entry.amountValue == null || !entry.statType) return '';
+  const compoundKey = entry.element && entry.element !== 'NONE' ? `${entry.statType}_${entry.element}` : null;
+  const label = (compoundKey && COMPOUND_STAT_LABEL[compoundKey]) ?? STAT_LABEL[entry.statType] ?? entry.statType;
+  const v = entry.amountValue;
+  const sign = v >= 0 ? '+' : '';
+  const valueStr = PERCENT_STAT_TYPES.has(entry.statType) ? `${sign}${v}%` : `${sign}${v}`;
+  return `${label} ${valueStr}`;
 }
 
 function equipmentTabStatTotal(stats: MemberStats | null, statType: string) {
@@ -377,7 +500,7 @@ const ALL_STAT_TARGETS = ['STRENGTH', 'DEXTERITY', 'VITALITY', 'INTELLECT'] as c
 const SOURCE_SECTIONS = [
   'equipStats', 'setEffectStats', 'characteristicStats', 'partyCharacteristicStats',
   'enemyDebuffStats', 'ritualStats', 'ritualSetEffectStats', 'deckBuffStats',
-  'protagonistBuffStats', 'awakenedMyeongwangBuffStats', 'myungwangTransferStats',
+  'protagonistBuffStats', 'awakenedMyeongwangBuffStats', 'partyItemBuffStats', 'myungwangTransferStats',
 ] as const;
 
 // 기본+레벨+장비+보너스 합산. ALL_STAT → 힘/민첩/생명력/지력에 분배
@@ -409,11 +532,15 @@ function displayPrimaryStatTypes(stats: MemberStats | null): string[] {
 function sourceStatTotal(stats: MemberStats | null, statType: string): number {
   if (!stats) return 0;
   const includeAllStat = (ALL_STAT_TARGETS as readonly string[]).includes(statType);
-  return SOURCE_SECTIONS.reduce((sum, section) => {
+  const sectionSum = SOURCE_SECTIONS.reduce((sum, section) => {
     const val = statValue(stats, section, statType);
     const allVal = includeAllStat ? statValue(stats, section, 'ALL_STAT') : 0;
     return sum + val + allVal;
   }, 0);
+  const lgAllyVal = stats.lgAllyDetails
+    ?.filter((e) => baseStatFromCompoundKey(e.statKey) === statType)
+    .reduce((s, e) => s + e.value, 0) ?? 0;
+  return sectionSum + lgAllyVal;
 }
 
 function displaySourceStatTypes(stats: MemberStats | null): string[] {
@@ -423,6 +550,7 @@ function displaySourceStatTypes(stats: MemberStats | null): string[] {
   }
   stats?.ritualSetEffects?.forEach((s) => keys.add(s.statType));
   stats?.myungwangTransferDetails?.forEach((s) => keys.add(s.statType));
+  stats?.lgAllyDetails?.forEach((e) => keys.add(baseStatFromCompoundKey(e.statKey)));
   if (keys.has('ALL_STAT')) {
     keys.delete('ALL_STAT');
     for (const t of ALL_STAT_TARGETS) keys.add(t);
@@ -449,6 +577,7 @@ function buildStatContributions(stats: MemberStats | null, statType: string): St
     { label: '주술 세트', value: v('ritualSetEffectStats') },
     { label: '주인공 국가 버프', value: v('protagonistBuffStats') },
     { label: '각성 명왕 버프', value: v('awakenedMyeongwangBuffStats') },
+    { label: '사인검 파티 버프', value: v('partyItemBuffStats') },
   ];
 
   // 덱 효과: 정령·진법·층진 출처별 개별 행 (sourceName 기준 합산)
@@ -480,8 +609,94 @@ function buildStatContributions(stats: MemberStats | null, statType: string): St
       rows.push({ label: `명왕 스탯 이전 (${detail.sourceMercenaryName})`, value: detail.value });
     }
   });
+  stats.lgAllyDetails?.forEach((e) => {
+    if (baseStatFromCompoundKey(e.statKey) === statType && e.value !== 0) {
+      const label = COMPOUND_STAT_LABEL[e.statKey] ?? STAT_LABEL[baseStatFromCompoundKey(e.statKey)] ?? e.statKey;
+      rows.push({ label: `${e.mercenaryName} : ${label}`, value: e.value });
+    }
+  });
   return rows.filter((r) => r.value !== 0);
 }
+
+// 최종 스탯 표시용: totalStats에서 ALL_STAT 분배
+function computeDisplayTotalMap(stats: MemberStats | null): Map<string, number> {
+  const map = new Map<string, number>();
+  stats?.totalStats?.forEach((s) => {
+    map.set(s.statType, (map.get(s.statType) ?? 0) + s.value);
+  });
+  const allStatVal = map.get('ALL_STAT') ?? 0;
+  if (allStatVal !== 0) {
+    map.delete('ALL_STAT');
+    for (const t of ALL_STAT_TARGETS) {
+      map.set(t, (map.get(t) ?? 0) + allStatVal);
+    }
+  }
+  return map;
+}
+
+// 최종 스탯 팝오버: 모든 출처 포함 (기본·레벨·보너스 포함), ALL_STAT 분배
+function buildFullStatContributions(stats: MemberStats | null, statType: string): StatContribution[] {
+  if (!stats) return [];
+  const includeAllStat = (ALL_STAT_TARGETS as readonly string[]).includes(statType);
+  const allSections = [
+    'baseStats', 'levelBonusStats', 'bonusStats', 'equipStats', 'setEffectStats',
+    'characteristicStats', 'partyCharacteristicStats', 'enemyDebuffStats',
+    'ritualStats', 'ritualSetEffectStats',
+    'protagonistBuffStats', 'awakenedMyeongwangBuffStats', 'partyItemBuffStats', 'myungwangTransferStats',
+  ] as const;
+  const SECTION_LABELS: Record<typeof allSections[number], string> = {
+    baseStats: '기본',
+    levelBonusStats: '레벨 스탯',
+    bonusStats: '보너스 스탯',
+    equipStats: '장비',
+    setEffectStats: '세트 효과',
+    characteristicStats: '특성(자신)',
+    partyCharacteristicStats: '특성(아군)',
+    enemyDebuffStats: '특성(적군)',
+    ritualStats: '주술',
+    ritualSetEffectStats: '주술 세트',
+    protagonistBuffStats: '주인공 국가 버프',
+    awakenedMyeongwangBuffStats: '각성 명왕 버프',
+    partyItemBuffStats: '사인검 파티 버프',
+    myungwangTransferStats: '명왕 스탯 이전',
+  };
+  const getVal = (section: typeof allSections[number]) => {
+    const base = statValue(stats, section, statType);
+    const allVal = includeAllStat ? statValue(stats, section, 'ALL_STAT') : 0;
+    return base + allVal;
+  };
+  const rows: StatContribution[] = allSections.map((section) => ({
+    label: SECTION_LABELS[section],
+    value: getVal(section),
+  }));
+  if (stats.deckBuffDetails) {
+    const sourceMap = new Map<string, { label: string; value: number }>();
+    for (const d of stats.deckBuffDetails) {
+      const match = d.statType === statType || (includeAllStat && d.statType === 'ALL_STAT');
+      if (!match || d.value === 0) continue;
+      const key = `${d.sourceType}:${d.sourceName}`;
+      const existing = sourceMap.get(key);
+      sourceMap.set(key, { label: `${d.sourceType}: ${d.sourceName}`, value: (existing?.value ?? 0) + d.value });
+    }
+    sourceMap.forEach((entry) => rows.push(entry));
+  } else {
+    const v = statValue(stats, 'deckBuffStats', statType)
+      + (includeAllStat ? statValue(stats, 'deckBuffStats', 'ALL_STAT') : 0);
+    rows.push({ label: '덱 효과', value: v });
+  }
+  stats.lgAllyDetails?.forEach((e) => {
+    if (baseStatFromCompoundKey(e.statKey) === statType && e.value !== 0) {
+      const label = COMPOUND_STAT_LABEL[e.statKey] ?? STAT_LABEL[baseStatFromCompoundKey(e.statKey)] ?? e.statKey;
+      rows.push({ label: `${e.mercenaryName} : ${label}`, value: e.value });
+    }
+  });
+  return rows.filter((r) => r.value !== 0);
+}
+
+// 최종 스탯 표에 고정 표시할 스탯 목록
+const LEFT_STAT_COLS = ['STRENGTH', 'DEXTERITY', 'VITALITY', 'INTELLECT'] as const;
+const RIGHT_STAT_COLS = ['ATTACK_POWER', 'ELEMENT_VALUE', 'DAMAGE_PERCENT', 'CRITICAL_CHANCE'] as const;
+const FIXED_STAT_ROWS = Math.max(LEFT_STAT_COLS.length, RIGHT_STAT_COLS.length); // 4
 
 function EquipSetEffectsPanel({ stats, loading, compact = false }: { stats: MemberStats | null; loading: boolean; compact?: boolean }) {
   if (loading) {
@@ -642,11 +857,11 @@ function CharacteristicQuadrantCard({
     >
       <div className="flex items-start justify-between gap-2 mb-3">
         <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>{characteristic.name}</p>
-        {characteristic.point != null && (
-          <span className="text-[10px] shrink-0 px-1.5 py-0.5 rounded" style={{ background: 'var(--bg)', color: 'var(--brown)' }}>
-            {characteristic.point}pt/lv
-          </span>
-        )}
+        <span className="text-[10px] shrink-0 px-1.5 py-0.5 rounded" style={{ background: 'var(--bg)', color: 'var(--brown)' }}>
+          {characteristic.point != null && characteristic.point > 0
+            ? `${characteristic.point}pt/lv`
+            : 'Lv=pt'}
+        </span>
       </div>
       <div className="flex flex-wrap gap-1 mb-3">
         {tiers.map((tier) => {
@@ -684,11 +899,15 @@ function CharacteristicQuadrantCard({
         {preview.length === 0 ? (
           <span style={{ color: 'var(--text-disabled)' }}>레벨을 선택하면 효과가 표시됩니다</span>
         ) : (
-          preview.map((entry) => (
-            <p key={`${entry.label}-${entry.level}`}>
-              {entry.label ? `${entry.label} ` : ''}{entry.amount}
-            </p>
-          ))
+          preview.map((entry, idx) => {
+            const text = formatLevelEntryAmount(entry);
+            if (!text) return null;
+            return (
+              <p key={`${entry.statType ?? entry.label ?? idx}-${entry.level}`}>
+                {text}
+              </p>
+            );
+          })
         )}
       </div>
     </div>
@@ -699,10 +918,12 @@ function StatContributionPopover({
   statType,
   contributions,
   total,
+  compact = false,
 }: {
   statType: string;
   contributions: StatContribution[];
   total: number;
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -786,16 +1007,29 @@ function StatContributionPopover({
 
   return (
     <>
-      <button
-        ref={buttonRef}
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        style={{ border: '1px solid var(--border)', color: 'var(--brown)' }}
-        className="rounded px-2 py-0.5 text-[10px] hover:bg-[var(--bg)]"
-        title="이 스탯에 영향을 준 항목과 수치"
-      >
-        기여 내역
-      </button>
+      {compact ? (
+        <button
+          ref={buttonRef}
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          style={{ color: 'var(--text-muted)', lineHeight: 1 }}
+          className="ml-1 text-[10px] hover:text-[var(--text)] shrink-0"
+          title="이 스탯에 영향을 준 항목과 수치"
+        >
+          ?
+        </button>
+      ) : (
+        <button
+          ref={buttonRef}
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          style={{ border: '1px solid var(--border)', color: 'var(--brown)' }}
+          className="rounded px-2 py-0.5 text-[10px] hover:bg-[var(--bg)]"
+          title="이 스탯에 영향을 준 항목과 수치"
+        >
+          기여 내역
+        </button>
+      )}
       {popover}
     </>
   );
@@ -1187,6 +1421,10 @@ function MonsterDpsSidebar({
   setFailedMonsterImageIds,
   dpsResult,
   calcLoading,
+  clearTimeSeconds,
+  onClearTimeSecondsChange,
+  onSaveClearTime,
+  clearTimeSaving,
   sticky = true,
 }: {
   selectedDeckId: number | null;
@@ -1202,6 +1440,10 @@ function MonsterDpsSidebar({
   setFailedMonsterImageIds: (value: Set<number> | ((prev: Set<number>) => Set<number>)) => void;
   dpsResult: DpsResultDto | null;
   calcLoading: boolean;
+  clearTimeSeconds: string;
+  onClearTimeSecondsChange: (v: string) => void;
+  onSaveClearTime: () => void;
+  clearTimeSaving: boolean;
   sticky?: boolean;
 }) {
   const outerClass = sticky ? 'hidden lg:block min-w-0' : 'lg:hidden min-w-0 mt-4';
@@ -1401,6 +1643,42 @@ function MonsterDpsSidebar({
             )}
           </div>
         )}
+
+        {selectedDeckId && monster && dpsResult && (
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)' }} className="rounded-xl p-3">
+            <h3 className="font-semibold text-sm mb-1 flex items-center gap-1.5" style={{ color: 'var(--text)' }}>
+              <Timer style={{ width: 14, height: 14 }} /> 평균 클리어타임
+            </h3>
+            <p className="text-[10px] mb-2" style={{ color: 'var(--text-muted)' }}>
+              해당 몬스터 평균 클리어 소요 시간 (6~26초)
+            </p>
+            <div className="flex gap-2 items-center mb-2">
+              <input
+                type="number"
+                min={6}
+                max={26}
+                value={clearTimeSeconds}
+                onChange={(e) => onClearTimeSecondsChange(e.target.value)}
+                placeholder="초"
+                style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
+                className="w-20 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-[var(--brown)]"
+              />
+              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>초</span>
+            </div>
+            <button
+              type="button"
+              disabled={clearTimeSaving}
+              onClick={onSaveClearTime}
+              style={{
+                background: clearTimeSaving ? 'var(--border)' : 'var(--brown)',
+                color: clearTimeSaving ? 'var(--text-muted)' : '#fff',
+              }}
+              className="w-full rounded-lg py-2 text-xs font-medium transition-opacity disabled:cursor-not-allowed"
+            >
+              {clearTimeSaving ? '저장 중...' : '클리어타임 저장'}
+            </button>
+          </div>
+        )}
       </div>
     </aside>
   );
@@ -1408,17 +1686,47 @@ function MonsterDpsSidebar({
 
 // ══════════ 장비 선택 모달 ══════════
 
-function EquipModal({ slot, equipmentBySlot, equipmentLoading, onSelect, onClose }: {
+function EquipModal({ slot, mercenaryId, isHeroMember, equipmentBySlot, onSelect, onClose }: {
   slot: string;
+  mercenaryId: number;
+  isHeroMember: boolean;
   equipmentBySlot: Record<string, EquipmentItemDto[]>;
-  equipmentLoading: boolean;
   onSelect: (item: EquipmentItemDto) => void;
   onClose: () => void;
 }) {
   const [query, setQuery] = useState('');
+  const [exclusiveItems, setExclusiveItems] = useState<EquipmentItemDto[]>([]);
+  const [exclusiveLoading, setExclusiveLoading] = useState(false);
 
-  const items = equipmentBySlot[slot] ?? [];
-  const filtered = items.filter((i) => !query || i.name.includes(query));
+  useEffect(() => {
+    if (isHeroMember) {
+      setExclusiveItems([]);
+      return;
+    }
+    let cancelled = false;
+    setExclusiveLoading(true);
+    api.getExclusiveEquipment(mercenaryId, slot)
+      .then((items) => { if (!cancelled) setExclusiveItems(items); })
+      .catch(() => { if (!cancelled) setExclusiveItems([]); })
+      .finally(() => { if (!cancelled) setExclusiveLoading(false); });
+    return () => { cancelled = true; };
+  }, [mercenaryId, slot, isHeroMember]);
+
+  const filtered = useMemo(() => {
+    const displayItems = buildDeckEquipmentDisplayItems(
+      exclusiveItems,
+      equipmentBySlot[slot] ?? [],
+      mercenaryId,
+      slot,
+      query,
+    );
+    const byId = new Map(
+      [...exclusiveItems, ...(equipmentBySlot[slot] ?? [])].map((item) => [equipmentItemKey(item), item]),
+    );
+    return displayItems
+      .map((item) => byId.get(item.id))
+      .filter((item): item is EquipmentItemDto => item != null);
+  }, [exclusiveItems, equipmentBySlot, slot, mercenaryId, query]);
 
   return (
     <div className="fixed inset-0 flex items-center justify-center z-[500] p-4" style={{ background: 'rgba(0,0,0,0.65)' }} onClick={onClose}>
@@ -1433,26 +1741,37 @@ function EquipModal({ slot, equipmentBySlot, equipmentLoading, onSelect, onClose
         </div>
 
         <div style={{ borderBottom: '1px solid var(--border)' }} className="p-3 shrink-0">
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="장비명 검색..."
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="공용 장비 검색..."
             style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
             className="w-full rounded px-3 py-2 text-sm focus:outline-none focus:border-[var(--brown)]" />
         </div>
 
         <div className="overflow-y-auto flex-1 p-3 space-y-1">
-          {equipmentLoading ? (
+          {exclusiveLoading ? (
             <div className="space-y-2">
               {[1, 2, 3].map((i) => (
                 <div key={i} style={{ background: 'var(--bg)' }} className="h-12 rounded animate-pulse" />
               ))}
             </div>
           ) : filtered.length === 0 ? (
-            <p style={{ color: 'var(--text-disabled)' }} className="text-center py-6 text-sm">해당 슬롯의 장비가 없습니다</p>
+            <p style={{ color: 'var(--text-disabled)' }} className="text-center py-6 text-sm">
+              {isHeroMember
+                ? '주인공은 장비를 선택하지 않습니다'
+                : query.trim()
+                  ? '검색 결과가 없습니다'
+                  : '전용장비가 없습니다. 검색으로 공용 장비를 찾을 수 있습니다'}
+            </p>
           ) : (
             filtered.map((item) => (
               <button key={equipmentItemId(item)} onClick={() => onSelect(item)}
                 style={{ background: 'var(--bg)', border: '1px solid var(--border)', textAlign: 'left', width: '100%' }}
                 className="rounded-lg px-4 py-2.5 hover:border-[var(--brown)] transition-colors">
-                <p className="text-sm font-medium" style={{ color: 'var(--text)' }}>{item.name}</p>
+                <p className="text-sm font-medium flex items-center gap-1.5" style={{ color: 'var(--text)' }}>
+                  {item.name}
+                  {isExclusiveForMercenary(item, mercenaryId) && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'var(--beige)', color: 'var(--brown)' }}>전용</span>
+                  )}
+                </p>
                 {item.stats && item.stats.length > 0 && (
                   <p style={{ color: 'var(--text-muted)' }} className="text-xs mt-0.5">
                     {item.stats.slice(0, 2).map((s) => `${s.statType}: ${s.value}`).join(' / ')}
@@ -1861,12 +2180,13 @@ function RitualSetupPanel({ equippedSlots, equipmentBySlot, deckId, memberId, ri
   );
 }
 
-function EquipmentSetupModal({ member, deckId, deckEffectSignature, equipmentBySlot, equipmentLoading, initialTab = 'equipment', onClose, onRefresh }: {
+function EquipmentSetupModal({ member, isHeroMember, deckId, deckEffectSignature, equipmentBySlot, initialTab = 'equipment', onClose, onRefresh }: {
   member: DeckMember;
+  /** 주인공 캐릭터 — 전용장비 목록 미노출 */
+  isHeroMember: boolean;
   deckId: number;
   deckEffectSignature?: string;
   equipmentBySlot: Record<string, EquipmentItemDto[]>;
-  equipmentLoading: boolean;
   initialTab?: SetupTab;
   onClose: () => void;
   onRefresh: () => void | Promise<void>;
@@ -1893,9 +2213,7 @@ function EquipmentSetupModal({ member, deckId, deckEffectSignature, equipmentByS
   const slotMap = useMemo(() => new Map(equippedSlots.map((s) => [s.slot, s])), [equippedSlots]);
   const selectedEquipped = slotMap.get(selectedSlot);
   const slotRows = showAppSlots ? APP_SLOT_ROWS : NORMAL_SLOT_ROWS;
-  const primaryStatsMap = useMemo(() => computePrimaryStats(stats), [stats]);
-  const primaryStatTypes = useMemo(() => displayPrimaryStatTypes(stats), [stats]);
-  const sourceStatTypes = useMemo(() => displaySourceStatTypes(stats), [stats]);
+  const displayTotalMap = useMemo(() => computeDisplayTotalMap(stats), [stats]);
   const characteristicGrid = useMemo(
     () => layoutCharacteristicGrid(characteristics?.characteristics ?? []),
     [characteristics]
@@ -1907,16 +2225,33 @@ function EquipmentSetupModal({ member, deckId, deckEffectSignature, equipmentByS
   ), [characteristics]);
   const usedCharacteristicPoints = useMemo(() => characteristicUsedPoints(characteristics), [characteristics]);
   const maxCharacteristicPoints = useMemo(() => characteristicMaxPoints(characteristics), [characteristics]);
-  const slotItems = useMemo(
-    () => (equipmentBySlot[selectedSlot] ?? []).map((item) => toSearchResult(item, selectedSlot)),
-    [equipmentBySlot, selectedSlot],
-  );
+  const [exclusiveItems, setExclusiveItems] = useState<EquipmentItemDto[]>([]);
+  const [exclusiveLoading, setExclusiveLoading] = useState(false);
+
+  useEffect(() => {
+    if (isHeroMember || activeTab !== 'equipment') {
+      setExclusiveItems([]);
+      return;
+    }
+    let cancelled = false;
+    setExclusiveLoading(true);
+    api.getExclusiveEquipment(member.mercenaryId, selectedSlot)
+      .then((items) => { if (!cancelled) setExclusiveItems(items); })
+      .catch(() => { if (!cancelled) setExclusiveItems([]); })
+      .finally(() => { if (!cancelled) setExclusiveLoading(false); });
+    return () => { cancelled = true; };
+  }, [member.mercenaryId, selectedSlot, isHeroMember, activeTab]);
+
   const displayedItems = useMemo(() => {
-    const keyword = query.trim().toLowerCase();
-    return slotItems
-      .filter((item) => !keyword || item.name.toLowerCase().includes(keyword))
-      .sort((a, b) => b.id - a.id);
-  }, [slotItems, query]);
+    if (isHeroMember) return [];
+    return buildDeckEquipmentDisplayItems(
+      exclusiveItems,
+      equipmentBySlot[selectedSlot] ?? [],
+      member.mercenaryId,
+      selectedSlot,
+      query,
+    );
+  }, [exclusiveItems, equipmentBySlot, selectedSlot, member.mercenaryId, query, isHeroMember]);
 
   const loadStats = useCallback(() => {
     setStatsLoading(true);
@@ -2032,12 +2367,17 @@ function EquipmentSetupModal({ member, deckId, deckEffectSignature, equipmentByS
     const pointByCharacteristicId = new Map(
       characteristics.characteristics.map((characteristic) => [
         characteristic.characteristicId,
-        characteristic.point ?? 0,
+        characteristic.point,
       ])
     );
-    const nextUsedPoints = nextEntries.reduce((sum, entry) => (
-      sum + ((pointByCharacteristicId.get(entry.characteristicId) ?? 0) * entry.selectedLevel)
-    ), 0);
+    const nextUsedPoints = nextEntries.reduce(
+      (sum, entry) =>
+        sum + characteristicSelectionCost(
+          pointByCharacteristicId.get(entry.characteristicId),
+          entry.selectedLevel,
+        ),
+      0,
+    );
     if (maxCharacteristicPoints != null && nextUsedPoints > maxCharacteristicPoints) {
       alert(`특성 포인트는 최대 ${maxCharacteristicPoints}까지 사용할 수 있습니다. 현재 선택: ${nextUsedPoints}`);
       return;
@@ -2263,7 +2603,9 @@ function EquipmentSetupModal({ member, deckId, deckEffectSignature, equipmentByS
                   <div>
                     <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>아이템 검색</p>
                     <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                      {SLOT_LABEL[selectedSlot] ?? selectedSlot} 슬롯 장비만 item_id 내림차순으로 표시합니다
+                      {isHeroMember
+                        ? '주인공은 전용장비 목록을 표시하지 않습니다'
+                        : `먼저 ${member.mercenaryName} 전용장비를 표시합니다. 검색하면 공용 장비도 착용할 수 있습니다`}
                     </p>
                   </div>
                   {selectedEquipped && (
@@ -2277,28 +2619,40 @@ function EquipmentSetupModal({ member, deckId, deckEffectSignature, equipmentByS
                   )}
                 </div>
 
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder={`${SLOT_LABEL[selectedSlot] ?? selectedSlot} 장비명 검색...`}
-                  style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
-                  className="w-full rounded px-3 py-2 text-sm focus:outline-none focus:border-[var(--brown)] mb-3"
-                />
+                {!isHeroMember && (
+                  <input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder={`${SLOT_LABEL[selectedSlot] ?? selectedSlot} 공용 장비 검색...`}
+                    style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
+                    className="w-full rounded px-3 py-2 text-sm focus:outline-none focus:border-[var(--brown)] mb-3"
+                  />
+                )}
 
-                {equipmentLoading ? (
+                {exclusiveLoading ? (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 10 }}>
                     {[1, 2, 3, 4, 5, 6].map((i) => <div key={i} style={{ background: 'var(--bg)', height: 145 }} className="rounded animate-pulse" />)}
                   </div>
                 ) : displayedItems.length === 0 ? (
                   <p className="text-center py-8 text-sm" style={{ color: 'var(--text-disabled)' }}>
-                    {query.trim() ? '검색 결과가 없습니다' : '해당 슬롯의 장비가 없습니다'}
+                    {isHeroMember
+                      ? '주인공은 이 화면에서 장비를 선택하지 않습니다'
+                      : query.trim()
+                        ? '검색 결과가 없습니다'
+                        : `전용장비가 없습니다. 검색으로 공용 장비를 찾을 수 있습니다`}
                   </p>
                 ) : (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 10 }}>
-                    {displayedItems.map((item) => (
+                    {displayedItems.map((item) => {
+                      const isExclusive = isExclusiveForMercenary(item, member.mercenaryId);
+                      return (
                       <div
                         key={item.id}
-                        style={{ background: 'var(--bg)', border: '1px solid var(--border)', overflow: 'hidden' }}
+                        style={{
+                          background: 'var(--bg)',
+                          border: `1px solid ${isExclusive ? 'var(--brown)' : 'var(--border)'}`,
+                          overflow: 'hidden',
+                        }}
                         className="rounded-lg relative group"
                       >
                         <div style={{ aspectRatio: '1 / 1', background: 'var(--border)' }} className="relative">
@@ -2335,12 +2689,16 @@ function EquipmentSetupModal({ member, deckId, deckEffectSignature, equipmentByS
                         </div>
                         <div className="px-2 py-1.5">
                           <p className="text-xs font-medium truncate text-center" style={{ color: 'var(--text)' }}>{item.name}</p>
+                          {isExclusive && (
+                            <p className="text-[10px] text-center font-semibold" style={{ color: 'var(--brown)' }}>전용</p>
+                          )}
                           {item.setName && (
                             <p className="text-[10px] truncate text-center" style={{ color: 'var(--text-muted)' }}>{item.setName}</p>
                           )}
                         </div>
                       </div>
-                    ))}
+                    );
+                    })}
                   </div>
                 )}
                   </>
@@ -2436,10 +2794,11 @@ function EquipmentSetupModal({ member, deckId, deckEffectSignature, equipmentByS
 
           {activeTab === 'stats' && (
             <div className="grid md:grid-cols-2 h-full overflow-hidden">
+              {/* 좌측: 빌드 설정 */}
               <div style={{ borderRight: '1px solid var(--border)', background: 'var(--bg)' }} className="p-5 overflow-y-auto">
                 <div
                   style={{ border: '1px solid var(--border)', background: 'var(--card)' }}
-                  className="rounded-lg p-4 mb-4"
+                  className="rounded-lg p-4"
                 >
                   <p className="text-sm font-semibold mb-3" style={{ color: 'var(--text)' }}>빌드 설정</p>
                   <div className="space-y-3">
@@ -2522,67 +2881,115 @@ function EquipmentSetupModal({ member, deckId, deckEffectSignature, equipmentByS
                     </div>
                   </div>
                 </div>
-
-                <p className="text-sm font-semibold mb-4" style={{ color: 'var(--text)' }}>최종 스탯</p>
-                {statsLoading ? (
-                  <div style={{ background: 'var(--card)' }} className="h-48 rounded animate-pulse" />
-                ) : primaryStatTypes.length === 0 ? (
-                  <p className="text-xs" style={{ color: 'var(--text-disabled)' }}>표시할 스탯이 없습니다</p>
-                ) : (
-                  <div style={{ border: '1px solid var(--border)' }} className="rounded-lg overflow-hidden text-sm">
-                    {primaryStatTypes.map((statType) => (
-                      <div
-                        key={statType}
-                        className="flex items-center justify-between px-4 py-2.5"
-                        style={{ borderTop: '1px solid var(--border)', color: 'var(--text)' }}
-                      >
-                        <span style={{ color: 'var(--text-muted)' }}>{formatStatType(statType)}</span>
-                        <span className="font-semibold" style={{ color: 'var(--brown)' }}>
-                          {primaryStatsMap.get(statType) ?? 0}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
 
+              {/* 우측: 최종 스탯 — 4열 고정 표 */}
               <div className="p-5 overflow-y-auto">
-                <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text)' }}>스탯 출처</p>
+                <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text)' }}>최종 스탯</p>
                 <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
-                  아이템·덱 효과·명왕 이전 등 장착/설정으로 얻은 스탯 향상입니다. 기여 내역 버튼으로 항목별 수치를 확인할 수 있습니다.
+                  ? 를 누르면 스탯 출처를 확인할 수 있습니다.
                 </p>
                 {statsLoading ? (
-                  <div style={{ background: 'var(--card)' }} className="h-48 rounded animate-pulse" />
-                ) : sourceStatTypes.length === 0 ? (
-                  <p className="text-xs" style={{ color: 'var(--text-disabled)' }}>표시할 스탯이 없습니다</p>
+                  <div style={{ background: 'var(--card)' }} className="h-40 rounded animate-pulse" />
                 ) : (
-                  <div style={{ border: '1px solid var(--border)' }} className="rounded-lg overflow-hidden text-xs">
-                    <div className="grid grid-cols-[1fr_auto_auto] gap-2 px-3 py-2 font-semibold" style={{ background: 'var(--bg)', color: 'var(--text-muted)' }}>
+                  <div style={{ border: '1px solid var(--border)' }} className="rounded-lg overflow-hidden text-sm">
+                    {/* 헤더 */}
+                    <div
+                      className="grid grid-cols-4 text-xs font-semibold px-3 py-2"
+                      style={{ background: 'var(--bg)', color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}
+                    >
                       <span>스탯</span>
-                      <span className="text-right w-16">값</span>
-                      <span className="w-[72px]" />
+                      <span className="text-right pr-4">값</span>
+                      <span>스탯</span>
+                      <span className="text-right pr-2">값</span>
                     </div>
-                    {sourceStatTypes.map((statType) => {
-                      const total = sourceStatTotal(stats, statType);
-                      const contributions = buildStatContributions(stats, statType);
+                    {/* 데이터 행 */}
+                    {Array.from({ length: FIXED_STAT_ROWS }).map((_, i) => {
+                      const leftType = LEFT_STAT_COLS[i] as string | undefined;
+                      const rightType = RIGHT_STAT_COLS[i] as string | undefined;
+                      const leftVal = leftType ? (displayTotalMap.get(leftType) ?? 0) : null;
+
+                      // 공격력 행: MIN_POWER - MAX_POWER 범위 표시
+                      const isAtkRow = rightType === 'ATTACK_POWER';
+                      const minPow = displayTotalMap.get('MIN_POWER') ?? 0;
+                      const maxPow = displayTotalMap.get('MAX_POWER') ?? 0;
+                      const rightVal = isAtkRow ? null : (rightType ? (displayTotalMap.get(rightType) ?? 0) : null);
+
                       return (
                         <div
-                          key={statType}
-                          className="grid grid-cols-[1fr_auto_auto] gap-2 items-center px-3 py-2"
+                          key={i}
+                          className="grid grid-cols-4 items-center px-3 py-2.5"
                           style={{ borderTop: '1px solid var(--border)' }}
                         >
-                          <span style={{ color: 'var(--text)' }}>{formatStatType(statType)}</span>
-                          <span className="text-right w-16 font-semibold" style={{ color: 'var(--brown)' }}>{total}</span>
-                          <div className="w-[72px] flex justify-end">
-                            <StatContributionPopover
-                              statType={statType}
-                              contributions={contributions}
-                              total={total}
-                            />
-                          </div>
+                          {/* 좌측 스탯명 + ? */}
+                          <span className="flex items-center" style={{ color: 'var(--text-muted)' }}>
+                            {leftType && formatStatType(leftType)}
+                            {leftType && (
+                              <StatContributionPopover
+                                statType={leftType}
+                                contributions={buildFullStatContributions(stats, leftType)}
+                                total={leftVal ?? 0}
+                                compact
+                              />
+                            )}
+                          </span>
+                          {/* 좌측 값 */}
+                          <span className="text-right pr-4 font-semibold" style={{ color: 'var(--brown)' }}>
+                            {leftVal !== null ? leftVal : ''}
+                          </span>
+                          {/* 우측 스탯명 */}
+                          <span className="flex items-center" style={{ color: 'var(--text-muted)' }}>
+                            {isAtkRow ? '공격력' : (rightType && formatStatType(rightType))}
+                            {isAtkRow ? (
+                              <StatContributionPopover
+                                statType="MIN_POWER"
+                                contributions={[
+                                  ...buildFullStatContributions(stats, 'MIN_POWER'),
+                                  ...buildFullStatContributions(stats, 'MAX_POWER'),
+                                ]}
+                                total={minPow + maxPow}
+                                compact
+                              />
+                            ) : (rightType && (
+                              <StatContributionPopover
+                                statType={rightType}
+                                contributions={buildFullStatContributions(stats, rightType)}
+                                total={rightVal ?? 0}
+                                compact
+                              />
+                            ))}
+                          </span>
+                          {/* 우측 값 */}
+                          <span className="text-right pr-2 font-semibold" style={{ color: 'var(--brown)' }}>
+                            {isAtkRow
+                              ? (minPow === 0 && maxPow === 0 ? '-' : `${minPow} - ${maxPow}`)
+                              : (rightVal !== null ? rightVal : '')}
+                          </span>
                         </div>
                       );
                     })}
+                  </div>
+                )}
+                {/* 전설장수 아군 속성 버프 */}
+                {(stats?.lgAllyElementalStats?.length ?? 0) > 0 && (
+                  <div className="mt-4">
+                    <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-muted)' }}>전설장수(아군) 속성 버프</p>
+                    <div style={{ border: '1px solid var(--border)' }} className="rounded-lg overflow-hidden text-xs">
+                      {stats!.lgAllyElementalStats!.map((e) => (
+                        <div
+                          key={e.statKey}
+                          className="flex justify-between items-center px-3 py-2"
+                          style={{ borderTop: '1px solid var(--border)' }}
+                        >
+                          <span style={{ color: 'var(--text-muted)' }}>
+                            {COMPOUND_STAT_LABEL[e.statKey] ?? e.statKey}
+                          </span>
+                          <span className="font-semibold" style={{ color: 'var(--brown)' }}>
+                            +{e.value}%
+                          </span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
@@ -2646,9 +3053,10 @@ function MonsterModal({ onSelect, onClose }: {
 
 // ══════════ 멤버 슬롯 카드 ══════════
 
-function MemberCard({ member, deckId, onRemove, onRefresh }: {
+function MemberCard({ member, deckId, equipmentBySlot, onRemove, onRefresh }: {
   member: DeckMember;
   deckId: number;
+  equipmentBySlot: Record<string, EquipmentItemDto[]>;
   onRemove: () => void;
   onRefresh: () => void;
 }) {
@@ -2788,8 +3196,9 @@ function MemberCard({ member, deckId, onRemove, onRefresh }: {
       {equipModal && (
         <EquipModal
           slot={equipModal}
-          equipmentBySlot={{}}
-          equipmentLoading={false}
+          mercenaryId={member.mercenaryId}
+          isHeroMember={false}
+          equipmentBySlot={equipmentBySlot}
           onSelect={(item) => handleEquip(equipModal, item)}
           onClose={() => setEquipModal(null)}
         />
@@ -2813,6 +3222,7 @@ export default function DeckPage() {
   const [mercenaries, setMercenaries] = useState<MercenaryDto[]>([]);
   const [mercenaryLoading, setMercenaryLoading] = useState(true);
   const [selectedMercenaryCategory, setSelectedMercenaryCategory] = useState<string>('');
+  const [miscSearchQuery, setMiscSearchQuery] = useState('');
   const [failedMercenaryImageIds, setFailedMercenaryImageIds] = useState<Set<number>>(new Set());
   const [equipmentMember, setEquipmentMember] = useState<DeckMember | null>(null);
   const [setupInitialTab, setSetupInitialTab] = useState<SetupTab>('equipment');
@@ -2828,8 +3238,12 @@ export default function DeckPage() {
   // DPS 계산
   const [monster, setMonster] = useState<MonsterDto | null>(null);
   const [dpsResult, setDpsResult] = useState<DpsResultDto | null>(null);
+  const [clearTimeSeconds, setClearTimeSeconds] = useState('');
+  const [clearTimeSaving, setClearTimeSaving] = useState(false);
   const [calcLoading, setCalcLoading] = useState(false);
   const [dpsRecalcTick, setDpsRecalcTick] = useState(0);
+  // DPS 결과에서 추출한 속성값 캐시 — 몬스터 해제 후에도 카드에 표시 유지
+  const [elementValueCache, setElementValueCache] = useState<Map<number, number>>(new Map());
 
   const loadDecks = useCallback(async () => {
     try {
@@ -2907,12 +3321,27 @@ export default function DeckPage() {
   useEffect(() => {
     if (monster) setMonsterQuery(monster.name);
   }, [monster]);
+  // 덱 멤버 속성값 — 덱 로드 시 서버에서 일괄 조회 (DPS 불필요)
+  useEffect(() => {
+    if (!selectedDeckId || !deckDetail?.members.length) {
+      setElementValueCache(new Map());
+      return;
+    }
+    let cancelled = false;
+    api.getDeckMemberElementValues(selectedDeckId)
+      .then((entries) => {
+        if (cancelled) return;
+        setElementValueCache(new Map(entries.map((e) => [e.memberId, e.elementValue])));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [selectedDeckId, dpsRecalcTick]);
 
   const dpsTriggerSignature = useMemo(() => {
     if (!selectedDeckId || !monster || !deckDetail) return '';
     const effects = deckDetail.effects;
     const spiritIds = (effects?.spirits ?? []).map((s) => s.id).join(',');
-    const effectSig = `${spiritIds}|${effects?.jinbeop?.id ?? ''}|${effects?.cheungjin?.id ?? ''}`;
+    const effectSig = `${spiritIds}|${effects?.jinbeop?.id ?? ''}|${effects?.cheungjin?.id ?? ''}|${effects?.gonmyeongLevel ?? ''}|${effects?.gahoLevel ?? ''}`;
     const membersSig = deckDetail.members
       .map((m) =>
         `${m.id}:${m.level ?? 250}:${m.bonusTarget ?? 'MAIN_STAT'}:${m.bonusAmount ?? 0}:${
@@ -2957,6 +3386,33 @@ export default function DeckPage() {
       window.clearTimeout(timer);
     };
   }, [dpsTriggerSignature, selectedDeckId, monster, deckDetail]);
+
+  async function handleSaveClearTime() {
+    if (!selectedDeckId || !monster) return;
+    if (!getToken()) {
+      alert('클리어타임 저장은 로그인 후 이용할 수 있습니다.');
+      return;
+    }
+    const seconds = Number.parseInt(clearTimeSeconds, 10);
+    if (!Number.isFinite(seconds) || seconds < 6 || seconds > 26) {
+      alert('클리어타임은 6초 이상 26초 이하여야 합니다.');
+      return;
+    }
+    setClearTimeSaving(true);
+    try {
+      const res = await api.submitClearTime({
+        monsterId: monster.id,
+        deckId: selectedDeckId,
+        clearTimeSeconds: seconds,
+      });
+      const expMsg = res.expEarned > 0 ? `+${res.expEarned} EXP` : 'EXP 미지급';
+      alert(`클리어타임이 저장되었습니다. (${expMsg})`);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '클리어타임 저장에 실패했습니다.');
+    } finally {
+      setClearTimeSaving(false);
+    }
+  }
 
   async function handleCreateDeck() {
     const name = newDeckName.trim();
@@ -3045,6 +3501,8 @@ export default function DeckPage() {
       spirit2Id: current?.spirits?.[1]?.id ?? null,
       jinbeopSourceId: current?.jinbeop?.id ?? null,
       cheungjinSourceId: current?.cheungjin?.id ?? null,
+      gonmyeongLevel: current?.gonmyeongLevel ?? null,
+      gahoLevel: current?.gahoLevel ?? null,
       ...patch,
     };
 
@@ -3071,35 +3529,33 @@ export default function DeckPage() {
   const mercenaryById = new Map(mercenaries.map((m) => [m.id, m]));
   const selectedMercenaryIds = new Set(selectedMembers.map((m) => m.mercenaryId));
   const selectedMemberMercenaries = selectedMembers.map((m) => mercenaryById.get(m.mercenaryId)).filter(Boolean) as MercenaryDto[];
-  const heroMember = selectedMembers.find((m) => isHeroMercenary(mercenaryById.get(m.mercenaryId))) ?? null;
-  const normalMembers = selectedMembers.filter((m) => m.id !== heroMember?.id);
-  const deckSlots: (DeckMember | null)[] = [heroMember, ...normalMembers];
-  while (deckSlots.length < maxMembers) deckSlots.push(null);
-  const visibleDeckSlots = deckSlots.slice(0, maxMembers);
+  const visibleDeckSlots = arrangeDeckDisplaySlots(selectedMembers, mercenaryById, maxMembers);
   const selectableMercenaries = mercenaries.filter(isDeckSelectableMercenary);
   const mercenaryCategories = sortDeckMercenaryCategories(
-    Array.from(new Set(selectableMercenaries.map((m) => mercenaryCategory(m))))
+    Array.from(new Set([...selectableMercenaries.map((m) => displayMercenaryCategory(m)), MISC_CATEGORY]))
   );
   const activeMercenaryCategory = mercenaryCategories.includes(selectedMercenaryCategory)
     ? selectedMercenaryCategory
     : mercenaryCategories[0] || '';
   const filteredMercenaries = selectableMercenaries.filter((m) =>
-    activeMercenaryCategory ? mercenaryCategory(m) === activeMercenaryCategory : false
+    activeMercenaryCategory ? displayMercenaryCategory(m) === activeMercenaryCategory : false
   );
   const displayedMercenaries = isLegendaryPickerCategory(activeMercenaryCategory)
     ? sortMercenariesByElement(filteredMercenaries)
     : filteredMercenaries;
+  const miscSearchResults = useMemo(() => {
+    if (!miscSearchQuery.trim()) return [];
+    const q = miscSearchQuery.trim().toLowerCase();
+    return mercenaries.filter((m) => !isMiscMercenary(m) && m.name.toLowerCase().includes(q));
+  }, [miscSearchQuery, mercenaries]);
   const dpsShareByMemberId = new Map(
     (dpsResult?.memberResults ?? []).map((result) => [result.memberId, result.damageShare])
-  );
-  const elementValueByMemberId = new Map(
-    (dpsResult?.memberResults ?? []).map((result) => [result.memberId, result.elementValue])
   );
   const deckEffectSignature = useMemo(() => {
     const effects = deckDetail?.effects;
     if (!effects) return '';
     const spiritIds = (effects.spirits ?? []).map((s) => s.id).join(',');
-    return `${spiritIds}|${effects.jinbeop?.id ?? ''}|${effects.cheungjin?.id ?? ''}`;
+    return `${spiritIds}|${effects.jinbeop?.id ?? ''}|${effects.cheungjin?.id ?? ''}|${effects.gonmyeongLevel ?? ''}|${effects.gahoLevel ?? ''}`;
   }, [deckDetail?.effects]);
 
   function getMercenaryRestrictionMessage(merc: MercenaryDto) {
@@ -3228,7 +3684,7 @@ export default function DeckPage() {
       {/* 덱 설정 — 가로 탭 */}
       <div
         style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-        className="rounded-xl px-4 py-3 mb-4 flex items-center gap-3 flex-wrap"
+        className="rounded-xl px-4 py-3 mb-4 flex items-center gap-3"
       >
         <h2 className="font-semibold text-sm shrink-0" style={{ color: 'var(--text)' }}>덱설정</h2>
         <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
@@ -3256,6 +3712,13 @@ export default function DeckPage() {
             덱추가
           </button>
         </div>
+        <Link
+          href="/value-test"
+          className="text-xs shrink-0 px-2 py-1 rounded ml-auto"
+          style={{ color: 'var(--brown)', border: '1px solid var(--brown)' }}
+        >
+          가성비테스트 →
+        </Link>
       </div>
 
       <div className="grid lg:grid-cols-[280px_minmax(0,1fr)_248px] gap-4 xl:gap-6">
@@ -3326,6 +3789,37 @@ export default function DeckPage() {
                       <div key={i} style={{ background: 'var(--bg)', height: 124 }} className="rounded-lg animate-pulse" />
                     ))}
                   </div>
+                ) : activeMercenaryCategory === MISC_CATEGORY ? (
+                  <div className="space-y-4">
+                    {filteredMercenaries.length > 0 && (
+                      <div>
+                        <p className="text-xs font-medium mb-2" style={{ color: 'var(--text-muted)' }}>기본 제공</p>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(86px, 1fr))', gap: 10 }}>
+                          {filteredMercenaries.map((merc) => renderMercenaryPickCard(merc))}
+                        </div>
+                      </div>
+                    )}
+                    <div style={{ borderTop: filteredMercenaries.length > 0 ? '1px solid var(--border)' : undefined }} className={filteredMercenaries.length > 0 ? 'pt-4' : undefined}>
+                      <p className="text-xs font-medium mb-2" style={{ color: 'var(--text-muted)' }}>용병 검색</p>
+                      <input
+                        type="text"
+                        value={miscSearchQuery}
+                        onChange={(e) => setMiscSearchQuery(e.target.value)}
+                        placeholder="이름으로 검색..."
+                        style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
+                        className="w-full rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--brown)]"
+                      />
+                    </div>
+                    {miscSearchQuery.trim() && (
+                      miscSearchResults.length > 0 ? (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(86px, 1fr))', gap: 10 }}>
+                          {miscSearchResults.map((merc) => renderMercenaryPickCard(merc))}
+                        </div>
+                      ) : (
+                        <p className="text-center py-4 text-sm" style={{ color: 'var(--text-disabled)' }}>검색 결과가 없습니다</p>
+                      )
+                    )}
+                  </div>
                 ) : displayedMercenaries.length === 0 ? (
                   <p className="text-center py-8 text-sm" style={{ color: 'var(--text-disabled)' }}>해당 카테고리의 용병이 없습니다</p>
                 ) : (
@@ -3337,16 +3831,13 @@ export default function DeckPage() {
 
               {/* 12칸 덱 카드 */}
               <section>
-                <div className="flex items-center justify-between mb-3">
+                <div className="mb-3">
                   <h2 className="font-semibold" style={{ color: 'var(--text)' }}>
                     {deckDetail.name}
                     <span style={{ color: 'var(--text-muted)' }} className="font-normal text-sm ml-2">
                       ({memberCount} / {maxMembers})
                     </span>
                   </h2>
-                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                    첫 번째 칸은 주인공 전용입니다
-                  </p>
                 </div>
 
                 {loading ? (
@@ -3364,7 +3855,7 @@ export default function DeckPage() {
                       const damageShare = member
                         ? roundedDamageShare(dpsShareByMemberId.get(member.id))
                         : null;
-                      const elementValue = member ? elementValueByMemberId.get(member.id) : null;
+                      const elementValue = member ? (elementValueCache.get(member.id) ?? null) : null;
                       return (
                         <div
                           key={member?.id ?? `empty-${index}`}
@@ -3446,7 +3937,11 @@ export default function DeckPage() {
                           ) : (
                             <div className="flex-1 flex items-center justify-center text-center px-3">
                               <p className="text-xs leading-snug" style={{ color: 'var(--text-disabled)' }}>
-                                {isHeroSlot ? '주인공을 선택하세요' : '용병을 선택하세요'}
+                                {isHeroSlot
+                                  ? '주인공을 선택하세요'
+                                  : index === 1
+                                    ? '사천왕/각성사천왕을 선택하세요'
+                                    : '용병을 선택하세요'}
                               </p>
                             </div>
                           )}
@@ -3486,6 +3981,10 @@ export default function DeckPage() {
           setFailedMonsterImageIds={setFailedMonsterImageIds}
           dpsResult={dpsResult}
           calcLoading={calcLoading}
+          clearTimeSeconds={clearTimeSeconds}
+          onClearTimeSecondsChange={setClearTimeSeconds}
+          onSaveClearTime={handleSaveClearTime}
+          clearTimeSaving={clearTimeSaving}
         />
       </div>
 
@@ -3508,6 +4007,10 @@ export default function DeckPage() {
         setFailedMonsterImageIds={setFailedMonsterImageIds}
         dpsResult={dpsResult}
         calcLoading={calcLoading}
+        clearTimeSeconds={clearTimeSeconds}
+        onClearTimeSecondsChange={setClearTimeSeconds}
+        onSaveClearTime={handleSaveClearTime}
+        clearTimeSaving={clearTimeSaving}
       />
 
       {showAddDeckModal && (
@@ -3523,10 +4026,10 @@ export default function DeckPage() {
       {equipmentMember && selectedDeckId && (
         <EquipmentSetupModal
           member={equipmentMember}
+          isHeroMember={isHeroMercenary(mercenaryById.get(equipmentMember.mercenaryId))}
           deckId={selectedDeckId}
           deckEffectSignature={deckEffectSignature}
           equipmentBySlot={equipmentBySlot}
-          equipmentLoading={equipmentLoading}
           initialTab={setupInitialTab}
           onClose={() => setEquipmentMember(null)}
           onRefresh={() => loadDeckDetail(selectedDeckId)}

@@ -9,7 +9,9 @@ import org.example.gersangtrade.wanted.dto.request.WantedSearchCondition;
 import org.springframework.stereotype.Repository;
 import org.springframework.util.StringUtils;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.example.gersangtrade.domain.wanted.QWantedItem.wantedItem;
 import static org.example.gersangtrade.domain.wanted.QWantedListing.wantedListing;
@@ -27,7 +29,7 @@ public class WantedListingQueryRepository {
     /**
      * 다중 조건 필터 기반 구매 희망 등록글 목록 조회 (페이징 포함).
      * 소프트 삭제(deletedAt IS NULL), 관리자 숨김(hidden=false) 조건은 항상 적용한다.
-     * 아이템명 키워드 조건이 있으면 WantedItem까지 JOIN해서 검색한다.
+     * 아이템명 키워드 또는 itemId 조건이 있으면 WantedItem까지 JOIN해서 검색한다.
      */
     public List<WantedListing> search(WantedSearchCondition cond) {
         var query = queryFactory
@@ -35,8 +37,7 @@ public class WantedListingQueryRepository {
                 .from(wantedListing)
                 .leftJoin(wantedListing.buyer).fetchJoin();
 
-        // 아이템명 키워드 검색 시 wantedItem JOIN 필요
-        if (StringUtils.hasText(cond.keyword())) {
+        if (needsItemJoin(cond.keyword(), cond.itemId())) {
             query = query.leftJoin(wantedItem)
                     .on(wantedItem.wantedListing.eq(wantedListing));
         }
@@ -46,7 +47,8 @@ public class WantedListingQueryRepository {
                 isNotHidden(),
                 serverEq(cond.server()),
                 statusEq(cond.status()),
-                itemNameContains(cond.keyword())
+                itemNameContains(cond.keyword()),
+                itemIdEq(cond.itemId())
         )
         .orderBy(wantedListing.createdAt.desc())
         .offset((long) cond.resolvedPage() * cond.resolvedSize())
@@ -59,12 +61,11 @@ public class WantedListingQueryRepository {
      * fetch().size() 대신 count 서브쿼리로 처리하여 불필요한 데이터 로딩을 방지한다.
      */
     public long count(WantedSearchCondition cond) {
-        // count 쿼리: id만 집계하여 DB에서 직접 건수 반환
         var query = queryFactory
                 .select(wantedListing.id.countDistinct())
                 .from(wantedListing);
 
-        if (StringUtils.hasText(cond.keyword())) {
+        if (needsItemJoin(cond.keyword(), cond.itemId())) {
             query = query.leftJoin(wantedItem)
                     .on(wantedItem.wantedListing.eq(wantedListing));
         }
@@ -74,9 +75,69 @@ public class WantedListingQueryRepository {
                 isNotHidden(),
                 serverEq(cond.server()),
                 statusEq(cond.status()),
-                itemNameContains(cond.keyword())
+                itemNameContains(cond.keyword()),
+                itemIdEq(cond.itemId())
         ).fetchOne();
         return result != null ? result : 0L;
+    }
+
+    /**
+     * 관심 SET 시세 조회용 — 세트 피스 itemId 목록 중 하나라도 포함한 구매 희망 등록글 후보 조회.
+     * 2차 필터(SetWatchMatcher)에서 세부 주술 매칭을 위해 넉넉히 fetch한다.
+     */
+    public List<WantedListing> searchLatestBySetPieceIds(
+            String server, WantedStatus status, List<Long> setPieceItemIds, int limit) {
+        if (setPieceItemIds == null || setPieceItemIds.isEmpty()) {
+            return List.of();
+        }
+        return queryFactory
+                .selectDistinct(wantedListing)
+                .from(wantedListing)
+                .leftJoin(wantedListing.buyer).fetchJoin()
+                .leftJoin(wantedItem).on(wantedItem.wantedListing.eq(wantedListing))
+                .where(
+                        isNotDeleted(),
+                        isNotHidden(),
+                        serverEq(server),
+                        statusEq(status),
+                        wantedItem.item.id.in(setPieceItemIds)
+                )
+                .orderBy(wantedListing.createdAt.desc())
+                .limit(limit)
+                .fetch();
+    }
+
+    /**
+     * 관심 아이템 시세 조회용 배치 메서드.
+     * 주어진 itemId 목록에 대해 서버·상태 조건으로 최신 글을 limitPerItem개씩 반환한다.
+     * 관심 아이템 수가 최대 5개이므로 itemId별 개별 쿼리로 처리한다.
+     */
+    public Map<Long, List<WantedListing>> searchLatestPerItemIds(
+            String server, WantedStatus status, List<Long> itemIds, int limitPerItem) {
+        if (itemIds == null || itemIds.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<Long, List<WantedListing>> result = new LinkedHashMap<>();
+        for (Long itemId : itemIds) {
+            List<WantedListing> listings = queryFactory
+                    .selectDistinct(wantedListing)
+                    .from(wantedListing)
+                    .leftJoin(wantedListing.buyer).fetchJoin()
+                    .leftJoin(wantedItem).on(wantedItem.wantedListing.eq(wantedListing))
+                    .where(
+                            isNotDeleted(),
+                            isNotHidden(),
+                            serverEq(server),
+                            statusEq(status),
+                            wantedItem.item.id.eq(itemId)
+                    )
+                    .orderBy(wantedListing.createdAt.desc())
+                    .limit(limitPerItem)
+                    .fetch();
+            result.put(itemId, listings);
+        }
+        return result;
     }
 
     /** 소프트 삭제되지 않은 항목만 조회 */
@@ -104,5 +165,15 @@ public class WantedListingQueryRepository {
         return StringUtils.hasText(keyword)
                 ? wantedItem.item.name.containsIgnoreCase(keyword)
                 : null;
+    }
+
+    /** WantedItem의 itemId 일치 검색 — null이면 조건 제외 */
+    private BooleanExpression itemIdEq(Long itemId) {
+        return itemId != null ? wantedItem.item.id.eq(itemId) : null;
+    }
+
+    /** wantedItem JOIN이 필요한지 여부 — 키워드 또는 itemId 조건이 있을 때 */
+    private boolean needsItemJoin(String keyword, Long itemId) {
+        return StringUtils.hasText(keyword) || itemId != null;
     }
 }

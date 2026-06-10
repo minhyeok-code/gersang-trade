@@ -12,6 +12,7 @@ import org.jsoup.select.Elements;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -98,6 +99,31 @@ public final class GersangjjangMercenaryParser {
             "땅속성", Nature.EARTH
     );
 
+    /**
+     * 시더가 담당하는 카테고리 — 거상짱 용병 크롤러에서 제외.
+     * (HeavenlyKingSeeder, MyeongwangSeeder, LegendGeneralSeeder, PlayerCharacterSeeder 등)
+     */
+    private static final Set<MercenaryCategory> SEEDER_MANAGED_CATEGORIES = Set.of(
+            MercenaryCategory.LEGENDARY_GENERAL,
+            MercenaryCategory.FOUR_HEAVENLY_KINGS,
+            MercenaryCategory.FOUR_HEAVENLY_KINGS_AWAKENING,
+            MercenaryCategory.MYEONG_KING,
+            MercenaryCategory.MYEONG_KING_AWAKENING,
+            MercenaryCategory.PROTAGONIST
+    );
+
+    /** 시더 관리 용병 상세 페이지 — 카테고리 링크 수집 시 제외 */
+    private static final Set<String> EXCLUDED_CATEGORY_PATHS = Set.of(
+            "/yongbing/wang/",
+            "/yongbing/ming/",
+            "/yongbing/4jiang.asp",
+            "/yongbing/zhujue.asp",
+            "/yongbing/2zhujue.asp",
+            "/yongbing/3zhujue.asp",
+            "/yongbing/6monster.asp",
+            "/yongbing/mingwang.asp"
+    );
+
     private GersangjjangMercenaryParser() {}
 
     /**
@@ -116,6 +142,9 @@ public final class GersangjjangMercenaryParser {
         for (Element h2 : doc.select("h2")) {
             String sectionText = h2.text().trim();
             MercenaryCategory category = resolveCategory(sectionText);
+            if (category != null && SEEDER_MANAGED_CATEGORIES.contains(category)) {
+                continue; // 시더 담당 카테고리 — 스탯·스킬·특성 중복 적재 방지
+            }
 
             Element cardGrid = h2.nextElementSibling();
             while (cardGrid != null && !cardGrid.tagName().equals("h2")) {
@@ -155,11 +184,20 @@ public final class GersangjjangMercenaryParser {
             String href = link.attr("href").trim();
             if (href.isBlank()) continue;
             if (href.startsWith("/item/")) continue;  // 수호부 등 아이템 페이지 제외
+            if (isExcludedMercenaryCategoryPath(href)) continue;
             links.add(base + href);
         }
 
         log.debug("거상짱 용병 카테고리 링크 {}개 파싱", links.size());
         return links;
+    }
+
+    /** 시더 관리 용병 카테고리 URL인지 판별한다. */
+    private static boolean isExcludedMercenaryCategoryPath(String href) {
+        for (String path : EXCLUDED_CATEGORY_PATHS) {
+            if (href.contains(path)) return true;
+        }
+        return false;
     }
 
     // ── 카드 파싱 ─────────────────────────────────────────────────────────────

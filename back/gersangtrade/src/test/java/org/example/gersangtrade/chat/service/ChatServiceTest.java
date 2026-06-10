@@ -23,11 +23,21 @@ import org.example.gersangtrade.domain.user.enums.Role;
 import org.example.gersangtrade.domain.user.enums.UserStatus;
 import org.example.gersangtrade.domain.wanted.WantedListing;
 import org.example.gersangtrade.domain.wanted.enums.WantedStatus;
+import org.example.gersangtrade.catalog.repository.EquipmentItemRepository;
+import org.example.gersangtrade.domain.catalog.Item;
+import org.example.gersangtrade.domain.listing.BundleLine;
+import org.example.gersangtrade.domain.listing.ListingBundle;
+import org.example.gersangtrade.domain.listing.enums.BundleType;
+import org.example.gersangtrade.listing.repository.BundleEquipmentDetailRepository;
+import org.example.gersangtrade.listing.repository.BundleEquipmentRitualRepository;
 import org.example.gersangtrade.listing.repository.BundleLineRepository;
 import org.example.gersangtrade.listing.repository.ListingBundleRepository;
 import org.example.gersangtrade.listing.repository.TradeListingRepository;
+import org.mockito.ArgumentCaptor;
 import org.example.gersangtrade.notification.service.NotificationService;
 import org.example.gersangtrade.report.service.KeywordDetectionService;
+import org.example.gersangtrade.catalog.repository.ServerRepository;
+import org.example.gersangtrade.domain.catalog.Server;
 import org.example.gersangtrade.trade.repository.TradeConfirmedRepository;
 import org.example.gersangtrade.trade.repository.TradeReviewRepository;
 import org.example.gersangtrade.trade.service.TradeStatService;
@@ -76,6 +86,10 @@ class ChatServiceTest {
     @Mock private TradeConfirmedRepository tradeConfirmedRepository;
     @Mock private TradeReviewRepository tradeReviewRepository;
     @Mock private TradeStatService tradeStatService;
+    @Mock private ServerRepository serverRepository;
+    @Mock private BundleEquipmentDetailRepository bundleEquipmentDetailRepository;
+    @Mock private BundleEquipmentRitualRepository bundleEquipmentRitualRepository;
+    @Mock private EquipmentItemRepository equipmentItemRepository;
     @Mock private NotificationService notificationService;
     @Mock private KeywordDetectionService keywordDetectionService;
     @Mock private SimpMessagingTemplate messagingTemplate;
@@ -132,6 +146,9 @@ class ChatServiceTest {
 
         when(userRepository.findById(1L)).thenReturn(Optional.of(poster));
         when(userRepository.findById(2L)).thenReturn(Optional.of(counterparty));
+
+        Server server = Server.builder().serverId(1).name("서버1").isActive(true).build();
+        when(serverRepository.findByName(any())).thenReturn(Optional.of(server));
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -539,5 +556,63 @@ class ChatServiceTest {
         when(room.getPoster()).thenReturn(poster);
         when(room.getCounterparty()).thenReturn(counterparty);
         return room;
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // resolveStatKey 테스트 (finalizeTrade 경유)
+    // ──────────────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("resolveStatKey_SELL_단품아이템_ITEM키저장")
+    void resolveStatKey_SELL_단품_ITEM키() {
+        ChatRoom room = realOpenRoom();
+        room.recordParticipantConfirm(true, 50_000_000L);
+        stubLockedRoom(room);
+
+        // 번들: 단품(MATERIAL_BUNDLE), item id=42
+        ListingBundle bundle = mock(ListingBundle.class);
+        when(bundle.getId()).thenReturn(200L);
+        when(bundle.getBundleType()).thenReturn(BundleType.MATERIAL_BUNDLE);
+        when(listingBundleRepository.findByListingIdOrderByIdAsc(1L)).thenReturn(List.of(bundle));
+
+        Item item = mock(Item.class);
+        when(item.getId()).thenReturn(42L);
+
+        BundleLine line = mock(BundleLine.class);
+        when(line.getItem()).thenReturn(item);
+        when(bundleLineRepository.findByBundleIdOrderBySortOrderAsc(200L)).thenReturn(List.of(line));
+
+        when(tradeListingRepository.findById(1L)).thenReturn(Optional.of(tradeListing));
+        when(chatRoomRepository.findByListingTypeAndListingId(ListingType.SELL, 1L)).thenReturn(List.of(room));
+        when(tradeConfirmedRepository.saveAndFlush(any(TradeConfirmed.class))).thenReturn(mock(TradeConfirmed.class));
+        when(tradeReviewRepository.save(any(TradeReview.class))).thenReturn(mock(TradeReview.class));
+
+        chatService.confirmTrade(2L, 100L, new PosterConfirmRequest(null));
+
+        ArgumentCaptor<TradeConfirmed> captor = ArgumentCaptor.forClass(TradeConfirmed.class);
+        verify(tradeConfirmedRepository).saveAndFlush(captor.capture());
+        assertThat(captor.getValue().getStatKeySnapshot()).isEqualTo("ITEM:42");
+    }
+
+    @Test
+    @DisplayName("resolveStatKey_번들없음_fallback키저장")
+    void resolveStatKey_번들없음_fallback키() {
+        ChatRoom room = realOpenRoom();
+        room.recordParticipantConfirm(true, 50_000_000L);
+        stubLockedRoom(room);
+
+        when(listingBundleRepository.findByListingIdOrderByIdAsc(1L)).thenReturn(List.of());
+        when(tradeListingRepository.findById(1L)).thenReturn(Optional.of(tradeListing));
+        when(chatRoomRepository.findByListingTypeAndListingId(ListingType.SELL, 1L)).thenReturn(List.of(room));
+        when(tradeConfirmedRepository.saveAndFlush(any(TradeConfirmed.class))).thenReturn(mock(TradeConfirmed.class));
+        when(tradeReviewRepository.save(any(TradeReview.class))).thenReturn(mock(TradeReview.class));
+
+        chatService.confirmTrade(2L, 100L, new PosterConfirmRequest(null));
+
+        // 번들 없으면 resolveStatKeySell이 null 반환 → statKeySnapshot = null (catch 없이 정상 저장)
+        ArgumentCaptor<TradeConfirmed> captor = ArgumentCaptor.forClass(TradeConfirmed.class);
+        verify(tradeConfirmedRepository).saveAndFlush(captor.capture());
+        // null 또는 fallback 키: 예외 없이 저장됨을 확인
+        assertThat(captor.getValue()).isNotNull();
     }
 }

@@ -70,9 +70,9 @@ public class GersangjjangMonsterTasklet implements Tasklet {
         return RepeatStatus.FINISHED;
     }
 
-    /** name+pageUrl 기준 upsert. true=신규, false=업데이트 */
+    /** name 기준 upsert. true=신규, false=업데이트 */
     private boolean upsert(MonsterRow row) {
-        return monsterRepository.findByNameAndPageUrl(row.name(), row.pageUrl())
+        return monsterRepository.findByName(row.name())
                 .map(existing -> {
                     existing.update(row.hp(), row.hittingResistance(), row.magicResistance(),
                             row.elementValue(), row.element());
