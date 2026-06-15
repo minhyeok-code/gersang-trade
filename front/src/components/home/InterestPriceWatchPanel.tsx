@@ -7,19 +7,16 @@ import {
   getToken,
   parseApiErrorBody,
   type PriceWatchTarget,
-  type RitualDto,
   type SetDetailDto,
   type SetSummaryDto,
 } from '@/lib/api';
 import {
-  applyBundleKindToPieces,
-  buildRitualMarkOptions,
-  initSetPieces,
   type RitualCountOption,
   type RitualMarkOption,
   type SetBundleKind,
   type SetPieceState,
 } from '@/lib/setTitle';
+import { fetchSingleItemRituals, fetchSetRituals } from '@/lib/itemRituals';
 import SetPieceConfigurator from '@/components/value-test/SetPieceConfigurator';
 import SearchBar from '@/components/common/SearchBar';
 import { formatPrice } from '@/lib/formatPrice';
@@ -100,9 +97,7 @@ function AddWatchModal({ open, onClose, onAdded, atLimit }: AddWatchModalProps) 
       setItemRitualMark(null);
       return;
     }
-    api.getItemRituals(itemId)
-      .then((rituals) => setItemRitualOptions(buildRitualMarkOptions([rituals])))
-      .catch(() => setItemRitualOptions([]));
+    fetchSingleItemRituals(itemId).then(setItemRitualOptions);
   }, [itemId, itemType]);
 
   useEffect(() => {
@@ -137,13 +132,9 @@ function AddWatchModal({ open, onClose, onAdded, atLimit }: AddWatchModalProps) 
     try {
       const detail = await api.getSet(s.id);
       setSelectedSet(detail);
-      const perPieceRituals = await Promise.all(
-        detail.pieces.map((p) => api.getItemRituals(p.itemId).catch(() => [] as RitualDto[])),
-      );
-      const ritualMap = new Map(detail.pieces.map((p, i) => [p.itemId, perPieceRituals[i].length > 0]));
-      const initial = initSetPieces(detail.pieces, ritualMap);
-      setPieces(applyBundleKindToPieces(initial, 'FULL', 0));
-      setUniqueRituals(buildRitualMarkOptions(perPieceRituals));
+      const { initialPieces, uniqueRituals } = await fetchSetRituals(detail.pieces);
+      setPieces(initialPieces);
+      setUniqueRituals(uniqueRituals);
     } catch {
       setError('세트 정보를 불러오지 못했습니다.');
     }

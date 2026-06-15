@@ -65,6 +65,7 @@ export interface BuildEvaluationParams {
   affectedMemberId: number | null;
   // 아이템 단품
   singleItemId?: number;
+  singleItemRitual?: { ritualId: number; outcome: 'SUCCESS' | 'GREAT_SUCCESS' } | null;
   // 아이템 세트
   setId?: number;
   setLines?: DpsEvaluationRequestBody['scenario']['lines'];
@@ -119,7 +120,11 @@ export function buildEvaluationRequest(params: BuildEvaluationParams): DpsEvalua
             itemId: params.singleItemId!,
             quantity: 1,
             sortOrder: 0,
-            equipmentDetail: { enhanceLevel: 0, hasRitual: false },
+            equipmentDetail: {
+              enhanceLevel: 0,
+              hasRitual: params.singleItemRitual != null,
+              rituals: params.singleItemRitual ? [params.singleItemRitual] : [],
+            },
           },
         ],
       },

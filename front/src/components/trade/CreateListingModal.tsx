@@ -6,22 +6,19 @@ import {
   api,
   getServer,
   type ItemSearchResult,
-  type RitualDto,
   type ServerDto,
   type SetDetailDto,
   type SetSummaryDto,
 } from '@/lib/api';
 import SetPieceConfigurator from '@/components/value-test/SetPieceConfigurator';
 import {
-  applyBundleKindToPieces,
-  buildRitualMarkOptions,
-  initSetPieces,
   type RitualCountOption,
   type RitualMarkOption,
   type SetBundleKind,
   type SetPieceState,
   validateSetBundleSelection,
 } from '@/lib/setTitle';
+import { fetchSingleItemRituals, fetchSetRituals } from '@/lib/itemRituals';
 import { formatPrice } from '@/lib/formatPrice';
 
 const RADIO_BASE = {
@@ -133,9 +130,7 @@ export default function CreateListingModal({ onClose, onCreated }: CreateListing
     setSingleRitualMark(null);
     setSingleRitualOptions([]);
     if (!selectedItem || selectedItem.type !== 'EQUIPMENT') return;
-    api.getItemRituals(selectedItem.id)
-      .then((rituals) => setSingleRitualOptions(buildRitualMarkOptions([rituals])))
-      .catch(() => setSingleRitualOptions([]));
+    fetchSingleItemRituals(selectedItem.id).then(setSingleRitualOptions);
   }, [selectedItem]);
 
   // 세트명 검색
@@ -166,25 +161,16 @@ export default function CreateListingModal({ onClose, onCreated }: CreateListing
     setRitualMark(null);
     setBundleKind('FULL');
     setRitualCount(0);
-    Promise.all(
-      selectedSet.pieces.map((p) =>
-        api.getItemRituals(p.itemId).catch(() => [] as RitualDto[]),
-      ),
-    ).then((perPieceRituals) => {
-      const ritualMap = new Map(
-        selectedSet.pieces.map((p, i) => [p.itemId, perPieceRituals[i].length > 0]),
-      );
-      const initial = initSetPieces(selectedSet.pieces, ritualMap);
-      setPieces(applyBundleKindToPieces(initial, 'FULL', 0));
-      setUniqueRituals(buildRitualMarkOptions(perPieceRituals));
+    fetchSetRituals(selectedSet.pieces).then(({ initialPieces, uniqueRituals }) => {
+      setPieces(initialPieces);
+      setUniqueRituals(uniqueRituals);
     });
   }, [selectedSet]);
 
   // 모드 전환 시 상태 초기화
   useEffect(() => {
     if (isSetMode) {
-      setSingleRitualMark(null);
-      setSingleRitualOptions([]);
+      // 단품 주술 상태는 유지 — 단품으로 복귀 시 재사용
     } else {
       setSelectedSet(null);
       setSetQuery('');
@@ -192,8 +178,12 @@ export default function CreateListingModal({ onClose, onCreated }: CreateListing
       setRitualMark(null);
       setBundleKind('FULL');
       setRitualCount(0);
+      // 단품으로 복귀 시 selectedItem이 있는데 주술 옵션이 없으면 재로드
+      if (selectedItem?.type === 'EQUIPMENT') {
+        fetchSingleItemRituals(selectedItem.id).then(setSingleRitualOptions);
+      }
     }
-  }, [isSetMode]);
+  }, [isSetMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

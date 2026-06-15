@@ -3,17 +3,15 @@
 import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import SearchBar from '@/components/common/SearchBar';
-import { api, getSelectedServerName, type ChatRoomSummaryDto, type ListingDto, type WantedDto, type ServerDto, type PublicUserDto, type SetSummaryDto, type SetDetailDto, type RitualDto } from '@/lib/api';
+import { api, getSelectedServerName, type ChatRoomSummaryDto, type ListingDto, type WantedDto, type ServerDto, type PublicUserDto, type SetSummaryDto, type SetDetailDto } from '@/lib/api';
 import { parseApiError } from '@/lib/parseApiError';
+import { fetchSetRituals } from '@/lib/itemRituals';
 import { BarChart2, Plus } from 'lucide-react';
 import CreateListingModal from '@/components/trade/CreateListingModal';
 import { formatPrice } from '@/lib/formatPrice';
 import SetPieceConfigurator from '@/components/value-test/SetPieceConfigurator';
 import {
-  applyBundleKindToPieces,
-  buildRitualMarkOptions,
   buildSetSearchFilterTokens,
-  initSetPieces,
   type RitualCountOption,
   type RitualMarkOption,
   type SetBundleKind,
@@ -192,13 +190,9 @@ function FilterSidebar({ filters, onChange, onItemSelect, onReset, onSetPieceMar
     try {
       const detail = await api.getSet(s.id);
       setSidebarSetDetail(detail);
-      const perPieceRituals = await Promise.all(
-        detail.pieces.map((p) => api.getItemRituals(p.itemId).catch(() => [] as RitualDto[]))
-      );
-      const ritualMap = new Map(detail.pieces.map((p, i) => [p.itemId, perPieceRituals[i].length > 0]));
-      const initial = initSetPieces(detail.pieces, ritualMap);
-      setSidebarPieces(applyBundleKindToPieces(initial, 'FULL', 0));
-      setUniqueRituals(buildRitualMarkOptions(perPieceRituals));
+      const { initialPieces, uniqueRituals } = await fetchSetRituals(detail.pieces);
+      setSidebarPieces(initialPieces);
+      setUniqueRituals(uniqueRituals);
     } catch {}
   }
 

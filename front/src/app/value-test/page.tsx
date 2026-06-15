@@ -31,7 +31,7 @@ import {
   type MercenaryDto,
   type MonsterDto,
   type ResistanceTypeDto,
-  type RitualDto,
+
   type ScenarioItemTypeDto,
   type SetDetailDto,
   type SetSummaryDto,
@@ -39,10 +39,7 @@ import {
 } from '@/lib/api';
 import { parseApiError } from '@/lib/parseApiError';
 import {
-  applyBundleKindToPieces,
-  buildRitualMarkOptions,
   buildSetScenarioLines,
-  initSetPieces,
   type RitualCountOption,
   type RitualMarkOption,
   type SetBundleKind,
@@ -62,6 +59,7 @@ import {
   toCharacteristicPayload,
   validateCharacteristicSelections,
 } from '@/lib/mercenaryCharacteristicUi';
+import { fetchSetRituals, fetchSingleItemRituals } from '@/lib/itemRituals';
 
 type DeckSummary = { id: number; name: string; isActive: boolean };
 type CandidateTab = ScenarioItemTypeDto;
@@ -99,6 +97,8 @@ export default function ValueTestPage() {
   const [selectedItem, setSelectedItem] = useState<ItemSearchResult | null>(null);
   const [itemDropOpen, setItemDropOpen] = useState(false);
   const itemSearchRef = useRef<HTMLDivElement>(null);
+  const [singleRitualOptions, setSingleRitualOptions] = useState<RitualMarkOption[]>([]);
+  const [singleRitualMark, setSingleRitualMark] = useState<RitualMarkOption | null>(null);
 
   const [setQuery, setSetQuery] = useState('');
   const [setResults, setSetResults] = useState<SetSummaryDto[]>([]);
@@ -249,6 +249,14 @@ export default function ValueTestPage() {
     return () => clearTimeout(t);
   }, [itemQuery, selectedItem]);
 
+  // 단품 선택 시 주술 목록 로드
+  useEffect(() => {
+    setSingleRitualMark(null);
+    setSingleRitualOptions([]);
+    if (!selectedItem) return;
+    fetchSingleItemRituals(selectedItem.id).then(setSingleRitualOptions);
+  }, [selectedItem]);
+
   // 세트 검색
   useEffect(() => {
     if (!setQuery.trim() || selectedSet) { setSetResults([]); return; }
@@ -299,17 +307,9 @@ export default function ValueTestPage() {
     setRitualMark(null);
     setRitualCount(0);
     setBundleKind('FULL');
-    Promise.all(
-      selectedSet.pieces.map((p) =>
-        api.getItemRituals(p.itemId).catch(() => [] as RitualDto[])
-      )
-    ).then((perPiece) => {
-      const ritualMap = new Map(
-        selectedSet.pieces.map((p, i) => [p.itemId, perPiece[i].length > 0])
-      );
-      const initial = initSetPieces(selectedSet.pieces, ritualMap);
-      setSetPieces(applyBundleKindToPieces(initial, 'FULL', 0));
-      setUniqueRituals(buildRitualMarkOptions(perPiece));
+    fetchSetRituals(selectedSet.pieces).then(({ initialPieces, uniqueRituals }) => {
+      setSetPieces(initialPieces);
+      setUniqueRituals(uniqueRituals);
     });
   }, [selectedSet]);
 
@@ -444,6 +444,7 @@ export default function ValueTestPage() {
         candidateType: candidateTab,
         affectedMemberId,
         singleItemId: selectedItem?.id,
+        singleItemRitual: singleRitualMark ? { ritualId: singleRitualMark.ritualId, outcome: singleRitualMark.outcome } : null,
         setId: selectedSet?.id,
         setLines,
         priceOverrides: Object.keys(priceOverrides).length > 0 ? priceOverrides : undefined,
@@ -765,6 +766,35 @@ export default function ValueTestPage() {
                 {selectedItem && (
                   <p className="text-xs mt-1" style={{ color: 'var(--brown)' }}>선택: {selectedItem.name}</p>
                 )}
+              </div>
+            )}
+            {candidateTab === 'ITEM_SINGLE' && selectedItem && singleRitualOptions.length > 0 && (
+              <div>
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-muted)' }}>주술</label>
+                <div className="flex flex-wrap gap-x-4 gap-y-2">
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.875rem' }}>
+                    <input
+                      type="radio"
+                      name="single-ritual"
+                      checked={singleRitualMark === null}
+                      onChange={() => setSingleRitualMark(null)}
+                      style={{ accentColor: 'var(--brown)' }}
+                    />
+                    <span style={{ color: 'var(--text)' }}>없음</span>
+                  </label>
+                  {singleRitualOptions.map((r) => (
+                    <label key={r.label} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.875rem' }}>
+                      <input
+                        type="radio"
+                        name="single-ritual"
+                        checked={singleRitualMark?.label === r.label}
+                        onChange={() => setSingleRitualMark(r)}
+                        style={{ accentColor: 'var(--brown)' }}
+                      />
+                      <span style={{ color: 'var(--text)' }}>{r.label}</span>
+                    </label>
+                  ))}
+                </div>
               </div>
             )}
 
