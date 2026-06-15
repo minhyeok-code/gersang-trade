@@ -6,7 +6,9 @@ import { useRouter } from 'next/navigation';
 import {
   AlertTriangle,
   Calculator,
+  ChevronDown,
   History,
+  RefreshCw,
   Search,
   Skull,
   Sparkles,
@@ -22,6 +24,8 @@ import {
   type DeckDetailDto,
   type DpsEvaluationSummaryDto,
   type DpsValueEvaluationResponseDto,
+  type EvaluationDeckDiffDto,
+  type EvaluationDeckStatusDto,
   type ItemSearchResult,
   type MercenaryCharacteristicSetupDto,
   type MercenaryDto,
@@ -50,6 +54,7 @@ import {
   buildEvaluationRequest,
   CANDIDATE_TYPE_LABEL,
   formatEfficiencyPerEok,
+  formatFinalDpsIncreaseRate,
   parseEokPrice,
   resolveResistanceType,
 } from '@/lib/valueTest';
@@ -132,6 +137,10 @@ export default function ValueTestPage() {
   const [history, setHistory] = useState<DpsEvaluationSummaryDto[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [expandedHistoryId, setExpandedHistoryId] = useState<number | null>(null);
+  const [historyDiff, setHistoryDiff] = useState<Record<number, EvaluationDeckDiffDto>>({});
+  const [historyDiffLoading, setHistoryDiffLoading] = useState<number | null>(null);
+  const [reevaluatingId, setReevaluatingId] = useState<number | null>(null);
 
   const deckFull = (deckDetail?.members.length ?? 0) >= 12;
   const autoMercMode = deckFull ? 'REPLACE' : 'APPEND';
@@ -329,6 +338,59 @@ export default function ValueTestPage() {
   useEffect(() => {
     if (showHistory) loadHistory();
   }, [showHistory, loadHistory]);
+
+  async function handleToggleHistoryExpand(
+    evaluationId: number,
+    deckStatus: EvaluationDeckStatusDto,
+  ) {
+    if (expandedHistoryId === evaluationId) {
+      setExpandedHistoryId(null);
+      return;
+    }
+    setExpandedHistoryId(evaluationId);
+    if (deckStatus === 'STALE' && !historyDiff[evaluationId]) {
+      setHistoryDiffLoading(evaluationId);
+      try {
+        const diff = await api.getDpsEvaluationDeckDiff(evaluationId);
+        setHistoryDiff((prev) => ({ ...prev, [evaluationId]: diff }));
+      } catch {
+        setHistoryDiff((prev) => ({
+          ...prev,
+          [evaluationId]: {
+            deckStatus: 'STALE',
+            baselineSnapshotId: null,
+            currentSnapshotId: null,
+            changes: [],
+            baselineContent: null,
+            currentContent: null,
+          },
+        }));
+      } finally {
+        setHistoryDiffLoading(null);
+      }
+    }
+  }
+
+  async function handleReevaluate(evaluationId: number) {
+    setReevaluatingId(evaluationId);
+    setError('');
+    try {
+      const detail = await api.getMyDpsEvaluationDetail(evaluationId);
+      if (!detail.requestJson) {
+        setError('재평가에 필요한 요청 정보가 없습니다. 구 기록은 수동으로 다시 계산해주세요.');
+        return;
+      }
+      const res = await api.evaluateDpsValue({ ...detail.requestJson, persist: true });
+      setResult(res);
+      setExpandedHistoryId(null);
+      setHistoryDiff({});
+      if (showHistory) loadHistory();
+    } catch (e) {
+      setError(parseApiError(e));
+    } finally {
+      setReevaluatingId(null);
+    }
+  }
 
   async function handleDeleteEvaluation(evaluationId: number) {
     if (!window.confirm('이 평가 기록을 삭제할까요?')) return;
@@ -983,45 +1045,162 @@ export default function ValueTestPage() {
               <p className="text-sm" style={{ color: 'var(--text-muted)' }}>저장된 평가가 없습니다.</p>
             ) : (
               <div className="space-y-2">
-                {history.map((h) => (
-                  <div key={h.evaluationId} className="rounded-lg p-3 text-sm" style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
-                    <div className="flex justify-between items-start gap-2">
-                      <span className="font-medium">{h.candidateLabel || CANDIDATE_TYPE_LABEL[h.candidateType]}</span>
-                      <div className="flex items-center gap-2 shrink-0">
+                {history.map((h) => {
+                  const expanded = expandedHistoryId === h.evaluationId;
+                  const diff = historyDiff[h.evaluationId];
+                  const canExpand = h.deckStatus === 'STALE';
+                  return (
+                    <div
+                      key={h.evaluationId}
+                      className="rounded-lg p-3 text-sm"
+                      style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}
+                    >
+                      <div className="flex justify-between items-start gap-2">
+                        <div className="min-w-0">
+                          <span className="font-medium">
+                            {h.candidateLabel || CANDIDATE_TYPE_LABEL[h.candidateType]}
+                          </span>
+                          <DeckStatusBadge status={h.deckStatus} className="mt-1" />
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {canExpand && (
+                            <button
+                              type="button"
+                              title="덱 변경 내역"
+                              onClick={() => handleToggleHistoryExpand(h.evaluationId, h.deckStatus)}
+                              className="p-1 rounded"
+                              style={{ color: 'var(--text-muted)' }}
+                            >
+                              <ChevronDown
+                                size={14}
+                                style={{
+                                  transform: expanded ? 'rotate(180deg)' : undefined,
+                                  transition: 'transform 0.15s',
+                                }}
+                              />
+                            </button>
+                          )}
+                          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                            {new Date(h.createdAt).toLocaleDateString('ko-KR')}
+                          </span>
+                          <button
+                            type="button"
+                            title="삭제"
+                            disabled={deletingId === h.evaluationId}
+                            onClick={() => handleDeleteEvaluation(h.evaluationId)}
+                            className="p-1 rounded transition-opacity disabled:opacity-40"
+                            style={{ color: 'var(--text-muted)' }}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex justify-between items-center mt-1 gap-2">
                         <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                          {new Date(h.createdAt).toLocaleDateString('ko-KR')}
+                          {h.monsterName}
                         </span>
+                        <span style={{ color: 'var(--brown)' }}>
+                          {formatFinalDpsIncreaseRate(h.finalDpsIncreaseRate)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center mt-1">
+                        <span className="font-serif font-bold" style={{ color: 'var(--brown)' }}>
+                          {h.formattedPrice ?? '—'}
+                        </span>
+                        <span style={{ color: 'var(--brown)' }}>
+                          {formatEfficiencyPerEok(h.efficiencyPerEokFinal)}
+                        </span>
+                      </div>
+                      {h.deckStatus === 'STALE' && (
                         <button
                           type="button"
-                          title="삭제"
-                          disabled={deletingId === h.evaluationId}
-                          onClick={() => handleDeleteEvaluation(h.evaluationId)}
-                          className="p-1 rounded transition-opacity disabled:opacity-40"
-                          style={{ color: 'var(--text-muted)' }}
+                          disabled={reevaluatingId === h.evaluationId}
+                          onClick={() => handleReevaluate(h.evaluationId)}
+                          className="mt-2 flex items-center gap-1 text-xs px-2 py-1 rounded disabled:opacity-40"
+                          style={{ background: 'var(--card)', border: '1px solid var(--brown)', color: 'var(--brown)' }}
                         >
-                          <Trash2 size={14} />
+                          <RefreshCw size={12} />
+                          {reevaluatingId === h.evaluationId ? '재평가 중…' : '현재 덱으로 재평가'}
                         </button>
-                      </div>
+                      )}
+                      {expanded && canExpand && (
+                        <div
+                          className="mt-3 pt-3 text-xs space-y-1"
+                          style={{ borderTop: '1px solid var(--border)', color: 'var(--text-muted)' }}
+                        >
+                          {historyDiffLoading === h.evaluationId ? (
+                            <p>변경 내역 불러오는 중…</p>
+                          ) : diff?.changes.length ? (
+                            <ul className="space-y-1">
+                              {diff.changes.map((line) => (
+                                <li key={`${line.memberId}-${line.slot}`}>
+                                  <span className="font-medium" style={{ color: 'var(--text)' }}>
+                                    {line.mercenaryName}
+                                  </span>
+                                  {' · '}
+                                  {SLOT_LABEL[line.slot] ?? line.slot}:{' '}
+                                  <span>{line.beforeItemName ?? '—'}</span>
+                                  {' → '}
+                                  <span style={{ color: 'var(--brown)' }}>{line.afterItemName ?? '—'}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p>장비 변경 내역을 표시할 수 없습니다.</p>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    <div className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-                      {h.monsterName} · +{h.finalDpsIncreaseRate.toFixed(2)}%
-                    </div>
-                    <div className="flex justify-between mt-1">
-                      <span className="font-serif font-bold" style={{ color: 'var(--brown)' }}>
-                        {h.formattedPrice ?? '—'}
-                      </span>
-                      <span style={{ color: 'var(--brown)' }}>
-                        {formatEfficiencyPerEok(h.efficiencyPerEokFinal)}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+const DECK_STATUS_LABEL: Record<EvaluationDeckStatusDto, string> = {
+  CURRENT: '덱 동일',
+  STALE: '덱 변경됨',
+  DECK_DELETED: '덱 삭제됨',
+  UNKNOWN: '덱 상태 미확인',
+};
+
+const SLOT_LABEL: Record<string, string> = {
+  HELMET: '투구',
+  ARMOR: '갑옷',
+  GLOVES: '장갑',
+  BELT: '벨트',
+  SHOES: '신발',
+  WEAPON: '무기',
+  RING: '반지',
+  NECKLACE: '목걸이',
+};
+
+function DeckStatusBadge({
+  status,
+  className = '',
+}: {
+  status: EvaluationDeckStatusDto;
+  className?: string;
+}) {
+  const styles: Record<EvaluationDeckStatusDto, { bg: string; color: string }> = {
+    CURRENT: { bg: '#E8F5E9', color: '#2E7D32' },
+    STALE: { bg: '#FFF3E0', color: '#E65100' },
+    DECK_DELETED: { bg: '#F5F5F5', color: '#757575' },
+    UNKNOWN: { bg: 'var(--card)', color: 'var(--text-muted)' },
+  };
+  const s = styles[status];
+  return (
+    <span
+      className={`inline-block text-[10px] px-1.5 py-0.5 rounded ${className}`}
+      style={{ background: s.bg, color: s.color }}
+    >
+      {DECK_STATUS_LABEL[status]}
+    </span>
   );
 }
 

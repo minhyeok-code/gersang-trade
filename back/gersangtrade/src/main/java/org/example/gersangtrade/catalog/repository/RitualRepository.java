@@ -13,7 +13,7 @@ public interface RitualRepository extends JpaRepository<Ritual, Long> {
 
     /**
      * 표시명(displayName)으로 주술 조회.
-     * geota 아이템명의 <주술명> 부분과 매핑한다. 예: "태산북두" → Ritual
+     * 아이템명의 &lt;주술명&gt; 부분과 매핑한다. 예: "태산북두" → Ritual
      */
     Optional<Ritual> findByDisplayName(String displayName);
 }

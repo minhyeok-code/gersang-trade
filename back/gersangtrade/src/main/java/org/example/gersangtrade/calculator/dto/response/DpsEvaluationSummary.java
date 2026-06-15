@@ -14,6 +14,10 @@ public record DpsEvaluationSummary(
 
         Long evaluationId,
 
+        Long deckId,
+
+        EvaluationDeckStatus deckStatus,
+
         ScenarioItemType candidateType,
 
         /** 후보 표시명 — 아이템명·세트명·용병명 */
@@ -40,9 +44,14 @@ public record DpsEvaluationSummary(
         LocalDateTime createdAt
 
 ) {
-    public static DpsEvaluationSummary from(DpsValueEvaluation e, String candidateLabel) {
+    public static DpsEvaluationSummary from(
+            DpsValueEvaluation e,
+            String candidateLabel,
+            EvaluationDeckStatus deckStatus) {
         return new DpsEvaluationSummary(
                 e.getId(),
+                e.getDeckId(),
+                deckStatus,
                 e.getCandidateType(),
                 candidateLabel,
                 e.getCandidateRef(),

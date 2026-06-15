@@ -10,6 +10,7 @@ import org.example.gersangtrade.notification.service.NotificationService;
 import org.example.gersangtrade.trade.dto.request.TradeReviewSubmitRequest;
 import org.example.gersangtrade.trade.dto.response.TradeReviewResponse;
 import org.example.gersangtrade.trade.repository.TradeReviewRepository;
+import org.example.gersangtrade.trade.util.TradeReviewTiming;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -72,7 +73,7 @@ class TradeReviewServiceTest {
     @DisplayName("submit_정상_평가기간내_미제출_GOOD평가저장")
     void submit_정상_평가기간내_미제출_GOOD평가저장() {
         TradeReview review = mockReview(1L, reviewer, target,
-                LocalDateTime.now().plusDays(2), null);
+                LocalDateTime.now().minusDays(1), null, LocalDateTime.now().plusDays(2));
         when(tradeReviewRepository.findById(1L)).thenReturn(Optional.of(review));
 
         tradeReviewService.submit(1L, 1L, new TradeReviewSubmitRequest(TradeRating.GOOD));
@@ -85,7 +86,7 @@ class TradeReviewServiceTest {
     void submit_본인평가아닌경우_예외발생() {
         // reviewer id=1인데 userId=99로 호출
         TradeReview review = mockReview(1L, reviewer, target,
-                LocalDateTime.now().plusDays(2), null);
+                LocalDateTime.now().minusDays(1), null, null);
         when(tradeReviewRepository.findById(1L)).thenReturn(Optional.of(review));
 
         assertThatThrownBy(() -> tradeReviewService.submit(99L, 1L,
@@ -97,9 +98,9 @@ class TradeReviewServiceTest {
     @Test
     @DisplayName("submit_평가기간만료_예외발생")
     void submit_평가기간만료_예외발생() {
-        // revealAt이 과거 → 이미 만료
+        // 생성 후 3일 경과 → 이미 만료
         TradeReview review = mockReview(1L, reviewer, target,
-                LocalDateTime.now().minusDays(1), null);
+                LocalDateTime.now().minusDays(4), null, null);
         when(tradeReviewRepository.findById(1L)).thenReturn(Optional.of(review));
 
         assertThatThrownBy(() -> tradeReviewService.submit(1L, 1L,
@@ -113,7 +114,7 @@ class TradeReviewServiceTest {
     void submit_이미제출된평가_예외발생() {
         // 이미 GOOD으로 제출된 상태
         TradeReview review = mockReview(1L, reviewer, target,
-                LocalDateTime.now().plusDays(2), TradeRating.GOOD);
+                LocalDateTime.now().minusDays(1), TradeRating.GOOD, null);
         when(tradeReviewRepository.findById(1L)).thenReturn(Optional.of(review));
 
         assertThatThrownBy(() -> tradeReviewService.submit(1L, 1L,
@@ -122,13 +123,28 @@ class TradeReviewServiceTest {
                 .hasMessageContaining("이미 평가를 제출했습니다");
     }
 
+    // ── scheduleRevealAt() 테스트 ─────────────────────────────────────────────
+
+    @Test
+    @DisplayName("scheduleRevealAt_2일경과건_revealAt설정")
+    void scheduleRevealAt_2일경과건_revealAt설정() {
+        LocalDateTime createdAt = LocalDateTime.now().minusDays(3);
+        TradeReview review = mockReview(1L, reviewer, target, createdAt, null, null);
+        when(tradeReviewRepository.findPendingRevealAtSchedule(any(LocalDateTime.class)))
+                .thenReturn(List.of(review));
+
+        tradeReviewService.scheduleRevealAt();
+
+        verify(review).scheduleRevealAt(TradeReviewTiming.computeRevealAt(createdAt));
+    }
+
     // ── publishPendingReviews() 테스트 ────────────────────────────────────────
 
     @Test
     @DisplayName("publishPendingReviews_GOOD평가_EXP매너점수반영")
     void publishPendingReviews_GOOD평가_EXP매너점수반영() {
         TradeReview review = mockReview(1L, reviewer, target,
-                LocalDateTime.now().minusHours(1), TradeRating.GOOD);
+                LocalDateTime.now().minusDays(4), TradeRating.GOOD, LocalDateTime.now().minusHours(1));
         when(tradeReviewRepository.findPendingPublish(any(LocalDateTime.class)))
                 .thenReturn(List.of(review));
 
@@ -148,7 +164,7 @@ class TradeReviewServiceTest {
     @DisplayName("publishPendingReviews_BAD평가_EXP차감및매너점수차감")
     void publishPendingReviews_BAD평가_EXP차감및매너점수차감() {
         TradeReview review = mockReview(1L, reviewer, target,
-                LocalDateTime.now().minusHours(1), TradeRating.BAD);
+                LocalDateTime.now().minusDays(4), TradeRating.BAD, LocalDateTime.now().minusHours(1));
         when(tradeReviewRepository.findPendingPublish(any(LocalDateTime.class)))
                 .thenReturn(List.of(review));
 
@@ -165,7 +181,7 @@ class TradeReviewServiceTest {
     @DisplayName("publishPendingReviews_NEUTRAL평가_EXP매너점수변화없음")
     void publishPendingReviews_NEUTRAL평가_EXP매너점수변화없음() {
         TradeReview review = mockReview(1L, reviewer, target,
-                LocalDateTime.now().minusHours(1), TradeRating.NEUTRAL);
+                LocalDateTime.now().minusDays(4), TradeRating.NEUTRAL, LocalDateTime.now().minusHours(1));
         when(tradeReviewRepository.findPendingPublish(any(LocalDateTime.class)))
                 .thenReturn(List.of(review));
 
@@ -182,7 +198,7 @@ class TradeReviewServiceTest {
     void publishPendingReviews_미제출평가_EXP매너점수영향없음() {
         // 미제출(rating=null) 평가 공개 시 효과 없음
         TradeReview review = mockReview(1L, reviewer, target,
-                LocalDateTime.now().minusHours(1), null);
+                LocalDateTime.now().minusDays(4), null, LocalDateTime.now().minusHours(1));
         when(tradeReviewRepository.findPendingPublish(any(LocalDateTime.class)))
                 .thenReturn(List.of(review));
 
@@ -210,7 +226,7 @@ class TradeReviewServiceTest {
     @DisplayName("getMyReceivedReviews_공개된평가목록반환")
     void getMyReceivedReviews_공개된평가목록반환() {
         TradeReview review = mockReview(1L, reviewer, target,
-                LocalDateTime.now().minusDays(1), TradeRating.GOOD);
+                LocalDateTime.now().minusDays(4), TradeRating.GOOD, LocalDateTime.now().minusDays(1));
         when(tradeReviewRepository.findByTargetIdAndPublishedTrue(2L))
                 .thenReturn(List.of(review));
 
@@ -235,14 +251,15 @@ class TradeReviewServiceTest {
     // ── 헬퍼 ─────────────────────────────────────────────────────────────────
 
     private TradeReview mockReview(Long id, User reviewer, User target,
-                                   LocalDateTime revealAt, TradeRating rating) {
+                                   LocalDateTime createdAt, TradeRating rating,
+                                   LocalDateTime revealAt) {
         TradeReview review = mock(TradeReview.class);
         when(review.getId()).thenReturn(id);
         when(review.getReviewer()).thenReturn(reviewer);
         when(review.getTarget()).thenReturn(target);
+        when(review.getCreatedAt()).thenReturn(createdAt);
         when(review.getRevealAt()).thenReturn(revealAt);
         when(review.getRating()).thenReturn(rating);
-        when(review.getCreatedAt()).thenReturn(LocalDateTime.now());
         return review;
     }
 }

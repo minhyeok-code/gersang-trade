@@ -22,10 +22,18 @@ public interface TradeReviewRepository extends JpaRepository<TradeReview, Long> 
     Optional<TradeReview> findByTradeConfirmedIdAndReviewerId(Long tradeConfirmedId, Long reviewerId);
 
     /**
-     * 공개 대상 평가 목록 조회 — 배치 Job용.
-     * revealAt이 경과하고 아직 published=false인 평가를 반환한다.
+     * revealAt 갱신 대상 — 생성 후 2일 경과, revealAt 미설정, 미공개.
      */
-    @Query("SELECT r FROM TradeReview r WHERE r.published = false AND r.revealAt <= :now")
+    @Query("SELECT r FROM TradeReview r " +
+           "WHERE r.published = false AND r.revealAt IS NULL AND r.createdAt <= :scheduleCutoff")
+    List<TradeReview> findPendingRevealAtSchedule(@Param("scheduleCutoff") LocalDateTime scheduleCutoff);
+
+    /**
+     * 공개 대상 평가 목록 조회 — 배치 Job용.
+     * revealAt이 설정·경과했고 아직 published=false인 평가를 반환한다.
+     */
+    @Query("SELECT r FROM TradeReview r " +
+           "WHERE r.published = false AND r.revealAt IS NOT NULL AND r.revealAt <= :now")
     List<TradeReview> findPendingPublish(@Param("now") LocalDateTime now);
 
     /**
@@ -36,13 +44,13 @@ public interface TradeReviewRepository extends JpaRepository<TradeReview, Long> 
 
     /**
      * 내가 아직 제출하지 않은 대기 중인 평가 목록 조회.
-     * 평가 기간(revealAt) 이 지나지 않고 rating이 null인 것만 반환한다.
+     * 생성 후 3일 이내이고 rating이 null인 것만 반환한다.
      */
     @Query("SELECT r FROM TradeReview r " +
            "JOIN FETCH r.target " +
            "WHERE r.reviewer.id = :reviewerId " +
            "AND r.rating IS NULL " +
-           "AND r.revealAt > :now")
+           "AND r.createdAt > :evaluationStartCutoff")
     List<TradeReview> findPendingByReviewerId(@Param("reviewerId") Long reviewerId,
-                                              @Param("now") LocalDateTime now);
+                                              @Param("evaluationStartCutoff") LocalDateTime evaluationStartCutoff);
 }

@@ -42,8 +42,10 @@ import org.example.gersangtrade.trade.repository.TradeConfirmedRepository;
 import org.example.gersangtrade.trade.repository.TradeReviewRepository;
 import org.example.gersangtrade.home.service.PriceWatchCacheEvictor;
 import org.example.gersangtrade.trade.service.TradeStatService;
+import org.example.gersangtrade.wanted.repository.WantedEquipmentConditionRepository;
 import org.example.gersangtrade.wanted.repository.WantedItemRepository;
 import org.example.gersangtrade.wanted.repository.WantedListingRepository;
+import org.example.gersangtrade.wanted.repository.WantedRitualConditionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -53,6 +55,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.SliceImpl;
@@ -84,6 +87,8 @@ class ChatServiceTest {
     @Mock private ListingBundleRepository listingBundleRepository;
     @Mock private BundleLineRepository bundleLineRepository;
     @Mock private WantedItemRepository wantedItemRepository;
+    @Mock private WantedEquipmentConditionRepository wantedEquipmentConditionRepository;
+    @Mock private WantedRitualConditionRepository wantedRitualConditionRepository;
     @Mock private TradeConfirmedRepository tradeConfirmedRepository;
     @Mock private TradeReviewRepository tradeReviewRepository;
     @Mock private TradeStatService tradeStatService;
@@ -95,6 +100,7 @@ class ChatServiceTest {
     @Mock private KeywordDetectionService keywordDetectionService;
     @Mock private SimpMessagingTemplate messagingTemplate;
     @Mock private PriceWatchCacheEvictor priceWatchCacheEvictor;
+    @Mock private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     private ChatService chatService;
@@ -151,6 +157,39 @@ class ChatServiceTest {
 
         Server server = Server.builder().serverId(1).name("서버1").isActive(true).build();
         when(serverRepository.findByName(any())).thenReturn(Optional.of(server));
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // getMyChatRooms — 미읽음
+    // ──────────────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("getMyChatRooms_게시자_미열람신규채팅방_hasUnread_true")
+    void getMyChatRooms_게시자_미열람신규채팅방_hasUnread_true() {
+        ChatRoom room = mock(ChatRoom.class);
+        when(room.getId()).thenReturn(100L);
+        when(room.getPoster()).thenReturn(poster);
+        when(room.getCounterparty()).thenReturn(counterparty);
+        when(room.getCreatedAt()).thenReturn(LocalDateTime.now());
+        when(room.lastReadAtFor(1L)).thenReturn(null);
+        when(room.getListingType()).thenReturn(ListingType.SELL);
+        when(room.getListingId()).thenReturn(1L);
+        when(room.getInitiationType()).thenReturn(InitiationType.APPLY);
+        when(room.getStatus()).thenReturn(ChatRoomStatus.OPEN);
+        when(room.getFinalPrice()).thenReturn(null);
+        when(room.getPosterConfirmedAt()).thenReturn(null);
+        when(room.getCounterpartyConfirmedAt()).thenReturn(null);
+
+        when(chatRoomRepository.findByPosterId(1L)).thenReturn(List.of(room));
+        when(chatRoomRepository.findByCounterpartyId(1L)).thenReturn(List.of());
+        when(tradeListingRepository.findById(1L)).thenReturn(Optional.of(tradeListing));
+        when(listingBundleRepository.findByListingIdOrderByIdAsc(1L)).thenReturn(List.of());
+
+        List<ChatRoomSummaryResponse> rooms = chatService.getMyChatRooms(1L);
+
+        assertThat(rooms).hasSize(1);
+        assertThat(rooms.get(0).hasUnread()).isTrue();
+        verify(chatMessageRepository, never()).existsUnreadFromOthers(any(), any(), any(), any());
     }
 
     // ──────────────────────────────────────────────────────────────────────

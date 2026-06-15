@@ -9,17 +9,15 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * geota 아이템명 파서.
+ * 거상짱 아이템명 파서.
  *
- * <p>geota 아이템 목록의 raw 아이템명을 아래 순서로 분류한다:
+ * <p>raw 아이템명을 아래 순서로 분류한다:
  * <ol>
  *   <li>구 데이터 skip — 괄호+숫자 패턴 {@code \(\+\d+\)} 포함 시 제외</li>
  *   <li>보석 판별 — GEM_NAMES 11종 중 하나가 포함되면 Gem 분류</li>
  *   <li>장비 판별 — {@code <홈이있는>} 또는 {@code <주술명>} 접두사가 있으면 Equipment</li>
- *   <li>나머지 — UNKNOWN (gerniverse 상세에서 최종 분류)</li>
+ *   <li>나머지 — UNKNOWN</li>
  * </ol>
- *
- * <p>⚠ HTML 선택자와 아이템명 패턴은 geota 사이트 구조 변경 시 검증 필요.
  */
 public final class ItemNameParser {
 
@@ -41,9 +39,9 @@ public final class ItemNameParser {
      */
     private static final String SLOT_PREFIX = "홈이있는 ";
 
-    /** 세공됨 prefix (geota 표시명은 "세공된") */
+    /** 세공됨 prefix ("세공된") */
     private static final String PREFIX_SEONG = "세공된 ";
-    /** 강화됨 prefix (geota 표시명은 "강화된") */
+    /** 강화됨 prefix ("강화된") */
     private static final String PREFIX_GANG = "강화된 ";
     /** 빛나는 prefix */
     private static final String PREFIX_SHINING = "빛나는 ";
@@ -53,7 +51,7 @@ public final class ItemNameParser {
     /**
      * raw 아이템명을 파싱하여 분류 결과를 반환한다.
      *
-     * @param rawName geota에서 수집한 raw 아이템명
+     * @param rawName 크롤링한 raw 아이템명
      * @return 분류 결과. 구 데이터(skip 대상)이면 Optional.empty()
      */
     public static Optional<ParsedItemDto> parse(String rawName) {

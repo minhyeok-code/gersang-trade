@@ -69,10 +69,15 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<Map<String, String>> handleDataIntegrity(DataIntegrityViolationException e) {
-        log.warn("DataIntegrityViolation: {}", e.getMostSpecificCause().getMessage(), e);
+        String cause = e.getMostSpecificCause().getMessage();
+        log.warn("DataIntegrityViolation: {}", cause, e);
+        String message = "데이터 저장 중 충돌이 발생했습니다. 잠시 후 다시 시도해 주세요.";
+        if (cause != null && cause.contains("reveal_at")) {
+            message = "거래 평가 일정 저장에 실패했습니다. 백엔드를 재시작한 뒤 다시 시도해 주세요.";
+        }
         return ResponseEntity
                 .status(HttpStatus.CONFLICT)
-                .body(Map.of("error", "conflict", "message", "데이터 저장 중 충돌이 발생했습니다. 잠시 후 다시 시도해 주세요."));
+                .body(Map.of("error", "conflict", "message", message));
     }
 
     /**

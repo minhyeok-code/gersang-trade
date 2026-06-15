@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 
 import { api, sortChatMessages, type ChatMessageDto, type ChatRoomDetailDto, type ChatRoomSummaryDto } from '@/lib/api';
+import { formatPriceInput, formatPriceInputFromNumber, parsePriceInput } from '@/lib/formatPrice';
 import { parseApiError } from '@/lib/parseApiError';
 
 import { isMyMessage, isSystemMessage, resolvePartnerNickname } from '@/lib/chatUtils';
@@ -71,7 +72,7 @@ export default function ChatPanel({ room, onClose }: ChatPanelProps) {
       const defaultPrice = data.finalPrice ?? data.listingPrice ?? room.listingPrice;
 
       if (!priceInitializedRef.current && defaultPrice != null) {
-        setFinalPrice(String(defaultPrice));
+        setFinalPrice(formatPriceInputFromNumber(defaultPrice));
         priceInitializedRef.current = true;
       }
 
@@ -195,7 +196,8 @@ export default function ChatPanel({ room, onClose }: ChatPanelProps) {
     setError('');
     setConfirming(true);
     try {
-      const summary = await api.confirmTrade(room.id, finalPrice ? Number(finalPrice) : undefined);
+      const parsedPrice = parsePriceInput(finalPrice);
+      const summary = await api.confirmTrade(room.id, parsedPrice > 0 ? parsedPrice : undefined);
       try {
         await load(true);
       } catch (loadError: unknown) {
@@ -368,11 +370,13 @@ export default function ChatPanel({ room, onClose }: ChatPanelProps) {
 
             <input
 
-              type="number"
+              type="text"
+
+              inputMode="numeric"
 
               value={finalPrice}
 
-              onChange={(e) => setFinalPrice(e.target.value)}
+              onChange={(e) => setFinalPrice(formatPriceInput(e.target.value))}
 
               placeholder="가격 입력"
 

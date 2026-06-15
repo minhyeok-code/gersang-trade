@@ -58,40 +58,50 @@ public class DpsValueEvaluationService {
     @Transactional
     public DpsValueEvaluationResponse evaluate(Long userId, DpsEvaluationRequest req) {
         User user = loadUser(userId);
-        validateItemScenarioServerRequirement(req, user);
+        validateRequest(req, user);
 
-        // DPS 계산 전 중복 여부 확인 — 동일 요청이면 재계산·재저장 생략
-        String evalHash = buildEvaluationHash(userId, req);
+        DpsRequest dpsReq = toDpsRequest(req);
+        DpsResponse before = dpsCalculatorService.calculateWithOverlay(dpsReq, null);
+
+        ResistanceType resistanceType = req.resistanceType() != null
+                ? req.resistanceType()
+                : DeckResistanceTypeResolver.resolveLoaded(
+                        dpsCalculatorService.prepareState(dpsReq, null).members());
+
+        // 평가 당시 기준(before) 덱 스냅샷
+        var baselineResult = snapshotBuilder.buildOrReuse(
+                dpsCalculatorService.prepareState(dpsReq, null),
+                before,
+                resistanceType);
+
+        // baseline 포함 해시 — 덱이 바뀌면 별도 평가 row
+        String evalHash = buildEvaluationHash(userId, baselineResult.contentHash(), req);
         var existing = evaluationRepository.findByUserIdAndEvaluationHash(userId, evalHash);
         if (existing.isPresent()) {
             return DpsValueEvaluationResponse.ofStored(existing.get());
         }
 
         DpsScenarioOverlay overlay = overlayFactory.from(req.scenario());
-
-        // before / after DPS 계산
-        DpsRequest dpsReq = toDpsRequest(req);
-        DpsResponse before = dpsCalculatorService.calculateWithOverlay(dpsReq, null);
-        DpsResponse after  = dpsCalculatorService.calculateWithOverlay(dpsReq, overlay);
-
-        // 가격 조회
+        DpsResponse after = dpsCalculatorService.calculateWithOverlay(dpsReq, overlay);
         PriceResolution priceResolution = resolvePrice(req, user);
 
-        // 스냅샷 생성
-        ResistanceType resistanceType = req.resistanceType() != null
-                ? req.resistanceType()
-                : DeckResistanceTypeResolver.resolveLoaded(
-                        dpsCalculatorService.prepareState(dpsReq, null).members());
-
-        var snapshotResult = snapshotBuilder.buildOrReuse(
+        var scenarioResult = snapshotBuilder.buildOrReuse(
                 dpsCalculatorService.prepareState(dpsReq, overlay),
-                after, resistanceType);
+                after,
+                resistanceType);
 
-        // 엔티티 저장
         Monster monster = loadMonster(req.monsterId());
         DpsValueEvaluation evaluation = buildEvaluation(
-                user, monster, snapshotResult.snapshot(), req, priceResolution,
-                before, after, evalHash);
+                user,
+                monster,
+                baselineResult.snapshot(),
+                scenarioResult.snapshot(),
+                serializeRequest(req),
+                req,
+                priceResolution,
+                before,
+                after,
+                evalHash);
         DpsValueEvaluation saved = evaluationRepository.save(evaluation);
 
         return DpsValueEvaluationResponse.ofPersisted(saved, before, after);
@@ -106,11 +116,15 @@ public class DpsValueEvaluationService {
                 req.resistanceType(), req.memberInputs());
     }
 
-    private void validateItemScenarioServerRequirement(DpsEvaluationRequest req, User user) {
+    private void validateRequest(DpsEvaluationRequest req, User user) {
         ScenarioItemType type = req.scenario().type();
         if (type != ScenarioItemType.MERCENARY && user.getServer() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "아이템 시나리오 평가는 프로필에서 서버를 설정해야 합니다.");
+        }
+        if (type == ScenarioItemType.MERCENARY && (req.price() == null || req.price() == 0)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "용병 시나리오는 price가 필수입니다.");
         }
     }
 
@@ -150,9 +164,15 @@ public class DpsValueEvaluationService {
     }
 
     private DpsValueEvaluation buildEvaluation(
-            User user, Monster monster, DeckSnapshot snapshot,
-            DpsEvaluationRequest req, PriceResolution price,
-            DpsResponse before, DpsResponse after,
+            User user,
+            Monster monster,
+            DeckSnapshot baselineSnapshot,
+            DeckSnapshot scenarioSnapshot,
+            String requestJson,
+            DpsEvaluationRequest req,
+            PriceResolution price,
+            DpsResponse before,
+            DpsResponse after,
             String evalHash) {
 
         long rawBefore    = before.rawTotalDps();
@@ -173,7 +193,9 @@ public class DpsValueEvaluationService {
                 .user(user)
                 .deckId(req.deckId())
                 .monster(monster)
-                .scenarioDeckSnapshot(snapshot)
+                .baselineDeckSnapshot(baselineSnapshot)
+                .scenarioDeckSnapshot(scenarioSnapshot)
+                .requestJson(requestJson)
                 .candidateType(req.scenario().type())
                 .candidateRef(resolveCandidateRef(req))
                 .mercenaryMode(req.scenario().mode())
@@ -203,14 +225,21 @@ public class DpsValueEvaluationService {
         };
     }
 
-    private String buildEvaluationHash(Long userId, DpsEvaluationRequest req) {
-        // userId + 요청 전체를 canonical JSON으로 해시
+    private String buildEvaluationHash(Long userId, String baselineContentHash, DpsEvaluationRequest req) {
         try {
-            record HashPayload(Long userId, DpsEvaluationRequest req) {}
-            String json = hashUtil.toCanonicalJson(new HashPayload(userId, req));
+            record HashPayload(Long userId, String baselineContentHash, DpsEvaluationRequest req) {}
+            String json = hashUtil.toCanonicalJson(new HashPayload(userId, baselineContentHash, req));
             return hashUtil.sha256Hex(json);
         } catch (Exception e) {
             throw new IllegalStateException("evaluation_hash 생성 실패", e);
+        }
+    }
+
+    private String serializeRequest(DpsEvaluationRequest req) {
+        try {
+            return hashUtil.toCanonicalJson(req);
+        } catch (Exception e) {
+            throw new IllegalStateException("request_json 직렬화 실패", e);
         }
     }
 

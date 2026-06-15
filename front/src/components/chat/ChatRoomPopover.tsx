@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { api, type ChatRoomSummaryDto } from '@/lib/api';
-import { formatChatRoomStatus } from '@/lib/chatLabels';
+import ChatRoomStatusBadge from '@/components/chat/ChatRoomStatusBadge';
 import { useWs } from '@/lib/useWs';
 
 interface ChatRoomPopoverProps {
@@ -75,7 +75,11 @@ export default function ChatRoomPopover({ onOpenRoom, onUnreadChange }: ChatRoom
             <button
               key={room.id}
               onClick={() => onOpenRoom(room)}
-              className="w-full text-left rounded-lg px-3 py-2.5 hover:bg-[var(--bg)] transition-colors"
+              className="w-full text-left rounded-lg px-3 py-2.5 transition-colors"
+              style={{
+                background: room.hasUnread ? '#FFF0F0' : 'transparent',
+                border: room.hasUnread ? '1px solid var(--danger)' : '1px solid transparent',
+              }}
             >
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0 flex items-center gap-2">
@@ -87,17 +91,26 @@ export default function ChatRoomPopover({ onOpenRoom, onUnreadChange }: ChatRoom
                     />
                   )}
                   <div className="min-w-0">
-                    <p className="text-sm font-medium truncate" style={{ color: 'var(--text)' }}>
+                    <p
+                      className="text-sm font-medium truncate"
+                      style={{ color: room.hasUnread ? 'var(--danger)' : 'var(--text)' }}
+                    >
                       {room.partnerNickname}
                     </p>
-                    <p className="text-xs truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                    <p
+                      className="text-xs truncate mt-0.5"
+                      style={{ color: room.hasUnread ? 'var(--danger)' : 'var(--text-muted)', opacity: room.hasUnread ? 0.85 : 1 }}
+                    >
                       {room.listingDisplayName ?? `${room.listingType} #${room.listingId}`}
                     </p>
                   </div>
                 </div>
-                <span className="text-[11px] shrink-0" style={{ color: 'var(--text-disabled)' }}>
-                  {formatChatRoomStatus(room.status)}
-                </span>
+                <ChatRoomStatusBadge
+                  status={room.status}
+                  hasUnread={room.hasUnread}
+                  myTradeConfirmed={room.myTradeConfirmed}
+                  partnerTradeConfirmed={room.partnerTradeConfirmed}
+                />
               </div>
             </button>
           ))

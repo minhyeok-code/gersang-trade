@@ -26,13 +26,19 @@ import org.example.gersangtrade.domain.trade.TradeReview;
 import org.example.gersangtrade.domain.user.User;
 import org.example.gersangtrade.domain.user.UserRepository;
 import org.example.gersangtrade.domain.user.enums.UserStatus;
+import org.example.gersangtrade.domain.wanted.WantedEquipmentCondition;
+import org.example.gersangtrade.domain.wanted.WantedItem;
 import org.example.gersangtrade.domain.wanted.WantedListing;
+import org.example.gersangtrade.domain.wanted.WantedRitualCondition;
+import org.example.gersangtrade.domain.wanted.enums.PreferredOutcome;
 import org.example.gersangtrade.domain.wanted.enums.WantedStatus;
 import org.example.gersangtrade.catalog.repository.EquipmentItemRepository;
 import org.example.gersangtrade.domain.catalog.EquipmentItem;
+import org.example.gersangtrade.domain.catalog.EquipmentSet;
 import org.example.gersangtrade.domain.listing.BundleEquipmentDetail;
 import org.example.gersangtrade.domain.listing.BundleEquipmentRitual;
 import org.example.gersangtrade.domain.listing.enums.BundleType;
+import org.example.gersangtrade.domain.listing.enums.RitualOutcome;
 import org.example.gersangtrade.domain.user.enums.SetComposition;
 import org.example.gersangtrade.listing.repository.BundleEquipmentDetailRepository;
 import org.example.gersangtrade.listing.repository.BundleEquipmentRitualRepository;
@@ -49,10 +55,15 @@ import org.example.gersangtrade.catalog.repository.ServerRepository;
 import org.example.gersangtrade.domain.catalog.Server;
 import org.example.gersangtrade.trade.repository.TradeConfirmedRepository;
 import org.example.gersangtrade.trade.repository.TradeReviewRepository;
+import org.example.gersangtrade.trade.util.TradeReviewTiming;
 import org.example.gersangtrade.trade.service.TradeStatService;
 import org.example.gersangtrade.user.util.ExpGradeCalculator;
+import org.example.gersangtrade.wanted.repository.WantedEquipmentConditionRepository;
 import org.example.gersangtrade.wanted.repository.WantedItemRepository;
 import org.example.gersangtrade.wanted.repository.WantedListingRepository;
+import org.example.gersangtrade.wanted.repository.WantedRitualConditionRepository;
+import org.example.gersangtrade.wanted.service.WantedSetTitleResolver;
+import org.example.gersangtrade.wanted.service.WantedSingleItemTitleResolver;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Slice;
 import org.springframework.stereotype.Service;
@@ -61,7 +72,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -88,6 +101,8 @@ public class ChatService {
     private final BundleEquipmentRitualRepository bundleEquipmentRitualRepository;
     private final EquipmentItemRepository equipmentItemRepository;
     private final WantedItemRepository wantedItemRepository;
+    private final WantedEquipmentConditionRepository wantedEquipmentConditionRepository;
+    private final WantedRitualConditionRepository wantedRitualConditionRepository;
     private final TradeConfirmedRepository tradeConfirmedRepository;
     private final TradeReviewRepository tradeReviewRepository;
     private final TradeStatService tradeStatService;
@@ -408,18 +423,19 @@ public class ChatService {
         poster.incrementTradeCount();
         counterparty.incrementTradeCount();
 
-        LocalDateTime revealAt = LocalDateTime.now().plusDays(3);
+        // 공개 예정 시각 — 생성 시점 기준 3일째 이후 첫 02:00 (DB NOT NULL·배치 공개용)
+        LocalDateTime reviewRevealAt = TradeReviewTiming.computeRevealAt(LocalDateTime.now());
         tradeReviewRepository.save(TradeReview.builder()
                 .tradeConfirmed(confirmed)
                 .reviewer(poster)
                 .target(counterparty)
-                .revealAt(revealAt)
+                .revealAt(reviewRevealAt)
                 .build());
         tradeReviewRepository.save(TradeReview.builder()
                 .tradeConfirmed(confirmed)
                 .reviewer(counterparty)
                 .target(poster)
-                .revealAt(revealAt)
+                .revealAt(reviewRevealAt)
                 .build());
 
         completeListingStatus(room);
@@ -474,12 +490,22 @@ public class ChatService {
                 room, viewerId, resolveListingDisplayName(room), resolveListingPrice(room), hasUnread);
     }
 
-    /** 상대방 TEXT 메시지 미읽음 여부 */
+    /**
+     * 채팅방 미읽음 여부 — 알림 센터가 아닌 채팅 목록·아이콘 표시용.
+     * <ul>
+     *   <li>게시자가 한 번도 열지 않은 방 → 상대의 신규 채팅 요청으로 미읽음</li>
+     *   <li>그 외 → 상대방 TEXT 메시지가 마지막 읽음 이후 있으면 미읽음</li>
+     * </ul>
+     */
     private boolean hasUnreadMessages(ChatRoom room, Long viewerId) {
+        LocalDateTime lastRead = room.lastReadAtFor(viewerId);
+        if (lastRead == null && room.getPoster().getId().equals(viewerId)) {
+            return true;
+        }
         return chatMessageRepository.existsUnreadFromOthers(
                 room.getId(),
                 viewerId,
-                room.lastReadAtFor(viewerId),
+                lastRead,
                 ChatMessageType.TEXT);
     }
 
@@ -669,17 +695,83 @@ public class ChatService {
                     return bundle.getBundleType().name();
                 }
             } else {
-                List<org.example.gersangtrade.domain.wanted.WantedItem> items =
-                        wantedItemRepository.findByWantedListingIdOrderBySortOrderAsc(room.getListingId());
-                if (!items.isEmpty()) {
-                    String itemName = items.get(0).getItem().getName();
-                    return items.size() > 1 ? itemName + " 외 " + (items.size() - 1) + "개 구매희망" : itemName + " 구매희망";
+                String wantedTitle = resolveWantedListingDisplayName(room.getListingId());
+                if (wantedTitle != null) {
+                    return wantedTitle;
                 }
             }
         } catch (Exception ignored) {
             // 표시명 조회 실패 시 채팅방 자체는 계속 표시한다.
         }
         return room.getListingType().name() + " #" + room.getListingId();
+    }
+
+    /**
+     * 구매 희망 등록글의 채팅 표시명 — 목록 API와 동일하게 세트·주술 표기를 산출한다.
+     */
+    private String resolveWantedListingDisplayName(Long wantedListingId) {
+        List<WantedItem> items =
+                wantedItemRepository.findByWantedListingIdOrderBySortOrderAsc(wantedListingId);
+        if (items.isEmpty()) {
+            return null;
+        }
+
+        List<Long> wantedItemIds = items.stream().map(WantedItem::getId).toList();
+        List<Long> catalogItemIds = items.stream()
+                .map(wi -> wi.getItem().getId())
+                .distinct()
+                .toList();
+
+        Map<Long, WantedEquipmentCondition> conditionByWantedItemId =
+                wantedItemIds.isEmpty() ? Map.of()
+                        : wantedEquipmentConditionRepository.findByWantedItemIdIn(wantedItemIds)
+                        .stream()
+                        .collect(Collectors.toMap(c -> c.getWantedItem().getId(), Function.identity()));
+
+        Map<Long, List<WantedRitualCondition>> ritualsByWantedItemId =
+                wantedItemIds.isEmpty() ? Map.of()
+                        : wantedRitualConditionRepository.findWithRitualByWantedItemIdIn(wantedItemIds)
+                        .stream()
+                        .collect(Collectors.groupingBy(r -> r.getWantedItem().getId()));
+
+        Map<Long, EquipmentItem> equipmentByCatalogItemId =
+                catalogItemIds.isEmpty() ? Map.of()
+                        : equipmentItemRepository.findWithItemAndSetByItemIdIn(catalogItemIds)
+                        .stream()
+                        .collect(Collectors.toMap(EquipmentItem::getItemId, Function.identity()));
+
+        String displayTitle = resolveWantedDisplayTitle(
+                items, conditionByWantedItemId, ritualsByWantedItemId, equipmentByCatalogItemId);
+        if (displayTitle != null && !displayTitle.isBlank()) {
+            return displayTitle;
+        }
+
+        String itemName = items.get(0).getItem().getName();
+        return items.size() > 1
+                ? itemName + " 외 " + (items.size() - 1) + "개 구매희망"
+                : itemName + " 구매희망";
+    }
+
+    private String resolveWantedDisplayTitle(
+            List<WantedItem> items,
+            Map<Long, WantedEquipmentCondition> conditionByWantedItemId,
+            Map<Long, List<WantedRitualCondition>> ritualsByWantedItemId,
+            Map<Long, EquipmentItem> equipmentByCatalogItemId) {
+
+        if (items.size() == 1) {
+            WantedItem only = items.get(0);
+            return WantedSingleItemTitleResolver.resolve(
+                    only,
+                    conditionByWantedItemId.get(only.getId()),
+                    ritualsByWantedItemId.getOrDefault(only.getId(), List.of())
+            ).orElse(null);
+        }
+        return WantedSetTitleResolver.resolve(
+                items,
+                conditionByWantedItemId,
+                ritualsByWantedItemId,
+                equipmentByCatalogItemId
+        ).orElse(null);
     }
 
     /**
@@ -771,43 +863,83 @@ public class ChatService {
         return WatchKeyBuilder.setKey(setId, info.composition(), info.ritualCount(), info.mark());
     }
 
-    // BUY: 첫 번째 WantedItem이 세트 피스이면 SET watchKey (RC:0:MARK:ANY), 아니면 ITEM watchKey
+    /**
+     * 구매 희망 확정 statKey — 관심 시세 구매·거래완료 탭과 동일한 WatchInfo 규칙을 사용한다.
+     */
     private String resolveStatKeyBuy(Long wantedListingId) {
-        var items = wantedItemRepository.findByWantedListingIdOrderBySortOrderAsc(wantedListingId);
-        if (items.isEmpty()) return null;
-
-        // 모든 WantedItem의 EquipmentItem을 조회해 동일 set 여부 확인
-        var equipmentItems = items.stream()
-                .map(wi -> equipmentItemRepository.findWithItemByItemId(wi.getItem().getId()).orElse(null))
-                .filter(java.util.Objects::nonNull)
-                .toList();
-
-        if (equipmentItems.isEmpty()) {
-            return WatchKeyBuilder.itemKey(items.get(0).getItem().getId());
+        List<WantedItem> items =
+                wantedItemRepository.findByWantedListingIdOrderBySortOrderAsc(wantedListingId);
+        if (items.isEmpty()) {
+            return null;
         }
 
-        var setIds = equipmentItems.stream()
-                .map(EquipmentItem::getEquipmentSet)
-                .filter(java.util.Objects::nonNull)
-                .map(s -> s.getId())
+        List<Long> wantedItemIds = items.stream().map(WantedItem::getId).toList();
+        List<Long> catalogItemIds = items.stream()
+                .map(wi -> wi.getItem().getId())
                 .distinct()
                 .toList();
 
-        if (setIds.size() != 1) {
-            // 단품 또는 혼합 → 첫 번째 아이템 ITEM 키
-            return WatchKeyBuilder.itemKey(items.get(0).getItem().getId());
+        Map<Long, WantedEquipmentCondition> conditionByWantedItemId =
+                wantedItemIds.isEmpty() ? Map.of()
+                        : wantedEquipmentConditionRepository.findByWantedItemIdIn(wantedItemIds)
+                        .stream()
+                        .collect(Collectors.toMap(c -> c.getWantedItem().getId(), Function.identity()));
+
+        Map<Long, List<WantedRitualCondition>> ritualsByWantedItemId =
+                wantedItemIds.isEmpty() ? Map.of()
+                        : wantedRitualConditionRepository.findWithRitualByWantedItemIdIn(wantedItemIds)
+                        .stream()
+                        .collect(Collectors.groupingBy(r -> r.getWantedItem().getId()));
+
+        Map<Long, EquipmentItem> equipmentByCatalogItemId =
+                catalogItemIds.isEmpty() ? Map.of()
+                        : equipmentItemRepository.findWithItemAndSetByItemIdIn(catalogItemIds)
+                        .stream()
+                        .collect(Collectors.toMap(EquipmentItem::getItemId, Function.identity()));
+
+        if (items.size() == 1) {
+            return resolveBuySingleItemStatKey(
+                    items.get(0), conditionByWantedItemId, ritualsByWantedItemId);
         }
 
-        Long setId = setIds.get(0);
-        var pieces = equipmentItems.stream()
-                .filter(e -> e.getEquipmentSet() != null && e.getEquipmentSet().getId().equals(setId))
-                .map(e -> new SetTitleGenerator.PieceTitleInput(e.getSlot(), null))
-                .toList();
+        return WantedSetTitleResolver.resolveWatchInfo(
+                        items,
+                        conditionByWantedItemId,
+                        ritualsByWantedItemId,
+                        equipmentByCatalogItemId)
+                .flatMap(info -> equipmentByCatalogItemId.values().stream()
+                        .map(EquipmentItem::getEquipmentSet)
+                        .filter(java.util.Objects::nonNull)
+                        .map(EquipmentSet::getId)
+                        .findFirst()
+                        .map(setId -> WatchKeyBuilder.setKey(
+                                setId, info.composition(), info.ritualCount(), info.mark())))
+                .orElseGet(() -> WatchKeyBuilder.itemKey(items.get(0).getItem().getId()));
+    }
 
-        SetTitleGenerator.WatchInfo info = SetTitleGenerator.resolveWatchInfo(pieces);
-        if (info == null) return WatchKeyBuilder.itemKey(items.get(0).getItem().getId());
-        // BUY 측은 ritual 정보 없이 RC:0:MARK:NONE 저장
-        return WatchKeyBuilder.setKey(setId, info.composition(), 0, null);
+    private String resolveBuySingleItemStatKey(
+            WantedItem item,
+            Map<Long, WantedEquipmentCondition> conditionByWantedItemId,
+            Map<Long, List<WantedRitualCondition>> ritualsByWantedItemId) {
+
+        Long itemId = item.getItem().getId();
+        WantedEquipmentCondition condition = conditionByWantedItemId.get(item.getId());
+        List<WantedRitualCondition> rituals =
+                ritualsByWantedItemId.getOrDefault(item.getId(), List.of());
+
+        if (condition != null && condition.isHasRitual() && !rituals.isEmpty()) {
+            WantedRitualCondition first = rituals.get(0);
+            String mark = SetTitleGenerator.buildTitleMark(
+                    first.getRitual(), toBuyRitualOutcome(first.getPreferredOutcome()));
+            return WatchKeyBuilder.itemKey(itemId, mark);
+        }
+        return WatchKeyBuilder.itemKey(itemId);
+    }
+
+    private static RitualOutcome toBuyRitualOutcome(PreferredOutcome preferred) {
+        return preferred == PreferredOutcome.GREAT_SUCCESS
+                ? RitualOutcome.GREAT_SUCCESS
+                : RitualOutcome.SUCCESS;
     }
 
     /**

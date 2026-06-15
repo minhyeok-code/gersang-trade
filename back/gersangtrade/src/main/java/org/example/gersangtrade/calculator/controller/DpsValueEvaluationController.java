@@ -3,8 +3,10 @@ package org.example.gersangtrade.calculator.controller;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.example.gersangtrade.calculator.dto.request.DpsEvaluationRequest;
+import org.example.gersangtrade.calculator.dto.response.DpsEvaluationDetailResponse;
 import org.example.gersangtrade.calculator.dto.response.DpsEvaluationSummary;
 import org.example.gersangtrade.calculator.dto.response.DpsValueEvaluationResponse;
+import org.example.gersangtrade.calculator.dto.response.EvaluationDeckDiffResponse;
 import org.example.gersangtrade.calculator.service.DpsValueEvaluationQueryService;
 import org.example.gersangtrade.calculator.service.DpsValueEvaluationService;
 import org.springframework.data.domain.Page;
@@ -28,7 +30,9 @@ import org.springframework.web.bind.annotation.RestController;
  * <pre>
  * POST /api/calculator/dps/evaluations       — 평가 실행 (로그인 필수)
  * GET  /api/calculator/dps/evaluations       — 내 평가 목록 (최신순, 페이징)
- * GET  /api/calculator/dps/evaluations/{id}  — 내 평가 상세
+ * GET  /api/calculator/dps/evaluations/{id}          — 내 평가 상세(메트릭)
+ * GET  /api/calculator/dps/evaluations/{id}/detail — 내 평가 상세(덱 상태·재평가 JSON)
+ * GET  /api/calculator/dps/evaluations/{id}/deck-diff — baseline vs 현재 덱 diff
  * </pre>
  *
  * 모든 엔드포인트는 로그인 필수이며 본인 데이터만 접근 가능하다.
@@ -81,6 +85,24 @@ public class DpsValueEvaluationController {
             @AuthenticationPrincipal Long userId,
             @PathVariable Long id) {
         return ResponseEntity.ok(queryService.getMyEvaluation(userId, id));
+    }
+
+    /** 내 평가 상세 — 덱 상태·재평가용 requestJson 포함 */
+    @GetMapping("/{id}/detail")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<DpsEvaluationDetailResponse> getMyEvaluationDetail(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long id) {
+        return ResponseEntity.ok(queryService.getMyEvaluationDetail(userId, id));
+    }
+
+    /** 평가 당시 baseline 덱 vs 현재 덱 장비 diff */
+    @GetMapping("/{id}/deck-diff")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<EvaluationDeckDiffResponse> getDeckDiff(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long id) {
+        return ResponseEntity.ok(queryService.getDeckDiff(userId, id));
     }
 
     /** 내 평가 기록 삭제 */

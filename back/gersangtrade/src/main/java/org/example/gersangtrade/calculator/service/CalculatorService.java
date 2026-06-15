@@ -31,7 +31,7 @@ import java.util.*;
  *   <li>가성비 점수 = 데미지 상승률(%) / 가격(억 전)</li>
  * </ul>
  *
- * <p>가격 기본값: MaterialPriceHistory 직전 달 평균가. priceOverrides로 덮어쓸 수 있다.
+ * <p>가격은 priceOverrides로만 입력받는다.
  */
 @Service
 @RequiredArgsConstructor

@@ -48,10 +48,19 @@ public class DpsValueEvaluation {
     @JoinColumn(name = "monster_id", nullable = false)
     private Monster monster;
 
+    /** 평가 당시 기준(before) 덱 스냅샷 */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "baseline_deck_snapshot_id")
+    private DeckSnapshot baselineDeckSnapshot;
+
     /** after 시나리오 덱 스냅샷 — persist=true 시에만 존재 */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "scenario_deck_snapshot_id")
     private DeckSnapshot scenarioDeckSnapshot;
+
+    /** 재평가용 요청 JSON (DpsEvaluationRequest canonical) */
+    @Column(name = "request_json", columnDefinition = "TEXT")
+    private String requestJson;
 
     /** 평가 후보 유형 */
     @Enumerated(EnumType.STRING)
@@ -145,7 +154,9 @@ public class DpsValueEvaluation {
 
     @Builder
     public DpsValueEvaluation(
-            User user, Long deckId, Monster monster, DeckSnapshot scenarioDeckSnapshot,
+            User user, Long deckId, Monster monster,
+            DeckSnapshot baselineDeckSnapshot, DeckSnapshot scenarioDeckSnapshot,
+            String requestJson,
             ScenarioItemType candidateType, Long candidateRef,
             MercenaryMode mercenaryMode, Long affectedMemberId,
             Server server, Long price, PriceSource priceSource, String priceJson,
@@ -160,7 +171,9 @@ public class DpsValueEvaluation {
         this.user = user;
         this.deckId = deckId;
         this.monster = monster;
+        this.baselineDeckSnapshot = baselineDeckSnapshot;
         this.scenarioDeckSnapshot = scenarioDeckSnapshot;
+        this.requestJson = requestJson;
         this.candidateType = candidateType;
         this.candidateRef = candidateRef;
         this.mercenaryMode = mercenaryMode;

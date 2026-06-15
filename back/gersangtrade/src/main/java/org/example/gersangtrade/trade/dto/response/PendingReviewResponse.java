@@ -1,6 +1,7 @@
 package org.example.gersangtrade.trade.dto.response;
 
 import org.example.gersangtrade.domain.trade.TradeReview;
+import org.example.gersangtrade.trade.util.TradeReviewTiming;
 
 import java.time.LocalDateTime;
 
@@ -25,7 +26,7 @@ public record PendingReviewResponse(
         return new PendingReviewResponse(
                 review.getId(),
                 review.getTarget().getNickname(),
-                review.getRevealAt(),
+                TradeReviewTiming.evaluationEndsAt(review.getCreatedAt()),
                 chatRoomId
         );
     }

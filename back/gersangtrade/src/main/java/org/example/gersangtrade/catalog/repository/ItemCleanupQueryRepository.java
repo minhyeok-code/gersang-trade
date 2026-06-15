@@ -116,7 +116,6 @@ public class ItemCleanupQueryRepository {
                       AND NOT EXISTS (SELECT 1 FROM user_deck_member_equips de WHERE de.equipment_item_id = i.id)
                       AND NOT EXISTS (SELECT 1 FROM equipment_set_pieces esp WHERE esp.equipment_item_id = i.id)
                       AND NOT EXISTS (SELECT 1 FROM wanted_items wi WHERE wi.item_id = i.id)
-                      AND NOT EXISTS (SELECT 1 FROM material_price_history mph WHERE mph.item_id = i.id)
                     """;
         };
     }

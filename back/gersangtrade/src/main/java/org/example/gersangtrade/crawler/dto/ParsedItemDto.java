@@ -3,14 +3,14 @@ package org.example.gersangtrade.crawler.dto;
 import org.example.gersangtrade.domain.catalog.enums.GemGrade;
 
 /**
- * geota 아이템명 파싱 결과 DTO.
+ * 아이템명 파싱 결과 DTO.
  * ItemNameParser가 raw 아이템명을 분류한 결과를 담는다.
  *
  * <p>분류 유형:
  * <ul>
  *   <li>GEM — 보석 (흑요석 등 11종 + 세공됨/강화됨/빛나는 변형. 주술은 강화됨+ritualName 조합으로 표현)</li>
  *   <li>EQUIPMENT — 확실한 장비 (이름에 &lt;ritual&gt; 또는 &lt;홈이있는&gt; 마커 포함)</li>
- *   <li>UNKNOWN — 일반 이름만 있어 분류 불명 (gerniverse 상세에서 최종 분류)</li>
+ *   <li>UNKNOWN — 일반 이름만 있어 분류 불명</li>
  * </ul>
  */
 public record ParsedItemDto(
@@ -52,7 +52,7 @@ public record ParsedItemDto(
         EQUIPMENT,
         /**
          * 분류 불명 아이템.
-         * items(MATERIAL) 임시 생성 후 gerniverse 상세 파싱에서 최종 분류.
+         * items(MATERIAL) 임시 생성 후 수동·후속 분류 대상.
          */
         UNKNOWN
     }

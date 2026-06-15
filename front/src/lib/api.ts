@@ -285,6 +285,10 @@ export const api = {
     ),
   getMyDpsEvaluation: (id: number) =>
     request<DpsValueEvaluationResponseDto>(`/api/calculator/dps/evaluations/${id}`),
+  getMyDpsEvaluationDetail: (id: number) =>
+    request<DpsEvaluationDetailDto>(`/api/calculator/dps/evaluations/${id}/detail`),
+  getDpsEvaluationDeckDiff: (id: number) =>
+    request<EvaluationDeckDiffDto>(`/api/calculator/dps/evaluations/${id}/deck-diff`),
   deleteMyDpsEvaluation: (id: number) =>
     request<void>(`/api/calculator/dps/evaluations/${id}`, { method: 'DELETE' }),
   getMonsters: () => request<MonsterDto[]>('/api/monsters'),
@@ -541,7 +545,7 @@ export interface NotificationDto {
 
 export interface ChatRoomSummaryDto {
   id: number;
-  listingType: 'SELL' | 'WANTED';
+  listingType: 'SELL' | 'BUY';
   listingId: number;
   listingDisplayName?: string;
   initiationType?: 'APPLY' | 'NEGOTIATE';
@@ -569,7 +573,7 @@ export interface ChatMessageDto {
 
 export interface ChatRoomDetailDto {
   id: number;
-  listingType: 'SELL' | 'WANTED';
+  listingType: 'SELL' | 'BUY';
   listingId: number;
   listingDisplayName?: string;
   initiationType?: 'APPLY' | 'NEGOTIATE';
@@ -759,9 +763,12 @@ export interface EfficiencyTripleDto {
   finalDps: number | null;
 }
 
+export type EvaluationDeckStatusDto = 'CURRENT' | 'STALE' | 'DECK_DELETED' | 'UNKNOWN';
+
 export interface DpsValueEvaluationResponseDto {
   persisted: boolean;
   evaluationId: number | null;
+  baselineDeckSnapshotId: number | null;
   scenarioDeckSnapshotId: number | null;
   before: DpsTripleDto;
   after: DpsTripleDto;
@@ -776,6 +783,8 @@ export interface DpsValueEvaluationResponseDto {
 
 export interface DpsEvaluationSummaryDto {
   evaluationId: number;
+  deckId: number;
+  deckStatus: EvaluationDeckStatusDto;
   candidateType: ScenarioItemTypeDto;
   candidateLabel: string;
   candidateRef: number;
@@ -788,6 +797,45 @@ export interface DpsEvaluationSummaryDto {
   formattedPrice: string | null;
   priceSource: PriceSourceDto;
   createdAt: string;
+}
+
+export interface DpsEvaluationDetailDto {
+  evaluationId: number;
+  deckId: number;
+  deckStatus: EvaluationDeckStatusDto;
+  candidateType: ScenarioItemTypeDto;
+  candidateLabel: string;
+  candidateRef: number;
+  mercenaryMode: MercenaryModeDto | null;
+  monsterId: number;
+  monsterName: string;
+  baselineDeckSnapshotId: number | null;
+  scenarioDeckSnapshotId: number | null;
+  finalDpsIncreaseRate: number;
+  efficiencyPerEokFinal: number | null;
+  price: number | null;
+  formattedPrice: string | null;
+  priceSource: PriceSourceDto;
+  createdAt: string;
+  metrics: DpsValueEvaluationResponseDto;
+  requestJson: DpsEvaluationRequestBody | null;
+}
+
+export interface DeckSnapshotDiffLineDto {
+  memberId: number;
+  mercenaryName: string;
+  slot: string;
+  beforeItemName: string | null;
+  afterItemName: string | null;
+}
+
+export interface EvaluationDeckDiffDto {
+  deckStatus: EvaluationDeckStatusDto;
+  baselineSnapshotId: number | null;
+  currentSnapshotId: number | null;
+  changes: DeckSnapshotDiffLineDto[];
+  baselineContent: DeckSnapshotContentDto | null;
+  currentContent: DeckSnapshotContentDto | null;
 }
 
 export interface ScenarioLineBody {

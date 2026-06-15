@@ -16,7 +16,8 @@ import java.time.LocalDateTime;
  *
  * 공개 정책:
  *   - 평가 제출 중 상대방의 제출 여부·내용 비공개
- *   - 3일(revealAt) 만료 시점에 배치 Job이 isPublished=true로 전환하며 일괄 공개
+ *   - 생성 후 2일 경과 시 배치가 revealAt(3일째 이후 첫 02:00)을 설정
+ *   - revealAt에 배치 Job이 isPublished=true로 전환하며 일괄 공개
  *   - 공개 시 rating의 EXP·매너점수 효과를 targetUser에게 반영
  *
  * 상세 정책: docs/gersang-grade-policy.md 4절 참고.
@@ -66,10 +67,10 @@ public class TradeReview {
     private TradeRating rating;
 
     /**
-     * 평가 공개 예정 시각 = confirmedAt + 3일.
-     * 이 시각이 지나면 배치 Job이 isPublished=true로 전환한다.
+     * 평가 공개 예정 시각 — 생성 후 2일 경과 배치가 설정(3일째 이후 첫 02:00).
+     * null: 아직 공개 일정 미확정. 이 시각이 지나면 배치가 isPublished=true로 전환한다.
      */
-    @Column(name = "reveal_at", nullable = false)
+    @Column(name = "reveal_at")
     private LocalDateTime revealAt;
 
     /**
@@ -98,8 +99,13 @@ public class TradeReview {
         this.createdAt = LocalDateTime.now();
     }
 
+    /** 생성 후 2일 경과 배치가 공개 예정 시각을 설정한다 */
+    public void scheduleRevealAt(LocalDateTime revealAt) {
+        this.revealAt = revealAt;
+    }
+
     /**
-     * 평가 제출 — 평가 기간(revealAt 이전) 내에만 가능.
+     * 평가 제출 — 생성 후 3일 이내에만 가능(서비스에서 검증).
      *
      * @param rating 선택한 평가 (GOOD / NEUTRAL / BAD)
      */

@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { api, sortChatMessages, type ChatMessageDto, type ChatRoomDetailDto, type PublicUserDto } from '@/lib/api';
-import { formatChatRoomStatus } from '@/lib/chatLabels';
+import ChatRoomStatusBadge from '@/components/chat/ChatRoomStatusBadge';
+import { formatPriceInput, formatPriceInputFromNumber, parsePriceInput } from '@/lib/formatPrice';
 import { isMyMessage, isSystemMessage } from '@/lib/chatUtils';
 import { useWs } from '@/lib/useWs';
 import type { ChatMessageWsEvent, RoomStatusWsEvent } from '@/lib/wsTypes';
@@ -28,7 +29,7 @@ export default function ChatRoomPage() {
       setRoom(data);
       setMessages(sortChatMessages(data.messages ?? []));
       const defaultPrice = data.finalPrice ?? data.listingPrice;
-      if (defaultPrice != null) setFinalPrice(String(defaultPrice));
+      if (defaultPrice != null) setFinalPrice(formatPriceInputFromNumber(defaultPrice));
       if (!silent) setError('');
     } catch (e: unknown) {
       if (!silent) setError(String(e));
@@ -93,7 +94,8 @@ export default function ChatRoomPage() {
 
   async function tradeConfirm() {
     try {
-      const summary = await api.confirmTrade(roomId, finalPrice ? Number(finalPrice) : undefined);
+      const parsedPrice = parsePriceInput(finalPrice);
+      const summary = await api.confirmTrade(roomId, parsedPrice > 0 ? parsedPrice : undefined);
       await load();
       if (summary.status === 'CLOSED') {
         setError('이 채팅방에서는 거래가 확정되지 않았습니다. 게시물이 이미 처리되었거나 채팅방이 종료되었습니다.');
@@ -118,7 +120,14 @@ export default function ChatRoomPage() {
 
       {room && (
         <div className="bg-gray-800 rounded p-3 text-sm text-gray-300 flex gap-6 items-center">
-          <span>상태: <b className="text-white">{formatChatRoomStatus(room.status) || '-'}</b></span>
+          <span className="flex items-center gap-2">
+            상태:
+            <ChatRoomStatusBadge
+              status={room.status}
+              myTradeConfirmed={room.myTradeConfirmed}
+              partnerTradeConfirmed={room.partnerTradeConfirmed}
+            />
+          </span>
           <span>등록글: {String(room.listingId ?? '-')}</span>
           {room.partnerNickname && (
             <button
@@ -184,7 +193,8 @@ export default function ChatRoomPage() {
             )}
           <div className="flex gap-2 items-center flex-wrap">
             <label className="text-sm text-gray-400">거래가</label>
-            <input type="number" value={finalPrice} onChange={(e) => setFinalPrice(e.target.value)}
+            <input type="text" inputMode="numeric" value={finalPrice}
+              onChange={(e) => setFinalPrice(formatPriceInput(e.target.value))}
               placeholder="가격 입력"
               className="bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm w-40" />
             {canConfirm && (

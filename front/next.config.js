@@ -7,6 +7,15 @@ const nextConfig = {
         source: '/api/:path*',
         destination: 'http://127.0.0.1:8080/api/:path*',
       },
+      // 채팅·알림 STOMP(SockJS) — REST와 동일하게 Next dev 서버 경유
+      {
+        source: '/ws/:path*',
+        destination: 'http://127.0.0.1:8080/ws/:path*',
+      },
+      {
+        source: '/ws',
+        destination: 'http://127.0.0.1:8080/ws',
+      },
       // /auth/callback 은 Next.js 페이지 — /auth/* 전체 프록시 시 콜백 페이지가 백엔드로 넘어가 토큰 저장 실패
       {
         source: '/auth/refresh',

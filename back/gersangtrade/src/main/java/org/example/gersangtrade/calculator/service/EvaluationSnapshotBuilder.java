@@ -37,6 +37,9 @@ public class EvaluationSnapshotBuilder {
 
     public record BuildResult(DeckSnapshot snapshot, String contentHash) {}
 
+    /** DB 저장 없이 스냅샷 JSON·해시만 계산 (stale 판별·diff용) */
+    public record ContentResult(String canonicalJson, String contentHash) {}
+
     /**
      * overlay 적용 후 DeckCalculationState + after DPS 결과로 스냅샷을 생성하거나 재사용한다.
      *
@@ -48,6 +51,17 @@ public class EvaluationSnapshotBuilder {
     public BuildResult buildOrReuse(DeckCalculationState calcState,
                                     DpsResponse afterDps,
                                     ResistanceType resistanceType) {
+        ContentResult content = buildContent(calcState, afterDps, resistanceType);
+        DeckSnapshot snapshot = snapshotRepository.findByContentHash(content.contentHash())
+                .orElseGet(() -> snapshotRepository.save(
+                        new DeckSnapshot(content.canonicalJson(), content.contentHash())));
+        return new BuildResult(snapshot, content.contentHash());
+    }
+
+    /** 스냅샷 JSON·해시 계산 — DB write 없음 */
+    public ContentResult buildContent(DeckCalculationState calcState,
+                                      DpsResponse afterDps,
+                                      ResistanceType resistanceType) {
         List<DeckSnapshotContent.SnapshotMember> members = calcState.members().stream()
                 .map(m -> toSnapshotMember(m, calcState.memberInputs()))
                 .toList();
@@ -67,11 +81,7 @@ public class EvaluationSnapshotBuilder {
 
         String canonicalJson = hashUtil.toCanonicalJson(content);
         String contentHash = hashUtil.sha256Hex(canonicalJson);
-
-        DeckSnapshot snapshot = snapshotRepository.findByContentHash(contentHash)
-                .orElseGet(() -> snapshotRepository.save(new DeckSnapshot(canonicalJson, contentHash)));
-
-        return new BuildResult(snapshot, contentHash);
+        return new ContentResult(canonicalJson, contentHash);
     }
 
     // ── 내부 변환 ────────────────────────────────────────────────────────────

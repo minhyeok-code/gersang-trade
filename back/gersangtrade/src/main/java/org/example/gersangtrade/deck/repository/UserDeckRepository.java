@@ -13,4 +13,7 @@ public interface UserDeckRepository extends JpaRepository<UserDeck, Long> {
 
     /** 유저의 활성 덱 조회 */
     Optional<UserDeck> findByUserIdAndActiveTrue(Long userId);
+
+    /** 본인 덱 존재 여부 */
+    boolean existsByIdAndUser_Id(Long id, Long userId);
 }

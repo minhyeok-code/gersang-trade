@@ -15,6 +15,13 @@ export function formatEfficiencyPerEok(eff: number | null | undefined): string {
   return `억당 ${sign}${eff.toFixed(2)}%`;
 }
 
+/** final DPS 총 증가율(%) */
+export function formatFinalDpsIncreaseRate(rate: number | null | undefined): string {
+  if (rate == null) return '—';
+  const sign = rate > 0 ? '+' : '';
+  return `${sign}${rate.toFixed(2)}%`;
+}
+
 /** 억 단위 문자열 → 전(골드) */
 export function parseEokPrice(value: string): number {
   const amount = Number(value);

@@ -2,6 +2,7 @@ package org.example.gersangtrade.calculator.service;
 
 import org.example.gersangtrade.calculator.dto.response.DpsEvaluationSummary;
 import org.example.gersangtrade.calculator.dto.response.DpsValueEvaluationResponse;
+import org.example.gersangtrade.calculator.dto.response.EvaluationDeckStatus;
 import org.example.gersangtrade.calculator.dto.response.PriceSource;
 import org.example.gersangtrade.calculator.overlay.MercenaryMode;
 import org.example.gersangtrade.calculator.overlay.ScenarioItemType;
@@ -50,6 +51,9 @@ class DpsValueEvaluationQueryServiceTest {
 
     @Mock private DpsValueEvaluationRepository evaluationRepository;
     @Mock private EvaluationCandidateLabelResolver candidateLabelResolver;
+    @Mock private EvaluationDeckStatusService deckStatusService;
+    @Mock private DeckSnapshotDiffService diffService;
+    @Mock private com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
     @InjectMocks
     private DpsValueEvaluationQueryService queryService;
@@ -65,13 +69,16 @@ class DpsValueEvaluationQueryServiceTest {
         DpsValueEvaluation eval = buildEvaluation(EVAL_ID);
         Page<DpsValueEvaluation> dbPage = new PageImpl<>(List.of(eval), PageRequest.of(0, 20), 1);
         when(evaluationRepository.findByUserIdWithMonster(eq(USER_ID), any())).thenReturn(dbPage);
-        when(candidateLabelResolver.resolve(ScenarioItemType.MERCENARY, 99L)).thenReturn("테스트용병");
+        when(candidateLabelResolver.resolve(eval)).thenReturn("테스트용병");
+        when(deckStatusService.resolve(USER_ID, eval)).thenReturn(EvaluationDeckStatus.CURRENT);
 
         Page<DpsEvaluationSummary> result = queryService.getMyEvaluations(USER_ID, PageRequest.of(0, 20));
 
         assertThat(result.getTotalElements()).isEqualTo(1);
         DpsEvaluationSummary summary = result.getContent().get(0);
         assertThat(summary.evaluationId()).isEqualTo(EVAL_ID);
+        assertThat(summary.deckId()).isEqualTo(10L);
+        assertThat(summary.deckStatus()).isEqualTo(EvaluationDeckStatus.CURRENT);
         assertThat(summary.candidateType()).isEqualTo(ScenarioItemType.MERCENARY);
         assertThat(summary.candidateLabel()).isEqualTo("테스트용병");
         assertThat(summary.candidateRef()).isEqualTo(99L);
@@ -179,6 +186,7 @@ class DpsValueEvaluationQueryServiceTest {
 
         DpsValueEvaluation eval = mock(DpsValueEvaluation.class);
         when(eval.getId()).thenReturn(id);
+        when(eval.getDeckId()).thenReturn(10L);
         when(eval.getCandidateType()).thenReturn(ScenarioItemType.MERCENARY);
         when(eval.getCandidateRef()).thenReturn(99L);
         when(eval.getMercenaryMode()).thenReturn(MercenaryMode.REPLACE);

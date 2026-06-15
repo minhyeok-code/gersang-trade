@@ -24,4 +24,15 @@ public interface DpsValueEvaluationRepository extends JpaRepository<DpsValueEval
     /** 내 평가 상세 — 본인 소유 확인 포함 */
     @Query("SELECT e FROM DpsValueEvaluation e JOIN FETCH e.monster WHERE e.id = :id AND e.user.id = :userId")
     Optional<DpsValueEvaluation> findByIdAndUserId(@Param("id") Long id, @Param("userId") Long userId);
+
+    /** 상세·diff — baseline·scenario 스냅샷 fetch */
+    @Query("""
+            SELECT e FROM DpsValueEvaluation e
+            JOIN FETCH e.monster
+            LEFT JOIN FETCH e.baselineDeckSnapshot
+            LEFT JOIN FETCH e.scenarioDeckSnapshot
+            WHERE e.id = :id AND e.user.id = :userId
+            """)
+    Optional<DpsValueEvaluation> findByIdAndUserIdWithSnapshots(
+            @Param("id") Long id, @Param("userId") Long userId);
 }

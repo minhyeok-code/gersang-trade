@@ -14,6 +14,9 @@ public record DpsValueEvaluationResponse(
         Long evaluationId,
 
         /** persist=false이면 null */
+        Long baselineDeckSnapshotId,
+
+        /** persist=false이면 null */
         Long scenarioDeckSnapshotId,
 
         DpsTriple before,
@@ -43,7 +46,7 @@ public record DpsValueEvaluationResponse(
     public static DpsValueEvaluationResponse ofTransient(
             DpsResponse before, DpsResponse after,
             Long price, PriceSource priceSource, Integer tradeCount) {
-        return build(false, null, null, before, after, price, priceSource, tradeCount);
+        return build(false, null, null, null, before, after, price, priceSource, tradeCount);
     }
 
     /** 저장 후 반환 (persist=true) */
@@ -51,6 +54,7 @@ public record DpsValueEvaluationResponse(
             DpsValueEvaluation eval, DpsResponse before, DpsResponse after) {
         return build(true,
                 eval.getId(),
+                eval.getBaselineDeckSnapshot() != null ? eval.getBaselineDeckSnapshot().getId() : null,
                 eval.getScenarioDeckSnapshot() != null ? eval.getScenarioDeckSnapshot().getId() : null,
                 before, after,
                 eval.getPrice(), eval.getPriceSource(), null);
@@ -58,12 +62,15 @@ public record DpsValueEvaluationResponse(
 
     /** DB 저장 값에서 복원 — GET 상세 조회용 */
     public static DpsValueEvaluationResponse ofStored(DpsValueEvaluation eval) {
-        Long snapshotId = eval.getScenarioDeckSnapshot() != null
+        Long baselineId = eval.getBaselineDeckSnapshot() != null
+                ? eval.getBaselineDeckSnapshot().getId() : null;
+        Long scenarioId = eval.getScenarioDeckSnapshot() != null
                 ? eval.getScenarioDeckSnapshot().getId() : null;
         return new DpsValueEvaluationResponse(
                 true,
                 eval.getId(),
-                snapshotId,
+                baselineId,
+                scenarioId,
                 new DpsTriple(eval.getRawDpsBefore(), eval.getAdjustDpsBefore(), eval.getFinalDpsBefore()),
                 new DpsTriple(eval.getRawDpsAfter(),  eval.getAdjustDpsAfter(),  eval.getFinalDpsAfter()),
                 new DpsTriple(eval.getRawDpsDelta(),  eval.getAdjustDpsDelta(),  eval.getFinalDpsDelta()),
@@ -84,9 +91,15 @@ public record DpsValueEvaluationResponse(
     }
 
     private static DpsValueEvaluationResponse build(
-            boolean persisted, Long evaluationId, Long snapshotId,
-            DpsResponse before, DpsResponse after,
-            Long price, PriceSource priceSource, Integer tradeCount) {
+            boolean persisted,
+            Long evaluationId,
+            Long baselineDeckSnapshotId,
+            Long scenarioDeckSnapshotId,
+            DpsResponse before,
+            DpsResponse after,
+            Long price,
+            PriceSource priceSource,
+            Integer tradeCount) {
 
         long rawBefore    = before.rawTotalDps();
         long adjustBefore = before.adjustTotalDps();
@@ -108,7 +121,7 @@ public record DpsValueEvaluationResponse(
         Double effFinal  = efficiency(finalRate,  price);
 
         return new DpsValueEvaluationResponse(
-                persisted, evaluationId, snapshotId,
+                persisted, evaluationId, baselineDeckSnapshotId, scenarioDeckSnapshotId,
                 new DpsTriple(rawBefore,  adjustBefore, finalBefore),
                 new DpsTriple(rawAfter,   adjustAfter,  finalAfter),
                 new DpsTriple(rawDelta,   adjustDelta,  finalDelta),

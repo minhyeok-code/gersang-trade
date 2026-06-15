@@ -946,7 +946,7 @@ function TradePageInner() {
     try {
       const res = await api.createChatRoom({
         listingId: item.id,
-        listingType: item.listingType === 'SELL' ? 'SELL' : 'WANTED',
+        listingType: item.listingType,
         initiationType: 'APPLY',
       }) as ChatRoomSummaryDto;
       window.dispatchEvent(new CustomEvent('open-chat-room', { detail: res }));

@@ -51,7 +51,7 @@ export default function ChatPage() {
           <select value={listingType} onChange={(e) => setListingType(e.target.value)}
             className="bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm">
             <option value="SELL">SELL</option>
-            <option value="WANTED">WANTED</option>
+            <option value="BUY">BUY (구매 희망)</option>
           </select>
           <button type="submit" disabled={creating}
             className="bg-yellow-500 text-black px-4 py-2 rounded text-sm font-semibold">

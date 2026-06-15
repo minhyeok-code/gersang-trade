@@ -142,14 +142,16 @@ class DpsValueEvaluationServiceTest {
                 new EvaluationSnapshotBuilder.BuildResult(snapshot, "contenthash");
         when(snapshotBuilder.buildOrReuse(any(), any(), any())).thenReturn(buildResult);
 
-        DpsValueEvaluation savedEval = mockSavedEvaluation(42L, snapshot);
+        DpsValueEvaluation savedEval = mockSavedEvaluation(42L, snapshot, snapshot);
         when(evaluationRepository.save(any())).thenReturn(savedEval);
 
         DpsValueEvaluationResponse resp = service.evaluate(USER_ID, req);
 
         assertThat(resp.persisted()).isTrue();
         assertThat(resp.evaluationId()).isEqualTo(42L);
+        assertThat(resp.baselineDeckSnapshotId()).isEqualTo(99L);
         assertThat(resp.scenarioDeckSnapshotId()).isEqualTo(99L);
+        verify(snapshotBuilder, org.mockito.Mockito.times(2)).buildOrReuse(any(), any(), any());
         verify(evaluationRepository).save(any(DpsValueEvaluation.class));
     }
 
@@ -162,16 +164,20 @@ class DpsValueEvaluationServiceTest {
 
         DeckSnapshot snapshot = mock(DeckSnapshot.class);
         when(snapshot.getId()).thenReturn(77L);
-        DpsValueEvaluation existing = mockSavedEvaluation(55L, snapshot);
+        DpsValueEvaluation existing = mockSavedEvaluation(55L, snapshot, snapshot);
         when(evaluationRepository.findByUserIdAndEvaluationHash(USER_ID, EVAL_HASH))
                 .thenReturn(Optional.of(existing));
+        when(dpsCalculatorService.prepareState(any(), any()))
+                .thenReturn(mock(DeckCalculationState.class));
+        when(snapshotBuilder.buildOrReuse(any(), any(), any())).thenReturn(
+                new EvaluationSnapshotBuilder.BuildResult(snapshot, "contenthash"));
 
         DpsValueEvaluationResponse resp = service.evaluate(USER_ID, req);
 
         assertThat(resp.persisted()).isTrue();
         assertThat(resp.evaluationId()).isEqualTo(55L);
-        // 중복이므로 스냅샷 빌드·저장 호출 없음
-        verify(snapshotBuilder, never()).buildOrReuse(any(), any(), any());
+        // 중복이므로 baseline 스냅샷 1회만 빌드, scenario·저장 없음
+        verify(snapshotBuilder, org.mockito.Mockito.times(1)).buildOrReuse(any(), any(), any());
         verify(evaluationRepository, never()).save(any());
     }
 
@@ -255,10 +261,11 @@ class DpsValueEvaluationServiceTest {
     }
 
     /** 저장된 평가 엔티티 mock — id·snapshot·DPS 필드 최소 설정 */
-    private DpsValueEvaluation mockSavedEvaluation(Long id, DeckSnapshot snapshot) {
+    private DpsValueEvaluation mockSavedEvaluation(Long id, DeckSnapshot baseline, DeckSnapshot scenario) {
         DpsValueEvaluation eval = mock(DpsValueEvaluation.class);
         when(eval.getId()).thenReturn(id);
-        when(eval.getScenarioDeckSnapshot()).thenReturn(snapshot);
+        when(eval.getBaselineDeckSnapshot()).thenReturn(baseline);
+        when(eval.getScenarioDeckSnapshot()).thenReturn(scenario);
         when(eval.getPrice()).thenReturn(200_000_000L);
         when(eval.getPriceSource()).thenReturn(PriceSource.USER_INPUT);
         when(eval.getRawDpsBefore()).thenReturn(10_000L);

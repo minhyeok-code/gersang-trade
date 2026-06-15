@@ -30,6 +30,7 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
             ServerHttpRequest request, ServerHttpResponse response,
             WebSocketHandler wsHandler, Map<String, Object> attributes
     ) {
+        try {
         if (request instanceof ServletServerHttpRequest servletRequest) {
             HttpServletRequest httpRequest = servletRequest.getServletRequest();
             String token = httpRequest.getParameter("token");
@@ -40,6 +41,9 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
             } else {
                 log.debug("WebSocket 핸드쉐이크 토큰 없음 — 미인증 연결 허용 (구독 시 필터링)");
             }
+        }
+        } catch (Exception e) {
+            log.warn("WebSocket 핸드쉬이크 처리 중 오류 — 미인증 연결 허용: {}", e.getMessage());
         }
         return true;
     }

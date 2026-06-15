@@ -100,9 +100,6 @@ class AuthSecurityIntegrationTest {
     @MockitoBean(name = "monsterDataJob")
     private Job monsterDataJob;
 
-    @MockitoBean(name = "priceCrawlJob")
-    private Job priceCrawlJob;
-
     @MockitoBean(name = "exclusiveEquipmentDataJob")
     private Job exclusiveEquipmentDataJob;
 

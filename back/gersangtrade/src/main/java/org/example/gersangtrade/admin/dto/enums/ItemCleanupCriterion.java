@@ -22,10 +22,10 @@ public enum ItemCleanupCriterion {
     NO_STATS("스탯 없음"),
 
     /**
-     * 거래·덱·세트피스·구함·시세 어디에도 참조되지 않음.
+     * 거래·덱·세트피스·구함 어디에도 참조되지 않음.
      * 삭제 전 반드시 목록을 검토할 것.
      */
-    UNREFERENCED("미참조(거래/덱/시세 없음)");
+    UNREFERENCED("미참조(거래/덱 없음)");
 
     private final String label;
 

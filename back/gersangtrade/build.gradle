@@ -61,7 +61,7 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-cache'
     implementation 'com.github.ben-manes.caffeine:caffeine'
 
-    // HTML 크롤링 (geota, gerniverse 정적 HTML 파싱)
+    // HTML 크롤링 (거상짱 정적 HTML 파싱)
     implementation 'org.jsoup:jsoup:1.17.2'
 
     // AWS SDK v2 S3 (아이템/용병 이미지 업로드)

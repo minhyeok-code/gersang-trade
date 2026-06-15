@@ -14,7 +14,11 @@ let client: Client | null = null;
 
 function buildHttpUrl(token: string): string {
   // SockJS는 http:// URL을 사용 (내부적으로 WebSocket 업그레이드 처리)
-  const base = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080').replace(/\/$/, '');
+  // REST(api.ts BASE='')와 동일 — NEXT_PUBLIC_API_URL 미설정 시 Next /ws 프록시(같은 오리진) 사용
+  const configured = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '');
+  const base =
+    configured ||
+    (typeof window !== 'undefined' ? window.location.origin : 'http://127.0.0.1:8080');
   return `${base}/ws?token=${encodeURIComponent(token)}`;
 }
 
