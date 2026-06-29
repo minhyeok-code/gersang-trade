@@ -14,3 +14,7 @@ back/gersangtrade/.gradle/
 # OS
 .DS_Store
 Thumbs.db
+
+# 환경변수 (민감 정보)
+.env
+back/logs/

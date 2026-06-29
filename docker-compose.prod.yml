@@ -1,0 +1,124 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: gersang-trade-db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+      MYSQL_DATABASE: gersang-trade-db
+      MYSQL_CHARACTER_SET_SERVER: utf8mb4
+      MYSQL_COLLATION_SERVER: utf8mb4_unicode_ci
+    volumes:
+      - gersang-trade-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${DB_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app-blue:
+    build:
+      context: back
+      dockerfile: Dockerfile
+    container_name: gersang-trade-app-blue
+    restart: always
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/gersang-trade-db?useSSL=false&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+      DB_USERNAME: root
+      DB_PASSWORD: ${DB_PASSWORD}
+      DDL_AUTO: validate
+      FLYWAY_ENABLED: "true"
+      BATCH_SCHEMA_INIT: never
+      JWT_SECRET: ${JWT_SECRET}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      NAVER_CLIENT_ID: ${NAVER_CLIENT_ID}
+      NAVER_CLIENT_SECRET: ${NAVER_CLIENT_SECRET}
+      AWS_ACCESS_KEY: ${AWS_ACCESS_KEY}
+      AWS_SECRET_KEY: ${AWS_SECRET_KEY}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET}
+      OAUTH2_REDIRECT_URI: ${OAUTH2_REDIRECT_URI}
+      COOKIE_SECURE: "true"
+    volumes:
+      - ./back/logs:/app/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q '\"status\":\"UP\"' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    # 포트 미노출 — Nginx 경유로만 접근
+
+  # green 슬롯 — deploy.sh가 --profile green으로 기동. 평소 비활성
+  app-green:
+    build:
+      context: back
+      dockerfile: Dockerfile
+    container_name: gersang-trade-app-green
+    restart: always
+    profiles: ["green"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/gersang-trade-db?useSSL=false&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+      DB_USERNAME: root
+      DB_PASSWORD: ${DB_PASSWORD}
+      DDL_AUTO: validate
+      FLYWAY_ENABLED: "true"
+      BATCH_SCHEMA_INIT: never
+      JWT_SECRET: ${JWT_SECRET}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      NAVER_CLIENT_ID: ${NAVER_CLIENT_ID}
+      NAVER_CLIENT_SECRET: ${NAVER_CLIENT_SECRET}
+      AWS_ACCESS_KEY: ${AWS_ACCESS_KEY}
+      AWS_SECRET_KEY: ${AWS_SECRET_KEY}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET}
+      OAUTH2_REDIRECT_URI: ${OAUTH2_REDIRECT_URI}
+      COOKIE_SECURE: "true"
+    volumes:
+      - ./back/logs:/app/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q '\"status\":\"UP\"' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    # 포트 미노출 — Nginx 경유로만 접근
+
+  front:
+    build:
+      context: front
+      dockerfile: Dockerfile
+      args:
+        # nginx 내부 주소 → blue/green 전환 시 front 재빌드 불필요
+        BACKEND_URL: http://nginx
+    container_name: gersang-trade-front
+    restart: always
+    # 포트 미노출 — Nginx 경유로만 접근
+
+  nginx:
+    build:
+      context: nginx
+      dockerfile: Dockerfile
+    container_name: gersang-trade-nginx
+    restart: always
+    depends_on:
+      - front
+    ports:
+      - "80:80"
+      # HTTPS 사용 시: - "443:443"
+    volumes:
+      # deploy.sh가 이 파일을 교체 후 nginx -s reload → 무중단 슬롯 전환
+      - ./nginx/upstream.conf:/etc/nginx/conf.d/upstream.conf
+      # HTTPS 인증서 마운트 시:
+      # - /etc/letsencrypt/live/yourdomain.com/fullchain.pem:/etc/nginx/certs/fullchain.pem:ro
+      # - /etc/letsencrypt/live/yourdomain.com/privkey.pem:/etc/nginx/certs/privkey.pem:ro
+
+volumes:
+  gersang-trade-data:
+    driver: local

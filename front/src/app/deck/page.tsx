@@ -1755,11 +1755,9 @@ function EquipModal({ slot, mercenaryId, isHeroMember, equipmentBySlot, onSelect
             </div>
           ) : filtered.length === 0 ? (
             <p style={{ color: 'var(--text-disabled)' }} className="text-center py-6 text-sm">
-              {isHeroMember
-                ? '주인공은 장비를 선택하지 않습니다'
-                : query.trim()
-                  ? '검색 결과가 없습니다'
-                  : '전용장비가 없습니다. 검색으로 공용 장비를 찾을 수 있습니다'}
+              {query.trim()
+                ? '검색 결과가 없습니다'
+                : '검색으로 아이템을 찾을 수 있습니다.'}
             </p>
           ) : (
             filtered.map((item) => (
@@ -2243,7 +2241,6 @@ function EquipmentSetupModal({ member, isHeroMember, deckId, deckEffectSignature
   }, [member.mercenaryId, selectedSlot, isHeroMember, activeTab]);
 
   const displayedItems = useMemo(() => {
-    if (isHeroMember) return [];
     return buildDeckEquipmentDisplayItems(
       exclusiveItems,
       equipmentBySlot[selectedSlot] ?? [],
@@ -2251,7 +2248,7 @@ function EquipmentSetupModal({ member, isHeroMember, deckId, deckEffectSignature
       selectedSlot,
       query,
     );
-  }, [exclusiveItems, equipmentBySlot, selectedSlot, member.mercenaryId, query, isHeroMember]);
+  }, [exclusiveItems, equipmentBySlot, selectedSlot, member.mercenaryId, query]);
 
   const loadStats = useCallback(() => {
     setStatsLoading(true);
@@ -2602,11 +2599,6 @@ function EquipmentSetupModal({ member, isHeroMember, deckId, deckEffectSignature
                 <div className="flex items-center justify-between mb-3 gap-2">
                   <div>
                     <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>아이템 검색</p>
-                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                      {isHeroMember
-                        ? '주인공은 전용장비 목록을 표시하지 않습니다'
-                        : `먼저 ${member.mercenaryName} 전용장비를 표시합니다. 검색하면 공용 장비도 착용할 수 있습니다`}
-                    </p>
                   </div>
                   {selectedEquipped && (
                     <button
@@ -2619,15 +2611,13 @@ function EquipmentSetupModal({ member, isHeroMember, deckId, deckEffectSignature
                   )}
                 </div>
 
-                {!isHeroMember && (
-                  <input
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder={`${SLOT_LABEL[selectedSlot] ?? selectedSlot} 공용 장비 검색...`}
-                    style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
-                    className="w-full rounded px-3 py-2 text-sm focus:outline-none focus:border-[var(--brown)] mb-3"
-                  />
-                )}
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={`${SLOT_LABEL[selectedSlot] ?? selectedSlot} 공용 장비 검색...`}
+                  style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
+                  className="w-full rounded px-3 py-2 text-sm focus:outline-none focus:border-[var(--brown)] mb-3"
+                />
 
                 {exclusiveLoading ? (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 10 }}>
@@ -2635,11 +2625,9 @@ function EquipmentSetupModal({ member, isHeroMember, deckId, deckEffectSignature
                   </div>
                 ) : displayedItems.length === 0 ? (
                   <p className="text-center py-8 text-sm" style={{ color: 'var(--text-disabled)' }}>
-                    {isHeroMember
-                      ? '주인공은 이 화면에서 장비를 선택하지 않습니다'
-                      : query.trim()
-                        ? '검색 결과가 없습니다'
-                        : `전용장비가 없습니다. 검색으로 공용 장비를 찾을 수 있습니다`}
+                    {query.trim()
+                      ? '검색 결과가 없습니다'
+                      : '검색으로 아이템을 찾을 수 있습니다.'}
                   </p>
                 ) : (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 10 }}>

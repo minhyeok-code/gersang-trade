@@ -6,17 +6,48 @@ services:
     ports:
       - "3307:3306"   # 로컬 3307 → 컨테이너 3306 (기본 MySQL 포트 충돌 회피)
     environment:
-      MYSQL_ROOT_PASSWORD: qwer1234
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-qwer1234}
       MYSQL_DATABASE: gersang-trade-db
       MYSQL_CHARACTER_SET_SERVER: utf8mb4
       MYSQL_COLLATION_SERVER: utf8mb4_unicode_ci
     volumes:
-      - gersang-trade-data:/var/lib/mysql   # 데이터 영속화
+      - gersang-trade-data:/var/lib/mysql
     healthcheck:
-      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pqwer1234" ]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${DB_PASSWORD:-qwer1234}"]
       interval: 10s
       timeout: 5s
       retries: 5
+
+  app:
+    build:
+      context: back
+      dockerfile: Dockerfile
+    container_name: gersang-trade-app
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/gersang-trade-db?useSSL=false&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+      DB_USERNAME: root
+      DB_PASSWORD: ${DB_PASSWORD:-qwer1234}
+      DDL_AUTO: ${DDL_AUTO:-create}
+      FLYWAY_ENABLED: ${FLYWAY_ENABLED:-false}
+      BATCH_SCHEMA_INIT: ${BATCH_SCHEMA_INIT:-always}
+      JWT_SECRET: ${JWT_SECRET:-gersang-trade-dev-secret-key-must-be-at-least-32-chars}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      NAVER_CLIENT_ID: ${NAVER_CLIENT_ID:-}
+      NAVER_CLIENT_SECRET: ${NAVER_CLIENT_SECRET:-}
+      AWS_ACCESS_KEY: ${AWS_ACCESS_KEY:-}
+      AWS_SECRET_KEY: ${AWS_SECRET_KEY:-}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET:-gersang-trade-images}
+      OAUTH2_REDIRECT_URI: ${OAUTH2_REDIRECT_URI:-http://localhost:3000/auth/callback}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./back/logs:/app/logs
 
 volumes:
   gersang-trade-data:
