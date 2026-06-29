@@ -87,7 +87,8 @@
       "Bash('/c/Program Files/MySQL/MySQL Server 8.0/bin/mysql' -h 127.0.0.1 -P 3307 -u root -pqwer1234 gersang-trade-db --default-character-set=utf8mb4 -e ' *)",
       "Bash(\"/c/Program Files/MySQL/MySQL Server 8.0/bin/mysql\" -h 127.0.0.1 -P 3307 -u root -pqwer1234 gersang-trade-db --default-character-set=utf8mb4 -e \"DESCRIBE equipment_set_pieces;\")",
       "Bash(\"/c/Program Files/MySQL/MySQL Server 8.0/bin/mysql\" -h 127.0.0.1 -P 3307 -u root -pqwer1234 gersang-trade-db --default-character-set=utf8mb4 -e \"DESCRIBE equipment_items;\")",
-      "Bash(\"D:/Java/gersangTrade/front/node_modules/.bin/tsc\" --noEmit --project \"D:/Java/gersangTrade/front/tsconfig.json\")"
+      "Bash(\"D:/Java/gersangTrade/front/node_modules/.bin/tsc\" --noEmit --project \"D:/Java/gersangTrade/front/tsconfig.json\")",
+      "Bash(docker compose *)"
     ]
   }
 }
