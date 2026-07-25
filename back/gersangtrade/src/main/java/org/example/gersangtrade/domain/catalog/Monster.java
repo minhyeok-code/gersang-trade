@@ -33,9 +33,12 @@ public class Monster {
     @Column(nullable = false, length = 100)
     private String name;
 
-    /** 출처 페이지 URL */
-    @Column(name = "page_url", nullable = false, length = 200)
-    private String pageUrl;
+    /**
+     * 관리자가 S3에 직접 업로드한 이미지 URL.
+     * 업로드 전에는 null.
+     */
+    @Column(name = "image_url", length = 500)
+    private String imageUrl;
 
     /** 생명력 — 구형 몹은 null */
     @Column(nullable = true)
@@ -64,16 +67,20 @@ public class Monster {
     private Element element;
 
     @Builder
-    public Monster(String name, String pageUrl, Long hp,
+    public Monster(String name, Long hp,
                    Integer hittingResistance, Integer magicResistance,
                    Integer elementValue, Element element) {
         this.name = name;
-        this.pageUrl = pageUrl;
         this.hp = hp;
         this.hittingResistance = hittingResistance;
         this.magicResistance = magicResistance;
         this.elementValue = elementValue;
         this.element = element;
+    }
+
+    /** 관리자 직접 업로드 후 S3 URL 저장 */
+    public void updateImageUrl(String imageUrl) {
+        this.imageUrl = imageUrl;
     }
 
     /** 크롤링 재실행 시 수치 업데이트 */

@@ -24,7 +24,7 @@ import java.util.List;
  * <ol>
  *   <li>인덱스 페이지에서 몬스터 상세 URL 목록 수집</li>
  *   <li>각 URL 순회 → monster-row 파싱</li>
- *   <li>name+pageUrl 기준 upsert (있으면 수치 업데이트, 없으면 신규 저장)</li>
+ *   <li>name 기준 upsert (있으면 수치 업데이트, 없으면 신규 저장)</li>
  * </ol>
  */
 @Slf4j
@@ -81,7 +81,6 @@ public class GersangjjangMonsterTasklet implements Tasklet {
                 .orElseGet(() -> {
                     monsterRepository.save(Monster.builder()
                             .name(row.name())
-                            .pageUrl(row.pageUrl())
                             .hp(row.hp())
                             .hittingResistance(row.hittingResistance())
                             .magicResistance(row.magicResistance())

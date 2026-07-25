@@ -59,8 +59,8 @@ public class Gem extends BaseEntity {
     private Ritual ritual;
 
     /**
-     * gerniverse에서 수집한 이미지 S3 URL.
-     * 크롤링 완료 전에는 null.
+     * 관리자가 S3에 직접 업로드한 이미지 URL.
+     * 업로드 전에는 null.
      */
     @Column(name = "image_url", length = 500)
     private String imageUrl;
@@ -73,7 +73,7 @@ public class Gem extends BaseEntity {
         this.imageUrl = imageUrl;
     }
 
-    /** 이미지 크롤링 완료 후 S3 URL 저장 */
+    /** 관리자 직접 업로드 후 S3 URL 저장 */
     public void updateImageUrl(String imageUrl) {
         this.imageUrl = imageUrl;
     }

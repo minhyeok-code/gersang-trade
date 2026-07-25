@@ -264,9 +264,9 @@
 
 **완료율: 100%** ✅
 
-> **2026-04-27 재구성**: gerniverse + geota 다단계(List Tasklet → Detail Reader/Writer Chunk) 방식에서
+> **2026-04-27 재구성**: 다단계(List Tasklet → Detail Reader/Writer Chunk) 방식에서
 > **거상짱(gersangjjang.com) 단일 Tasklet** 방식으로 전면 전환.
-> 삭제: `GerniverseParser`, `ItemListTasklet`, `MercenaryListTasklet`, `ItemDetailReader/Writer`, `MercenaryDetailReader/Writer`
+> 삭제: `ItemListTasklet`, `MercenaryListTasklet`, `ItemDetailReader/Writer`, `MercenaryDetailReader/Writer`
 > 신규: `GersangjjangParser`, `GersangjjangMercenaryParser`, `GersangjjangItemTasklet`, `GersangjjangMercenaryTasklet`
 > **2026-05-22**: 아이템·용병·스킬 실 환경 크롤링 동작 확인 완료.
 
@@ -274,7 +274,7 @@
 
 | 항목 | 상태 | 비고 |
 |------|------|------|
-| `GersangjjangParser` (거상짱 아이템 HTML 파싱) | ✅ 구현 | `ItemRow` 파싱. `GerniverseParser` 대체 |
+| `GersangjjangParser` (거상짱 아이템 HTML 파싱) | ✅ 구현 | `ItemRow` 파싱 |
 | `GersangjjangItemTasklet` (아이템 목록+스탯+스킬 일괄 수집) | ✅ 구현 | 기존 2단계(List+Detail) → 단일 Tasklet으로 단순화 |
 | 실제 데이터 수집 완료 | ✅ 확인 | DB에 아이템·스킬 데이터 적재 확인 |
 | 장비 플래그 (`ritualApplicable`, `hasSlotOption`) | ⚠️ 미완 | 거상짱 파싱 기반으로 재검토 필요 (기능 동작엔 영향 없음) |
@@ -293,7 +293,7 @@
 | `MercenarySkill` 엔티티 + `MercenarySkillRepository` | ✅ 구현 | |
 | `MercenaryCharacteristic` 엔티티 + Repository | ✅ 구현 | key UNIQUE, 레벨 수치 포함 |
 | `MercenaryMaterial` 재구조화 | ✅ 구현 | `materialMercenary`(nullable) / `materialItemKey`(nullable) 분기 |
-| `GersangjjangMercenaryParser` (거상짱 용병 HTML 파싱) | ✅ 구현 | `GerniverseParser` 대체 |
+| `GersangjjangMercenaryParser` (거상짱 용병 HTML 파싱) | ✅ 구현 | |
 | `GersangjjangMercenaryTasklet` (용병 목록+스탯+스킬 일괄 수집) | ✅ 구현 | 기존 List+Detail 2단계 → 단일 Tasklet |
 | 실제 데이터 수집 완료 | ✅ 확인 | DB에 용병 데이터 적재됨 |
 

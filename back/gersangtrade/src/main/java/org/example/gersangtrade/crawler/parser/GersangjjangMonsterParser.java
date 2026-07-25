@@ -64,7 +64,7 @@ public final class GersangjjangMonsterParser {
      * 몬스터 상세 페이지에서 MonsterRow 목록을 파싱한다.
      *
      * @param doc     파싱할 Jsoup Document
-     * @param pageUrl 출처 URL (UNIQUE 키 구성에 사용)
+     * @param pageUrl 출처 URL (로그 출력용)
      * @return 파싱된 몬스터 행 목록
      */
     public static List<MonsterRow> parseMonsterRows(Document doc, String pageUrl) {
@@ -152,7 +152,7 @@ public final class GersangjjangMonsterParser {
             log.warn("elementValue 존재하지만 element 파싱 실패 [name={}, url={}]", rawName, pageUrl);
         }
 
-        return new MonsterRow(rawName, pageUrl, hp, hittingResistance, magicResistance,
+        return new MonsterRow(rawName, hp, hittingResistance, magicResistance,
                 elementValue, element);
     }
 
@@ -247,7 +247,6 @@ public final class GersangjjangMonsterParser {
 
     public record MonsterRow(
             String name,
-            String pageUrl,
             Long hp,
             Integer hittingResistance,
             Integer magicResistance,

@@ -15,10 +15,7 @@ import java.time.LocalDateTime;
 
 /**
  * 용병 엔티티.
- * gerniverse 목록·상세 페이지 크롤링으로 적재된다.
- *
- * <p>ListTasklet(Step 3)에서 name만 저장되고, DetailWriter(Step 4)에서
- * category / nation / nature / stats / materials / imageUrl / crawledAt 이 채워진다.
+ * 거상짱 크롤링으로 기본 정보가 적재되며, 이미지는 관리자가 S3에 직접 업로드한다.
  *
  * <p>능력치(스탯)는 MercenaryStat을 통해 StatType별로 저장된다.
  * 고용 재료는 MercenaryMaterial을 통해 연결된다.
@@ -82,17 +79,13 @@ public class Mercenary extends BaseEntity {
     private boolean comingSoon = false;
 
     /**
-     * gerniverse에서 수집한 이미지 S3 URL.
-     * DetailWriter 처리 전에는 null.
+     * 관리자가 S3에 직접 업로드한 이미지 URL.
+     * 업로드 전에는 null.
      */
     @Column(name = "image_url", length = 500)
     private String imageUrl;
 
-    /**
-     * 상세 크롤링 완료 시각.
-     * ListTasklet 직후에는 null. DetailWriter 처리 완료 후 설정된다.
-     * null이면 DetailReader가 처리 대상으로 선택한다.
-     */
+    /** 크롤링 완료 시각. null이면 미처리 상태 */
     @Column(name = "crawled_at")
     private LocalDateTime crawledAt;
 
@@ -130,14 +123,10 @@ public class Mercenary extends BaseEntity {
         this.comingSoon = comingSoon;
     }
 
-    /**
-     * 크롤링 상세 파싱 후 스펙 정보 업데이트.
-     * imageUrl은 null이면 기존 값을 유지한다 (S3 업로드 실패로 null이 덮어쓰이는 것을 방지).
-     * key는 null/공백이면 기존 값을 유지한다.
-     */
+    /** 크롤링 스펙 업데이트 — key는 null/공백이면 기존 값 유지 */
     public void updateSpec(String key, MercenaryCategory category, Nation nation,
                            Nature nature, Integer natureValue, boolean comingSoon,
-                           String imageUrl, LocalDateTime crawledAt) {
+                           LocalDateTime crawledAt) {
         if (key != null && !key.isBlank()) {
             this.key = key;
         }
@@ -152,9 +141,6 @@ public class Mercenary extends BaseEntity {
         }
         this.natureValue = natureValue;
         this.comingSoon = comingSoon;
-        if (imageUrl != null) {
-            this.imageUrl = imageUrl;
-        }
         this.crawledAt = crawledAt;
     }
 

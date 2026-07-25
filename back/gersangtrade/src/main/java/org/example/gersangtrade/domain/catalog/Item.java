@@ -39,16 +39,14 @@ public class Item extends BaseEntity {
     private String tradeCategory;
 
     /**
-     * gerniverse에서 수집한 이미지 S3 URL.
-     * 크롤링 완료 전에는 null. 이 값이 null인 Item이 ItemDetailStep의 처리 대상이 된다.
+     * 관리자가 S3에 직접 업로드한 이미지 URL.
+     * 업로드 전에는 null.
      */
     @Column(name = "image_url", length = 500)
     private String imageUrl;
 
     /**
-     * 거니버스 image_path 마지막 세그먼트 기반 아이템 식별 키.
-     * 예: "tkdlsrja-tn"(뇌속성 사인검), "whdflrnjsdmldlsgud"(종리권의 인형).
-     * ItemSkill / SkillCoefficient 적재 시 조회 기준으로 사용된다.
+     * 아이템 식별 키 — ItemSkill / SkillCoefficient 조회 기준.
      * 수동 입력 전에는 null.
      */
     @Column(name = "item_key", length = 100, unique = true)
@@ -68,17 +66,15 @@ public class Item extends BaseEntity {
         this.tradeCategory = tradeCategory;
     }
 
-    /** 크롤링 상세 파싱 후 S3 이미지 URL 저장 */
+    /** 관리자 직접 업로드 후 S3 URL 저장 */
     public void updateImageUrl(String imageUrl) {
         this.imageUrl = imageUrl;
     }
 
-    /** gerniverse 파싱 결과에 따라 아이템 종류 수정 (MATERIAL → EQUIPMENT 전환 시 사용) */
     public void updateType(ItemType type) {
         this.type = type;
     }
 
-    /** 거니버스 image_path 마지막 세그먼트로 아이템 키 저장 */
     public void updateItemKey(String itemKey) {
         this.itemKey = itemKey;
     }

@@ -162,8 +162,8 @@ public class SetGrantedSkill {
     private String skillName;
 
     /**
-     * 거니버스 내부 스킬 식별 키.
-     * 거니버스 데이터 적재 후 채워짐. 적재 전 null.
+     * 스킬 식별 키.
+     * 수동 입력 전 null.
      * SkillCoefficient 연결 키로 사용.
      */
     @Column(name = "skill_key", length = 100)
@@ -308,7 +308,7 @@ public class EquipmentSetSkillEffect {
 
 ```
 skill_name    : 천자총통:개량
-skill_key     : (거니버스 적재 후 채워짐)
+skill_key     : (수동 입력 후 채워짐)
 skill_type    : TRIGGER
 trigger_every_n      : n  (실제 값 확인 후 입력)
 trigger_source       : MERCENARY  ← 사천왕의 스킬 시전 횟수 카운트

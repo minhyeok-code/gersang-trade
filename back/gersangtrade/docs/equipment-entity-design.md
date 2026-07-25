@@ -554,7 +554,6 @@ TradeListing
 모든 크롤링 대상 사이트는 **거상짱**으로 통일한다.
 
 ```
-gerniverse.app  → Cloudflare 차단 ❌
 geota.co.kr     → x-signature HMAC 차단 ❌
 거상짱          → 전통 SSR, 시맨틱 HTML ✅
 ```

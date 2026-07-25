@@ -691,7 +691,7 @@ SSE 구독. 연결 즉시 미읽음 알림 전송, 30분 타임아웃.
 [
   {
     "id": 1,
-    "gerniverseRowId": "4e561dac-...",
+    "rowId": "4e561dac-...",
     "ownerType": "MERCENARY",
     "ownerName": "마조",
     "skillId": 1,
@@ -713,7 +713,7 @@ SSE 구독. 연결 즉시 미읽음 알림 전송, 30분 타임아웃.
 ---
 
 ### PUT /admin/skill-coefficients
-`Skill-coeff.json` 배열 bulk upsert. `gerniverse_row_id` 기준 — 없으면 신규, 있으면 업데이트.
+`Skill-coeff.json` 배열 bulk upsert. `row_id` 기준 — 없으면 신규, 있으면 업데이트.
 
 - **요청 Body**: JSON 파일 내용 그대로 (배열)
 - **응답 200**: `{ "upserted": 55, "skipped": 0 }`

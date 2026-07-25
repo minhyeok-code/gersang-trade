@@ -21,7 +21,6 @@
 ### 1.1 데이터 소스
 
 ```
-gerniverse.app  → Cloudflare 차단 ❌
 geota.co.kr     → x-signature HMAC 차단 ❌
 거상짱          → 전통 SSR, 시맨틱 HTML ✅
 ```

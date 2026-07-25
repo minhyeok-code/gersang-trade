@@ -24,12 +24,9 @@ Claude Code가 이 문서만 읽고 아래를 구현할 수 있도록 작성되�
 
 ```
 거상짱 크롤러   → 용병 기본정보 / 스탯(base_str 등) / 재료 / 장비
-거니버스 HTML   → 스킬명 / skill_key / 스킬 계수 (수동 저장)
+수동 입력       → 스킬명 / skill_key / 스킬 계수
 직접 측정       → casts_per_second / tick_interval_ms (시전속도)
 ```
-
-거니버스 HTML의 `self.__next_f.push()` 내부 데이터에 용병별 스킬 계수가 포함되어 있다.
-계수는 `calc_details` 문자열로 제공되며, 파싱을 통해 추출한다 (3항 참고).
 
 ### 1.2 DPS 계산 공식
 
@@ -126,7 +123,7 @@ PERSISTENT:
 
 ## 4. Confidence enum 신규 생성
 
-거니버스 원본 confidence 값을 enum으로 관리한다.
+confidence 값을 enum으로 관리한다.
 
 ```java
 public enum Confidence {
@@ -146,7 +143,7 @@ Confidence.valueOf(raw.toUpperCase())
 
 ## 5. calc_details 파싱 규칙
 
-거니버스 원본 데이터에는 스킬 계수가 `calc_details` 문자열로 제공된다.
+스킬 계수는 `calc_details` 문자열 형식으로 제공된다.
 적재 시 이를 파싱하여 각 계수 컬럼에 저장한다.
 
 ### 5.1 원본 형식
@@ -171,7 +168,7 @@ Confidence.valueOf(raw.toUpperCase())
   "공"  → coef_atk
   "렙"  → coef_lvl
 
-괄호 앞 숫자 (기준스탯): 거니버스 계산용 샘플값 — 무시
+괄호 앞 숫자 (기준스탯): 계산용 샘플값 — 무시
 × 뒤 숫자 (계수): DB에 저장
 언급되지 않은 스탯: 0.0f로 저장
 ```
@@ -234,8 +231,8 @@ public class MercenarySkill {
     private String skillName;
 
     /**
-     * 거니버스 내부 스킬 식별 키 — 예: "tlsxhfb", "qldghk"
-     * 거상짱 크롤링 시에는 null. 거니버스 데이터 적재 후 채워진다.
+     * 스킬 식별 키 — 예: "tlsxhfb", "qldghk"
+     * 수동 입력 전 null.
      */
     @Column(name = "skill_key", length = 100)
     private String skillKey;
@@ -258,11 +255,10 @@ public class MercenarySkill {
 ## 7. Item 엔티티 수정
 
 기존 `Item`에 `item_key` 컬럼을 추가한다.
-거니버스 `image_path`의 마지막 세그먼트를 `item_key`로 사용한다.
 
 ```java
 /**
- * 거니버스 image_path 마지막 세그먼트 기반 아이템 식별 키.
+ * 아이템 식별 키.
  * 예: "tkdlsrja-tn" (뇌속성 사인검)
  */
 @Column(name = "item_key", length = 100, unique = true)
@@ -331,8 +327,8 @@ public class ItemSkill {
     private String skillName;
 
     /**
-     * 거니버스 내부 스킬 식별 키 — 예: "dmsgktnrkd"
-     * 거상짱 크롤링 시에는 null. 거니버스 데이터 적재 후 채워진다.
+     * 스킬 식별 키 — 예: "dmsgktnrkd"
+     * 수동 입력 전 null.
      */
     @Column(name = "skill_key", length = 100)
     private String skillKey;
@@ -407,7 +403,7 @@ CHECK (
 
 ```java
 public record SkillCoefficientCommand(
-    String gerniverseRowId,
+    String rowId,
     float coefStr,
     float coefDex,
     float coefVit,
@@ -429,8 +425,8 @@ public record SkillCoefficientCommand(
 @Table(
     name = "skill_coefficients",
     uniqueConstraints = @UniqueConstraint(
-        name = "uq_skill_coefficients_gerniverse_row_id",
-        columnNames = {"gerniverse_row_id"}
+        name = "uq_skill_coefficients_row_id",
+        columnNames = {"row_id"}
     )
 )
 @Getter
@@ -449,9 +445,9 @@ public class SkillCoefficient {
     @JoinColumn(name = "item_skill_id")
     private ItemSkill itemSkill;
 
-    /** 거니버스 원본 row_id — upsert 기준 키 */
-    @Column(name = "gerniverse_row_id", length = 100)
-    private String gerniverseRowId;
+    /** row_id — upsert 기준 키 */
+    @Column(name = "row_id", length = 100)
+    private String rowId;
 
     @Column(name = "coef_str", nullable = false)
     private float coefStr;
@@ -475,7 +471,7 @@ public class SkillCoefficient {
     private int hitCount;
 
     /**
-     * 거니버스 damage_range_factor 원본값.
+     * 데미지 범위 계수 원본값.
      * 정확한 의미 미확인 — 데미지 분산 범위로 추정.
      * 0.1이 기본값으로 보이며, 사천왕 계열 스킬은 0.43, 풍뢰탄은 1.0.
      * DPS 계산에서는 현재 사용하지 않음.
@@ -531,7 +527,7 @@ public class SkillCoefficient {
     }
 
     private void applyCommand(SkillCoefficientCommand cmd) {
-        this.gerniverseRowId = cmd.gerniverseRowId();
+        this.rowId = cmd.rowId();
         this.coefStr = cmd.coefStr();
         this.coefDex = cmd.coefDex();
         this.coefVit = cmd.coefVit();
@@ -672,7 +668,7 @@ public double calculateDps(
    → Item 적재
      ※ 사인검은 속성별 5행(tkdlsrja-tn/ghk/xh/shl/vnd)으로 저장됨
 
-2. 거니버스 데이터 적재 (별도 CLI 명령어 또는 관리자 API)
+2. 스킬 데이터 수동 적재 (별도 CLI 명령어 또는 관리자 API)
    → MercenarySkill 적재 (skill_key 포함)
    → ItemSkill 적재 (skill_key 포함)
    → SkillCoefficient 적재 (calc_details 파싱 후 계수 저장)
@@ -688,7 +684,7 @@ public double calculateDps(
    - UI 구현 시점은 엔티티/적재 완료 후로 미룬다
 ```
 
-> ⚠️ 거니버스 데이터 적재는 Flyway 자동 실행 대상이 아님.
+> ⚠️ 스킬 계수 데이터 적재는 Flyway 자동 실행 대상이 아님.
 > 크롤러 실행 완료 후 별도 명령어로 실행해야 FK 참조 실패 없음.
 
 ### 12.2 Upsert 기준 키
@@ -697,13 +693,13 @@ public double calculateDps(
 |---|---|
 | `MercenarySkill` | `mercenary_id` + `skill_name` |
 | `ItemSkill` | `item_id` + `skill_name` |
-| `SkillCoefficient` | `gerniverse_row_id` |
+| `SkillCoefficient` | `row_id` |
 
-### 12.3 거니버스 → DB 컬럼 매핑
+### 12.3 DB 컬럼 목록
 
-| 거니버스 필드 | DB 컬럼 | 처리 방식 |
+| 입력 필드 | DB 컬럼 | 처리 방식 |
 |---|---|---|
-| `row_id` | `gerniverse_row_id` | 그대로 저장 |
+| `row_id` | `row_id` | 그대로 저장 |
 | `mercenary_key` | `Mercenary.key` | 조회용 |
 | `is_item` | FK 분기 | false → mercenarySkill, true → itemSkill |
 | `skill_key` | `MercenarySkill.skillKey` or `ItemSkill.skillKey` | 그대로 저장 |
@@ -751,7 +747,7 @@ public double calculateDps(
 7. base_constant가 0이 아닌 케이스 발견 시 coef_base 컬럼 추가 필요.
    현재는 전부 0이므로 저장 생략.
 
-8. Mercenary.key 컬럼이 DB에 존재해야 거니버스 데이터 적재 가능.
+8. Mercenary.key 컬럼이 DB에 존재해야 스킬 데이터 적재 가능.
    없으면 별도 추가 필요.
 ```
 

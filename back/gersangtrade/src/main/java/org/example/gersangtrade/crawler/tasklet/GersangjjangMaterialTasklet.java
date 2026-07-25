@@ -25,7 +25,7 @@ import java.util.List;
  * <p>처리 대상: 잡화(약, 음식, 교역품, 공구) + 소모품(캐시, 랜덤상자 등) + 재료(광물/정수, 판대기).
  * 보석(baoshi.asp)은 GersangjjangItemTasklet의 Gem 엔티티 처리 대상이므로 제외한다.
  *
- * <p>저장 내용: 아이템명(name) + 이미지 URL(imageUrl)만 수집. 스탯/스킬 없음.
+ * <p>저장 내용: 아이템명(name)만 수집. 스탯/스킬 없음. 이미지는 관리자 직접 업로드.
  * DB에는 {@code items(MATERIAL)} + {@code material_items}로 UPSERT한다.
  */
 @Slf4j

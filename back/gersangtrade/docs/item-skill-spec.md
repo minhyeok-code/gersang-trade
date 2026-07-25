@@ -77,7 +77,7 @@ public class ItemSkill {
     @Column(name = "skill_name", nullable = false, length = 100)
     private String skillName;
 
-    /** 거니버스 내부 스킬 식별 키. 거상짱 크롤링 시에는 null. */
+    /** 스킬 식별 키. 수동 입력 전 null. */
     @Column(name = "skill_key", length = 100)
     private String skillKey;
 
@@ -147,7 +147,7 @@ public class ItemSkill {
 ```
 item       : 각천극
 skill_name : 각천극 스킬 (실제 스킬명으로 교체)
-skill_key  : (거니버스 적재 후 채워짐)
+skill_key  : (수동 입력 후 채워짐)
 skill_type : ACTIVE
 replaces_base_skill : true
 trigger_every_n     : null
@@ -173,7 +173,7 @@ SkillCoefficient (각천극 스킬):
 ```
 item       : 각천극
 skill_name : 각천극 패시브 스킬 (실제 스킬명으로 교체)
-skill_key  : (거니버스 적재 후 채워짐)
+skill_key  : (수동 입력 후 채워짐)
 skill_type : TRIGGER
 replaces_base_skill    : false
 trigger_every_n        : 3
@@ -185,7 +185,7 @@ trigger_base_skill_key : 각천극 메인 스킬의 skill_key
 ```
 item       : 각천비
 skill_name : 각천비 스킬
-skill_key  : (거니버스 적재 후 채워짐)
+skill_key  : (수동 입력 후 채워짐)
 skill_type : ACTIVE
 replaces_base_skill : true
 trigger_every_n     : null
@@ -282,7 +282,7 @@ ItemSkill 저장 시:
 ```
 ItemSkill.skillKey → SkillCoefficient 조회
   → skillKey가 null이면 계산기에서 해당 스킬 스킵
-  → 거니버스 데이터 적재 후 skillKey 채워짐
+  → 수동 입력 후 skillKey 채워짐
 ```
 
 ---
@@ -292,5 +292,5 @@ ItemSkill.skillKey → SkillCoefficient 조회
 | 항목 | 내용 | 우선순위 |
 |---|---|---|
 | 각천극/각천비 외 무기 스킬 목록 확인 | replacesBaseSkill=true 대상 무기 전수 조사 필요 | 높음 |
-| 트리거 카운트 기준 스킬 key 적재 시점 | triggerBaseSkillKey는 거니버스 적재 완료 후 수동 입력 또는 별도 매핑 필요 | 중간 |
+| 트리거 카운트 기준 스킬 key 적재 시점 | triggerBaseSkillKey는 수동 입력 또는 별도 매핑 필요 | 중간 |
 | 주인공 기본 스킬 계산 | MVP 제외. 무기 ItemSkill로 대체 계산. 추후 별도 스펙 추가 | 낮음 |

@@ -20,12 +20,9 @@ Claude Code가 이 문서만 읽고 아래를 구현할 수 있도록 작성되�
 
 ```
 거상짱 크롤러   → 용병 기본정보 / 스탯 / 재료 / 장비
-거니버스 HTML   → 스킬명 / skill_key / 스킬 계수 (수동 저장)
+수동 입력       → 스킬명 / skill_key / 스킬 계수
 직접 측정       → casts_per_second (시전속도)
 ```
-
-거니버스 HTML의 `self.__next_f.push()` 내부 `sim-coefficients` 쿼리에
-용병별 스킬 계수가 전부 포함되어 있다. 이를 정답 소스로 사용한다.
 
 ### 1.2 DPS 계산 공식
 
@@ -119,8 +116,8 @@ PERSISTENT:
 
 ```java
 /**
- * 거니버스 내부 스킬 식별 키 — 예: "tlsxhfb", "qldghk"
- * 거상짱 크롤링 시에는 null. 거니버스 데이터 적재 후 채워진다.
+ * 스킬 식별 키 — 예: "tlsxhfb", "qldghk"
+ * 수동 입력 전 null.
  * SkillCoefficient와의 연결 키로 사용된다.
  */
 @Column(name = "skill_key", length = 100)
@@ -154,8 +151,8 @@ public class MercenarySkill {
     private String skillName;
 
     /**
-     * 거니버스 내부 스킬 식별 키 — 예: "tlsxhfb", "qldghk"
-     * 거상짱 크롤링 시에는 null. 거니버스 데이터 적재 후 채워진다.
+     * 스킬 식별 키 — 예: "tlsxhfb", "qldghk"
+     * 수동 입력 전 null.
      */
     @Column(name = "skill_key", length = 100)
     private String skillKey;
@@ -178,12 +175,10 @@ public class MercenarySkill {
 ## 5. Item 엔티티 수정
 
 기존 `Item`에 `item_key` 컬럼을 추가한다.
-거니버스 `image_path`의 마지막 세그먼트를 `item_key`로 사용한다.
-`mercenary_key`("saingeom", "immortal-weapon" 등)는 사용하지 않는다.
 
 ```java
 /**
- * 거니버스 image_path 마지막 세그먼트 기반 아이템 식별 키.
+ * 아이템 식별 키.
  * 예: "tkdlsrja" (사인검), "whdflrnjsdmldlsgud" (종리권의 인형)
  * ItemSkill / SkillCoefficient 적재 시 조회 기준으로 사용된다.
  * 수동 입력 전에는 null.
@@ -198,7 +193,6 @@ public void updateItemKey(String itemKey) {
 
 ### item_key 추출 규칙
 
-거니버스 `image_path`의 마지막 세그먼트를 **접미사 제거 없이 그대로** 사용한다.
 사인검은 속성별로 실제로 다른 아이템이므로 속성별로 별도 Item 행으로 저장한다.
 
 ```java
@@ -264,8 +258,8 @@ public class ItemSkill {
     private String skillName;
 
     /**
-     * 거니버스 내부 스킬 식별 키 — 예: "dmsgktnrkd"
-     * 거상짱 크롤링 시에는 null. 거니버스 데이터 적재 후 채워진다.
+     * 스킬 식별 키 — 예: "dmsgktnrkd"
+     * 수동 입력 전 null.
      */
     @Column(name = "skill_key", length = 100)
     private String skillKey;
@@ -320,7 +314,6 @@ import lombok.NoArgsConstructor;
 
 /**
  * 스킬 데미지 계수 엔티티.
- * 거니버스 sim-coefficients 데이터를 기반으로 적재된다.
  *
  * <p>용병 스킬(MercenarySkill)과 아이템 스킬(ItemSkill)을 통합 관리한다.
  * mercenarySkill / itemSkill 중 하나만 not null이어야 한다.
@@ -339,8 +332,8 @@ import lombok.NoArgsConstructor;
 @Table(
     name = "skill_coefficients",
     uniqueConstraints = @UniqueConstraint(
-        name = "uq_skill_coefficients_gerniverse_row_id",
-        columnNames = {"gerniverse_row_id"}
+        name = "uq_skill_coefficients_row_id",
+        columnNames = {"row_id"}
     )
 )
 @Getter
@@ -368,11 +361,11 @@ public class SkillCoefficient {
     private ItemSkill itemSkill;
 
     /**
-     * 거니버스 원본 row_id — upsert 기준 키.
-     * 거니버스 데이터 재적재 시 중복 방지에 사용한다.
+     * row_id — upsert 기준 키.
+     * 데이터 재적재 시 중복 방지에 사용한다.
      */
-    @Column(name = "gerniverse_row_id", length = 100)
-    private String gerniverseRowId;
+    @Column(name = "row_id", length = 100)
+    private String rowId;
 
     /** 힘 계수 */
     @Column(name = "coef_str", nullable = false)
@@ -405,7 +398,6 @@ public class SkillCoefficient {
     /**
      * 데미지 범위 계수.
      * 0이면 범위 없음 (고정 데미지).
-     * 거니버스 damage_range_factor 값을 그대로 저장.
      */
     @Column(name = "damage_range_factor", nullable = false)
     private float damageRangeFactor;
@@ -439,7 +431,6 @@ public class SkillCoefficient {
 
     /**
      * 데이터 신뢰도.
-     * 거니버스 confidence 값을 그대로 사용.
      * verified / high / medium / low
      */
     @Column(name = "confidence", length = 20)
@@ -447,14 +438,14 @@ public class SkillCoefficient {
 
     /**
      * 측정/검증 메모.
-     * 거니버스 note + 직접 측정 조건을 함께 기록.
+     * 직접 측정 조건을 기록.
      */
     @Column(name = "measurement_note", columnDefinition = "TEXT")
     private String measurementNote;
 
     /** 용병 스킬용 생성자 */
     @Builder(builderMethodName = "ofMercenary")
-    public SkillCoefficient(MercenarySkill mercenarySkill, String gerniverseRowId,
+    public SkillCoefficient(MercenarySkill mercenarySkill, String rowId,
                             float coefStr, float coefDex, float coefVit, float coefInt,
                             float coefAtk, float coefLvl, int hitCount,
                             float damageRangeFactor, SkillType skillType,
@@ -462,7 +453,7 @@ public class SkillCoefficient {
                             String confidence, String measurementNote) {
         this.mercenarySkill = mercenarySkill;
         this.itemSkill = null;
-        this.gerniverseRowId = gerniverseRowId;
+        this.rowId = rowId;
         this.coefStr = coefStr;
         this.coefDex = coefDex;
         this.coefVit = coefVit;
@@ -480,7 +471,7 @@ public class SkillCoefficient {
 
     /** 아이템 스킬용 생성자 */
     @Builder(builderMethodName = "ofItem")
-    public SkillCoefficient(ItemSkill itemSkill, String gerniverseRowId,
+    public SkillCoefficient(ItemSkill itemSkill, String rowId,
                             float coefStr, float coefDex, float coefVit, float coefInt,
                             float coefAtk, float coefLvl, int hitCount,
                             float damageRangeFactor, SkillType skillType,
@@ -488,7 +479,7 @@ public class SkillCoefficient {
                             String confidence, String measurementNote) {
         this.mercenarySkill = null;
         this.itemSkill = itemSkill;
-        this.gerniverseRowId = gerniverseRowId;
+        this.rowId = rowId;
         this.coefStr = coefStr;
         this.coefDex = coefDex;
         this.coefVit = coefVit;
@@ -536,16 +527,16 @@ public class SkillCoefficient {
 
 ```
 1. Mercenary / Item 적재 (거상짱 크롤러 — 기존)
-2. MercenarySkill 적재 (거니버스 데이터 기반)
+2. MercenarySkill 적재 (수동 입력)
    - mercenary.key로 Mercenary 조회 후 연결
    - skill_name + skill_key 함께 저장
-3. ItemSkill 적재 (거니버스 is_item=true 데이터)
+3. ItemSkill 적재 (수동 입력)
    - item 조회 후 연결
    - skill_name + skill_key 함께 저장
 4. SkillCoefficient 적재
    - 용병 스킬: mercenarySkill FK, itemSkill = null
    - 아이템 스킬: itemSkill FK, mercenarySkill = null
-   - gerniverse_row_id로 upsert
+   - row_id로 upsert
 ```
 
 ### 8.2 Upsert 기준 키
@@ -554,30 +545,22 @@ public class SkillCoefficient {
 |---|---|
 | `MercenarySkill` | `mercenary_id` + `skill_name` |
 | `ItemSkill` | `item_id` + `skill_name` |
-| `SkillCoefficient` | `gerniverse_row_id` |
+| `SkillCoefficient` | `row_id` |
 
-### 8.3 거니버스 → DB 컬럼 매핑
+### 8.3 DB 컬럼 목록
 
-| 거니버스 필드 | DB 컬럼 | 비고 |
-|---|---|---|
-| `row_id` | `gerniverse_row_id` | upsert 기준 키 |
-| `mercenary_key` | `Mercenary.key` | 조회용 |
-| `is_item` | FK 분기 | false → mercenarySkill, true → itemSkill |
-| `skill_key` | `MercenarySkill.skillKey` or `ItemSkill.skillKey` | |
-| `skill_name` | `MercenarySkill.skillName` or `ItemSkill.skillName` | |
-| `coef_str` | `coef_str` | |
-| `coef_dex` | `coef_dex` | |
-| `coef_vit` | `coef_vit` | |
-| `coef_int` | `coef_int` | |
-| `coef_atk` | `coef_atk` | |
-| `coef_lvl` | `coef_lvl` | |
-| `hit_count` | `hit_count` | |
-| `damage_range_factor` | `damage_range_factor` | |
-| `confidence` | `confidence` | |
-| `note` | `measurement_note` | |
-| _(미존재)_ | `skill_type` | INSTANT / PERSISTENT 직접 분류 |
-| _(미존재)_ | `casts_per_second` | INSTANT 전용, 직접 측정 후 업데이트 |
-| _(미존재)_ | `tick_interval_ms` | PERSISTENT 전용, 직접 측정 후 업데이트 |
+| DB 컬럼 | 비고 |
+|---|---|
+| `row_id` | upsert 기준 키 |
+| `mercenary_skill_id` / `item_skill_id` | FK 분기 |
+| `coef_str` ~ `coef_lvl` | 스킬 계수 |
+| `hit_count` | 타격 수 |
+| `damage_range_factor` | 데미지 범위 계수 |
+| `skill_type` | INSTANT / PERSISTENT |
+| `confidence` | 신뢰도 |
+| `measurement_note` | 측정 메모 |
+| `casts_per_second` | INSTANT 전용, 직접 측정 후 업데이트 |
+| `tick_interval_ms` | PERSISTENT 전용, 직접 측정 후 업데이트 |
 
 ---
 
@@ -588,7 +571,7 @@ public class SkillCoefficient {
    둘 다 null이거나 둘 다 not null인 행은 데이터 오류.
 
 2. 동일 skill_key에 계수 세트가 여러 개인 경우 (예: 대지포식)
-   거니버스 skill_name 기준으로 MercenarySkill을 분리한다.
+   skill_name 기준으로 MercenarySkill을 분리한다.
    "대지포식 (소환물)" / "대지포식 (가시덤불)" 각각 별도 행.
 
 3. casts_per_second는 절대 추정값을 넣지 않는다.
@@ -600,7 +583,7 @@ public class SkillCoefficient {
 5. 아이템 스킬 적재 시 Item 엔티티가 먼저 DB에 존재해야 한다.
    Item이 없으면 ItemSkill FK 연결 실패 → 스킵 + 경고 로그.
 
-6. skill_type은 거니버스 데이터에 없으므로 수동 분류가 필요하다.
+6. skill_type은 수동 분류가 필요하다.
    PERSISTENT 스킬: 팔괘진, 대지포식(소환물/가시덤불), 용오름 소환, 모래병사 소환
    나머지는 전부 INSTANT.
 

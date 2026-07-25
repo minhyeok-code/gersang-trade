@@ -41,7 +41,6 @@ class MonsterServiceTest {
     void setUp() {
         waterMonster = Monster.builder()
                 .name("연못거북(水) (9급)")
-                .pageUrl("https://www.gersangjjang.com/monster/test.asp")
                 .hp(null)
                 .hittingResistance(290)
                 .magicResistance(290)
@@ -51,7 +50,6 @@ class MonsterServiceTest {
 
         fireMonster = Monster.builder()
                 .name("불꽃도깨비 (火) (7급)")
-                .pageUrl("https://www.gersangjjang.com/monster/fire.asp")
                 .hp(null)
                 .hittingResistance(310)
                 .magicResistance(280)

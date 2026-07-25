@@ -93,7 +93,7 @@ public enum Nation {
 }
 ```
 
-> `MONGOL`과 `NONE`은 주인공 계산기 대상이 아니나, gerniverse 크롤링 용병 데이터를 수용하기 위해 추가됨.
+> `MONGOL`과 `NONE`은 주인공 계산기 대상이 아니나 데이터 호환성을 위해 포함됨.
 > 이로 인해 `getNationBuff`에 `default` 케이스가 필요하다 (아래 4절 참고).
 
 ### 2-3. JobType

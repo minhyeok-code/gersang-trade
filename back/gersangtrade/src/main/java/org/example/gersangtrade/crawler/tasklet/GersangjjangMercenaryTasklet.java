@@ -138,7 +138,6 @@ public class GersangjjangMercenaryTasklet implements Tasklet {
                     selectNature(mercenary.getNature(), row.nature()),
                     mercenary.getNatureValue(),
                     mercenary.isComingSoon(),
-                    mercenary.getImageUrl(),
                     LocalDateTime.now());
         }
 
