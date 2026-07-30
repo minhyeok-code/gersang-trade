@@ -11,7 +11,8 @@
       "Bash(find \"D:/Java/gersangTrade/back/gersangtrade/build/test-results\" -name \"*.xml\" | xargs grep -l \"ListingServiceTest\\\\|WantedListingServiceTest\" 2>/dev/null)",
       "Bash(npm install *)",
       "Bash(npx next *)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(xargs ls *)"
     ]
   }
 }
