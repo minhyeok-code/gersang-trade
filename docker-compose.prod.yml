@@ -39,7 +39,7 @@ services:
       NAVER_CLIENT_SECRET: ${NAVER_CLIENT_SECRET}
       AWS_S3_BUCKET: ${AWS_S3_BUCKET}
       OAUTH2_REDIRECT_URI: ${OAUTH2_REDIRECT_URI}
-      COOKIE_SECURE: "true"
+      COOKIE_SECURE: "false"
     volumes:
       - ./back/logs:/app/logs
     healthcheck:
@@ -75,7 +75,7 @@ services:
       NAVER_CLIENT_SECRET: ${NAVER_CLIENT_SECRET}
       AWS_S3_BUCKET: ${AWS_S3_BUCKET}
       OAUTH2_REDIRECT_URI: ${OAUTH2_REDIRECT_URI}
-      COOKIE_SECURE: "true"
+      COOKIE_SECURE: "false"
     volumes:
       - ./back/logs:/app/logs
     healthcheck:
