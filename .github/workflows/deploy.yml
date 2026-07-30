@@ -12,12 +12,7 @@ jobs:
     steps:
       - name: EC2 블루-그린 배포
         uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          # envs로 선언한 값이 스크립트 내 환경변수로 주입됨
-          envs: DB_URL,DB_USERNAME,DB_PASSWORD,GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET,NAVER_CLIENT_ID,NAVER_CLIENT_SECRET,AWS_REGION,AWS_S3_BUCKET,AWS_S3_BASE_URL,JWT_SECRET,OAUTH2_REDIRECT_URI,REMOTE_DIR
+        env:
           DB_URL: ${{ secrets.DB_URL }}
           DB_USERNAME: ${{ secrets.DB_USERNAME }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
@@ -30,10 +25,14 @@ jobs:
           AWS_S3_BASE_URL: ${{ secrets.AWS_S3_BASE_URL }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           OAUTH2_REDIRECT_URI: ${{ secrets.OAUTH2_REDIRECT_URI }}
-          REMOTE_DIR: ${{ secrets.REMOTE_DIR }}
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          envs: DB_URL,DB_USERNAME,DB_PASSWORD,GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET,NAVER_CLIENT_ID,NAVER_CLIENT_SECRET,AWS_REGION,AWS_S3_BUCKET,AWS_S3_BASE_URL,JWT_SECRET,OAUTH2_REDIRECT_URI
           script: |
             set -e
-            cd "$REMOTE_DIR"
+            cd "${{ secrets.REMOTE_DIR }}"
 
             # 1. GitHub Secrets → .env 파일 생성 (매 배포마다 덮어씀)
             cat > .env << ENV
