@@ -26,8 +26,8 @@ services:
       mysql:
         condition: service_healthy
     environment:
-      DB_URL: jdbc:mysql://mysql:3306/gersang-trade-db?useSSL=false&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
-      DB_USERNAME: root
+      DB_URL: ${DB_URL}
+      DB_USERNAME: ${DB_USERNAME}
       DB_PASSWORD: ${DB_PASSWORD}
       DDL_AUTO: validate
       FLYWAY_ENABLED: "true"
@@ -37,8 +37,6 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       NAVER_CLIENT_ID: ${NAVER_CLIENT_ID}
       NAVER_CLIENT_SECRET: ${NAVER_CLIENT_SECRET}
-      AWS_ACCESS_KEY: ${AWS_ACCESS_KEY}
-      AWS_SECRET_KEY: ${AWS_SECRET_KEY}
       AWS_S3_BUCKET: ${AWS_S3_BUCKET}
       OAUTH2_REDIRECT_URI: ${OAUTH2_REDIRECT_URI}
       COOKIE_SECURE: "true"
@@ -64,8 +62,8 @@ services:
       mysql:
         condition: service_healthy
     environment:
-      DB_URL: jdbc:mysql://mysql:3306/gersang-trade-db?useSSL=false&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
-      DB_USERNAME: root
+      DB_URL: ${DB_URL}
+      DB_USERNAME: ${DB_USERNAME}
       DB_PASSWORD: ${DB_PASSWORD}
       DDL_AUTO: validate
       FLYWAY_ENABLED: "true"
@@ -75,8 +73,6 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       NAVER_CLIENT_ID: ${NAVER_CLIENT_ID}
       NAVER_CLIENT_SECRET: ${NAVER_CLIENT_SECRET}
-      AWS_ACCESS_KEY: ${AWS_ACCESS_KEY}
-      AWS_SECRET_KEY: ${AWS_SECRET_KEY}
       AWS_S3_BUCKET: ${AWS_S3_BUCKET}
       OAUTH2_REDIRECT_URI: ${OAUTH2_REDIRECT_URI}
       COOKIE_SECURE: "true"

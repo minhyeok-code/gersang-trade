@@ -106,7 +106,7 @@ app:
 logging:
   level:
     root: INFO
-    org.example.gersangtrade: DEBUG
+    org.example.gersangtrade: INFO
     # SQL 로그는 application-local.yml에서 DEBUG로 오버라이드
     org.hibernate.SQL: INFO
     org.springframework.security: INFO
