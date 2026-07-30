@@ -15,7 +15,7 @@ import org.example.gersangtrade.domain.catalog.enums.StatType;
  * ENEMY 타깃은 value를 음수로 저장한다.
  */
 @Entity
-@Table(name = "deck_buff")
+@Table(name = "deck_buffs")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class DeckBuff {

@@ -15,7 +15,7 @@ import java.util.List;
  */
 @Entity
 @Table(
-        name = "legend_general_characteristic",
+        name = "legend_general_characteristics",
         uniqueConstraints = @UniqueConstraint(
                 columnNames = {"legend_general_id", "characteristic_index", "level"}
         )

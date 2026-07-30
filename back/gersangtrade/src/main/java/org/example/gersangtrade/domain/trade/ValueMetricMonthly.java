@@ -17,7 +17,7 @@ import org.example.gersangtrade.domain.catalog.enums.StatType;
  */
 @Entity
 @Table(
-        name = "value_metric_monthly",
+        name = "value_metric_monthlies",
         uniqueConstraints = @UniqueConstraint(
                 name = "uq_value_metric_monthly_month_item_stat_element",
                 columnNames = {"month", "item_id", "stat_type", "element"}

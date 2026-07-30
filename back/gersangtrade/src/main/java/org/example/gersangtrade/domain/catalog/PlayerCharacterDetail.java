@@ -14,7 +14,7 @@ import org.example.gersangtrade.domain.catalog.enums.Nation;
  * Mercenary와 1:1 관계. 국가·전직·성별을 저장한다.
  */
 @Entity
-@Table(name = "player_character_detail")
+@Table(name = "player_character_details")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class PlayerCharacterDetail {

@@ -16,7 +16,7 @@ import org.example.gersangtrade.domain.catalog.enums.StatType;
  * ENEMY 타깃은 value를 음수로 저장한다.
  */
 @Entity
-@Table(name = "characteristic_effect")
+@Table(name = "characteristic_effects")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class CharacteristicEffect {

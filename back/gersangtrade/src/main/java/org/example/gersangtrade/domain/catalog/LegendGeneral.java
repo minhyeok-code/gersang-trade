@@ -16,7 +16,7 @@ import java.util.List;
  * TYPE_B: 패시브 없음, 특성 포인트 배분으로만 버프 발동 (나머지 10마리).
  */
 @Entity
-@Table(name = "legend_general")
+@Table(name = "legend_generals")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class LegendGeneral {

@@ -15,7 +15,7 @@ import java.util.List;
  * sourceId: LEGEND_GENERAL이면 LegendGeneral.id, 나머지는 자유값.
  */
 @Entity
-@Table(name = "deck_buff_source")
+@Table(name = "deck_buff_sources")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class DeckBuffSource {
