@@ -2,6 +2,7 @@ package org.example.gersangtrade.admin.controller;
 
 import lombok.RequiredArgsConstructor;
 import org.example.gersangtrade.admin.dto.response.GemImageTargetResponse;
+import org.example.gersangtrade.admin.dto.response.ImageSyncResult;
 import org.example.gersangtrade.admin.dto.response.ImageUploadResponse;
 import org.example.gersangtrade.admin.dto.response.ItemImageTargetResponse;
 import org.example.gersangtrade.admin.dto.response.MercenaryImageTargetResponse;
@@ -33,6 +34,7 @@ import java.util.List;
  *   <li>GET  /admin/images/mercenaries             — 용병 검색 (name 필터, 페이징)</li>
  *   <li>GET  /admin/images/mercenaries/missing     — 이미지 없는 용병 전체 목록</li>
  *   <li>POST /admin/images/mercenaries/{mercenaryId} — 용병 이미지 업로드</li>
+ *   <li>POST /admin/images/sync                    — S3 폴더 구조 기반 imageUrl 일괄 동기화</li>
  * </ul>
  */
 @RestController
@@ -42,6 +44,17 @@ import java.util.List;
 public class ImageAdminController {
 
     private final ImageAdminService imageAdminService;
+
+    // ── S3 동기화 ─────────────────────────────────────────────────────────────────
+
+    /**
+     * S3 폴더 구조(items/, monsters/)를 읽어 각 엔티티의 imageUrl을 일괄 갱신한다.
+     * 파일명이 숫자 ID가 아닌 경우 건너뛴다.
+     */
+    @PostMapping("/sync")
+    public ResponseEntity<ImageSyncResult> syncImages() {
+        return ResponseEntity.ok(imageAdminService.syncFromS3());
+    }
 
     // ── 아이템 ───────────────────────────────────────────────────────────────────
 

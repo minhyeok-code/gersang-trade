@@ -2311,25 +2311,48 @@ function MercenaryImageSection({ notify }: { notify: (m: string) => void }) {
 
 function ImageTab({ notify }: { notify: (m: string) => void }) {
   const [subTab, setSubTab] = useState<'items' | 'gems' | 'mercenaries'>('items');
+  const [syncing, setSyncing] = useState(false);
   const subTabs = [
     { id: 'items' as const, label: '아이템' },
     { id: 'gems' as const, label: '보석' },
     { id: 'mercenaries' as const, label: '용병' },
   ];
+
+  async function syncFromS3() {
+    setSyncing(true);
+    try {
+      const result = await req<{ itemsUpdated: number; monstersUpdated: number }>('/admin/images/sync', { method: 'POST' });
+      notify(`S3 동기화 완료 — 아이템 ${result.itemsUpdated}개, 몬스터 ${result.monstersUpdated}개 갱신`);
+    } catch (e: unknown) {
+      notify(`S3 동기화 오류: ${(e as Error).message}`);
+    } finally {
+      setSyncing(false);
+    }
+  }
+
   return (
     <div>
-      <div className="flex gap-2 mb-4">
-        {subTabs.map(t => (
-          <button
-            key={t.id}
-            onClick={() => setSubTab(t.id)}
-            className={`px-3 py-1.5 text-sm rounded font-medium transition-colors ${
-              subTab === t.id ? 'bg-yellow-500 text-black' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex gap-2">
+          {subTabs.map(t => (
+            <button
+              key={t.id}
+              onClick={() => setSubTab(t.id)}
+              className={`px-3 py-1.5 text-sm rounded font-medium transition-colors ${
+                subTab === t.id ? 'bg-yellow-500 text-black' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={syncFromS3}
+          disabled={syncing}
+          className="px-3 py-1.5 text-sm rounded font-medium bg-emerald-700 text-white hover:bg-emerald-600 disabled:opacity-50 transition-colors"
+        >
+          {syncing ? '동기화 중...' : 'S3 이미지 경로 동기화'}
+        </button>
       </div>
       {subTab === 'items' && <ItemImageSection notify={notify} />}
       {subTab === 'gems' && <GemImageSection notify={notify} />}

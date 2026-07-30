@@ -2,15 +2,18 @@ package org.example.gersangtrade.admin.service;
 
 import lombok.RequiredArgsConstructor;
 import org.example.gersangtrade.admin.dto.response.GemImageTargetResponse;
+import org.example.gersangtrade.admin.dto.response.ImageSyncResult;
 import org.example.gersangtrade.admin.dto.response.ImageUploadResponse;
 import org.example.gersangtrade.admin.dto.response.ItemImageTargetResponse;
 import org.example.gersangtrade.admin.dto.response.MercenaryImageTargetResponse;
 import org.example.gersangtrade.catalog.repository.GemRepository;
 import org.example.gersangtrade.catalog.repository.ItemRepository;
 import org.example.gersangtrade.catalog.repository.MercenaryRepository;
+import org.example.gersangtrade.catalog.repository.MonsterRepository;
 import org.example.gersangtrade.domain.catalog.Gem;
 import org.example.gersangtrade.domain.catalog.Item;
 import org.example.gersangtrade.domain.catalog.Mercenary;
+import org.example.gersangtrade.domain.catalog.Monster;
 import org.example.gersangtrade.domain.catalog.enums.ItemType;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -24,9 +27,12 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Object;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -46,6 +52,7 @@ public class ImageAdminService {
     private final ItemRepository itemRepository;
     private final GemRepository gemRepository;
     private final MercenaryRepository mercenaryRepository;
+    private final MonsterRepository monsterRepository;
 
     @Value("${aws.s3-bucket:}")
     private String bucket;
@@ -141,6 +148,83 @@ public class ImageAdminService {
         String imageUrl = upload(file, "images/mercenaries/" + mercenaryId);
         mercenary.updateImageUrl(imageUrl);
         return new ImageUploadResponse(imageUrl);
+    }
+
+    // ── S3 동기화 ─────────────────────────────────────────────────────────────────
+
+    /**
+     * S3 폴더 구조를 읽어 아이템·몬스터의 imageUrl을 일괄 갱신한다.
+     * items/{id}.png, monsters/{id}.png 형식의 키를 기준으로 id를 추출해 업데이트한다.
+     */
+    @Transactional
+    public ImageSyncResult syncFromS3() {
+        if (s3Client == null || bucket.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "S3가 설정되지 않았습니다. aws.access-key, aws.secret-key, aws.s3-bucket을 확인하세요.");
+        }
+        int itemsUpdated = syncItems();
+        int monstersUpdated = syncMonsters();
+        return new ImageSyncResult(itemsUpdated, monstersUpdated);
+    }
+
+    private int syncItems() {
+        List<S3Object> objects = listAll("items/");
+        int count = 0;
+        for (S3Object obj : objects) {
+            Long id = extractId(obj.key(), "items/");
+            if (id == null) continue;
+            String url = buildUrl(obj.key());
+            itemRepository.findById(id).ifPresent(item -> item.updateImageUrl(url));
+            count++;
+        }
+        return count;
+    }
+
+    private int syncMonsters() {
+        List<S3Object> objects = listAll("monsters/");
+        int count = 0;
+        for (S3Object obj : objects) {
+            Long id = extractId(obj.key(), "monsters/");
+            if (id == null) continue;
+            String url = buildUrl(obj.key());
+            monsterRepository.findById(id).ifPresent(m -> m.updateImageUrl(url));
+            count++;
+        }
+        return count;
+    }
+
+    /** S3에서 prefix 하위 전체 오브젝트 목록을 반환한다 (페이지 자동 처리). */
+    private List<S3Object> listAll(String prefix) {
+        List<S3Object> result = new ArrayList<>();
+        String token = null;
+        do {
+            ListObjectsV2Request.Builder builder = ListObjectsV2Request.builder()
+                    .bucket(bucket).prefix(prefix);
+            if (token != null) builder.continuationToken(token);
+            var response = s3Client.listObjectsV2(builder.build());
+            result.addAll(response.contents());
+            token = response.isTruncated() ? response.nextContinuationToken() : null;
+        } while (token != null);
+        return result;
+    }
+
+    /**
+     * S3 키에서 ID를 추출한다.
+     * 예: "items/123.png" → 123 / 확장자 없거나 숫자가 아니면 null 반환
+     */
+    private Long extractId(String key, String prefix) {
+        String filename = key.substring(prefix.length()); // "123.png"
+        int dot = filename.lastIndexOf('.');
+        String idStr = dot > 0 ? filename.substring(0, dot) : filename;
+        try {
+            return Long.parseLong(idStr);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private String buildUrl(String s3Key) {
+        return "https://" + bucket + ".s3." + region + ".amazonaws.com/" + s3Key;
     }
 
     // ── 내부 헬퍼 ────────────────────────────────────────────────────────────────
