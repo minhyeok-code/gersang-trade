@@ -66,6 +66,20 @@ public class Monster {
     @Column(nullable = true, length = 20)
     private Element element;
 
+    /**
+     * 공개 노출 숨김 여부.
+     * true이면 공개 API에서 제외된다.
+     *
+     * <p>자동 숨김 조건 (applyHiddenRule):
+     * <ul>
+     *   <li>elementValue가 null인 경우 (속성값 없는 몬스터)</li>
+     *   <li>이름에 (明) 또는 （明） 가 포함된 경우 (명속성 무속성 몬스터)</li>
+     * </ul>
+     * 관리자가 수동으로 토글할 수 있다.
+     */
+    @Column(nullable = false)
+    private boolean hidden = true;
+
     @Builder
     public Monster(String name, Long hp,
                    Integer hittingResistance, Integer magicResistance,
@@ -76,6 +90,7 @@ public class Monster {
         this.magicResistance = magicResistance;
         this.elementValue = elementValue;
         this.element = element;
+        this.hidden = computeHidden(name, elementValue);
     }
 
     /** 관리자 직접 업로드 후 S3 URL 저장 */
@@ -83,7 +98,12 @@ public class Monster {
         this.imageUrl = imageUrl;
     }
 
-    /** 크롤링 재실행 시 수치 업데이트 */
+    /** 관리자 이름 수정 */
+    public void updateName(String name) {
+        this.name = name;
+    }
+
+    /** 크롤링 재실행 시 수치 업데이트 + 숨김 여부 자동 재계산 */
     public void update(Long hp, Integer hittingResistance, Integer magicResistance,
                        Integer elementValue, Element element) {
         this.hp = hp;
@@ -91,5 +111,21 @@ public class Monster {
         this.magicResistance = magicResistance;
         this.elementValue = elementValue;
         this.element = element;
+        this.hidden = computeHidden(this.name, elementValue);
+    }
+
+    /** 관리자 수동 노출 여부 설정 */
+    public void updateHidden(boolean hidden) {
+        this.hidden = hidden;
+    }
+
+    /**
+     * 이름·속성값 기반 자동 숨김 여부 계산.
+     * elementValue 없거나 明속성 몬스터이면 true (숨김).
+     */
+    public static boolean computeHidden(String name, Integer elementValue) {
+        if (elementValue == null) return true;
+        // 반각/전각 괄호 모두 처리: (明), (明）, （明), （明）
+        return name != null && name.matches(".*[（(]明[）)].*");
     }
 }

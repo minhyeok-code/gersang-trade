@@ -6,6 +6,7 @@ import org.example.gersangtrade.admin.dto.request.CharacteristicCreateRequest;
 import org.example.gersangtrade.admin.dto.request.CharacteristicLevelSaveRequest;
 import org.example.gersangtrade.admin.dto.request.CharacteristicUpdateRequest;
 import org.example.gersangtrade.admin.dto.request.MercenaryBulkUpdateRequest;
+import org.example.gersangtrade.admin.dto.request.MercenaryCreateRequest;
 import org.example.gersangtrade.admin.dto.request.MercenaryStatPatchRequest;
 import org.example.gersangtrade.admin.dto.request.MercenaryStatReplaceRequest;
 import org.example.gersangtrade.admin.dto.request.MercenaryUpdateRequest;
@@ -38,6 +39,7 @@ import java.util.Map;
  *
  * <p>엔드포인트:
  * <ul>
+ *   <li>POST  /admin/mercenaries                              — 용병 신규 등록</li>
  *   <li>GET   /admin/mercenaries                              — 용병 목록 (nature·nation 필터, 특성 수 포함)</li>
  *   <li>PATCH /admin/mercenaries/bulk                         — 대량 nature/nation 변경</li>
  *   <li>GET  /admin/mercenaries/{id}/characteristics         — 특성 목록 (레벨 수치 포함)</li>
@@ -55,6 +57,14 @@ import java.util.Map;
 public class MercenaryAdminController {
 
     private final MercenaryAdminService mercenaryAdminService;
+
+    /** 용병 신규 등록 — name 중복 시 409, 성공 시 201 + 단건 상세 반환. */
+    @PostMapping
+    public ResponseEntity<MercenaryDetailAdminResponse> createMercenary(
+            @Valid @RequestBody MercenaryCreateRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(mercenaryAdminService.createMercenary(request));
+    }
 
     /** 용병 단건 상세 조회 (기본정보 + 스탯 + 스킬). */
     @GetMapping("/{mercenaryId}")

@@ -2338,14 +2338,785 @@ function ImageTab({ notify }: { notify: (m: string) => void }) {
   );
 }
 
+// ───────────────────────── 몬스터 관리 탭 ─────────────────────────
+
+interface MonsterRow {
+  id: number;
+  name: string;
+  hp: number | null;
+  hittingResistance: number | null;
+  magicResistance: number | null;
+  elementValue: number | null;
+  element: string | null;
+  hidden: boolean;
+}
+
+function MonstersTab({ notify }: { notify: (m: string) => void }) {
+  const [monsters, setMonsters] = useState<MonsterRow[]>([]);
+  const [filterName, setFilterName] = useState('');
+  const [filterHidden, setFilterHidden] = useState('');
+  const [page, setPage] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [togglingId, setTogglingId] = useState<number | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const sp = new URLSearchParams({ page: String(page), size: '30', sort: 'name,asc' });
+      if (filterName.trim()) sp.set('name', filterName.trim());
+      const data = await req<PageResponse<MonsterRow>>(`/admin/monsters?${sp}`);
+      setMonsters(data.content);
+      setTotal(data.totalElements);
+    } catch (e: unknown) {
+      notify(`오류 - 몬스터 목록: ${(e as Error).message}`);
+    }
+  }, [page, filterName, notify]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function toggleHidden(monster: MonsterRow) {
+    setTogglingId(monster.id);
+    try {
+      const updated = await req<MonsterRow>(`/admin/monsters/${monster.id}/hidden`, {
+        method: 'PATCH',
+        body: JSON.stringify({ hidden: !monster.hidden }),
+      });
+      setMonsters((prev) => prev.map((m) => m.id === updated.id ? updated : m));
+      notify(updated.hidden ? `🙈 ${updated.name} — 숨김 처리됨` : `👁 ${updated.name} — 공개로 변경됨`);
+    } catch (e: unknown) {
+      notify(`오류 - ${(e as Error).message}`);
+    } finally {
+      setTogglingId(null);
+    }
+  }
+
+  const displayed = filterHidden === 'hidden'
+    ? monsters.filter((m) => m.hidden)
+    : filterHidden === 'visible'
+    ? monsters.filter((m) => !m.hidden)
+    : monsters;
+
+  return (
+    <div>
+      <Section title="몬스터 목록">
+        <div className="flex gap-2 mb-3 flex-wrap items-end">
+          <div className="flex-1 min-w-40">
+            <Input
+              value={filterName}
+              onChange={(v) => { setFilterName(v); setPage(0); }}
+              placeholder="이름 검색"
+            />
+          </div>
+          <select
+            value={filterHidden}
+            onChange={(e) => setFilterHidden(e.target.value)}
+            className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm"
+          >
+            <option value="">전체</option>
+            <option value="visible">공개만</option>
+            <option value="hidden">숨김만</option>
+          </select>
+          <Btn color="gray" onClick={load}>검색</Btn>
+        </div>
+        <p className="text-xs text-gray-400 mb-2">총 {total}개 (이 페이지: {displayed.length}개 표시)</p>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-gray-400 border-b border-gray-700">
+              <tr>
+                <th className="text-left py-1 pr-3 w-12">ID</th>
+                <th className="text-left py-1 pr-3">이름</th>
+                <th className="text-left py-1 pr-3 w-16">속성</th>
+                <th className="text-left py-1 pr-3 w-20">속성값</th>
+                <th className="text-left py-1 pr-3 w-20">타격저항</th>
+                <th className="text-left py-1 pr-3 w-20">마법저항</th>
+                <th className="text-left py-1 pr-3 w-16">상태</th>
+                <th className="text-left py-1 w-24">노출 제어</th>
+              </tr>
+            </thead>
+            <tbody>
+              {displayed.length === 0 && (
+                <tr><td colSpan={8} className="text-gray-500 py-4 text-center">몬스터 없음</td></tr>
+              )}
+              {displayed.map((m) => (
+                <tr key={m.id} className={`border-b border-gray-700 hover:bg-gray-700/40 ${m.hidden ? 'opacity-50' : ''}`}>
+                  <td className="py-1.5 pr-3 text-gray-400 text-xs">{m.id}</td>
+                  <td className="py-1.5 pr-3 font-medium">{m.name}</td>
+                  <td className="py-1.5 pr-3 text-xs text-gray-300">{m.element ?? '-'}</td>
+                  <td className="py-1.5 pr-3 text-xs text-gray-300">{m.elementValue ?? '-'}</td>
+                  <td className="py-1.5 pr-3 text-xs text-gray-400">{m.hittingResistance != null ? `${m.hittingResistance}%` : '-'}</td>
+                  <td className="py-1.5 pr-3 text-xs text-gray-400">{m.magicResistance != null ? `${m.magicResistance}%` : '-'}</td>
+                  <td className="py-1.5 pr-3">
+                    <span className={`px-1.5 py-0.5 rounded text-xs ${m.hidden ? 'bg-gray-600 text-gray-300' : 'bg-green-800 text-green-200'}`}>
+                      {m.hidden ? '숨김' : '공개'}
+                    </span>
+                  </td>
+                  <td className="py-1.5">
+                    <Btn
+                      color={m.hidden ? 'green' : 'gray'}
+                      disabled={togglingId === m.id}
+                      onClick={() => toggleHidden(m)}
+                    >
+                      {togglingId === m.id ? '...' : m.hidden ? '공개' : '숨김'}
+                    </Btn>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {total > 30 && (
+          <div className="flex gap-2 mt-3 justify-center">
+            <Btn color="gray" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>이전</Btn>
+            <span className="text-sm text-gray-400 self-center">{page + 1} / {Math.ceil(total / 30)}</span>
+            <Btn color="gray" disabled={(page + 1) * 30 >= total} onClick={() => setPage((p) => p + 1)}>다음</Btn>
+          </div>
+        )}
+      </Section>
+    </div>
+  );
+}
+
+// ───────────────────────── 데이터 등록 탭 ─────────────────────────
+
+const REGISTER_SUB_TABS = [
+  { id: 'item', label: '아이템' },
+  { id: 'skill', label: '스킬' },
+  { id: 'monster', label: '몬스터' },
+  { id: 'mercenary', label: '용병' },
+];
+
+const ITEM_TYPE_OPTIONS = [
+  { value: 'MATERIAL', label: '재료' },
+  { value: 'EQUIPMENT', label: '장비' },
+];
+
+const SLOT_OPTIONS = [
+  { value: 'WEAPON', label: '무기' },
+  { value: 'HELMET', label: '투구' },
+  { value: 'ARMOR', label: '갑옷' },
+  { value: 'GLOVES', label: '장갑' },
+  { value: 'BELT', label: '허리띠' },
+  { value: 'SHOES', label: '신발' },
+  { value: 'RING', label: '반지' },
+  { value: 'NECKLACE', label: '목걸이' },
+];
+
+const EQUIP_KIND_OPTIONS = [
+  { value: 'NORMAL', label: '일반' },
+  { value: 'APPEARANCE', label: '외변' },
+];
+
+const SKILL_BEHAVIOR_OPTIONS = [
+  { value: '', label: '미분류' },
+  { value: 'ACTIVE', label: 'ACTIVE (능동 시전)' },
+  { value: 'TRIGGER', label: 'TRIGGER (조건 자동 발동)' },
+  { value: 'PASSIVE', label: 'PASSIVE (상시 적용)' },
+];
+
+const MERC_CATEGORY_OPTIONS = [
+  { value: '', label: '없음' },
+  { value: 'HEAVENLY_KING', label: '사천왕' },
+  { value: 'AWAKENED_HEAVENLY_KING', label: '각성 사천왕' },
+  { value: 'MYEONGWANG', label: '명왕' },
+  { value: 'LEGEND', label: '전설장수' },
+  { value: 'GENERAL_1', label: '1차 장수' },
+  { value: 'GENERAL_2', label: '2차 장수' },
+  { value: 'HIRE_MONSTER', label: '고용몬' },
+  { value: 'PROTAGONIST', label: '주인공' },
+];
+
+const NATION_OPTIONS = [
+  { value: '', label: '없음 (NONE)' },
+  { value: 'CHINA', label: '중국' },
+  { value: 'KOREA', label: '한국' },
+  { value: 'JAPAN', label: '일본' },
+  { value: 'INDIA', label: '인도' },
+  { value: 'MIDDLE_EAST', label: '중동' },
+];
+
+const NATURE_OPTIONS = [
+  { value: '', label: '없음 (NONE)' },
+  { value: 'FIRE', label: '화 (FIRE)' },
+  { value: 'WATER', label: '수 (WATER)' },
+  { value: 'WIND', label: '풍 (WIND)' },
+  { value: 'EARTH', label: '토 (EARTH)' },
+  { value: 'THUNDER', label: '뇌 (THUNDER)' },
+];
+
+const MONSTER_ELEMENT_OPTIONS = [
+  { value: '', label: '없음' },
+  { value: 'FIRE', label: '화 (FIRE)' },
+  { value: 'WATER', label: '수 (WATER)' },
+  { value: 'WIND', label: '풍 (WIND)' },
+  { value: 'EARTH', label: '토 (EARTH)' },
+  { value: 'THUNDER', label: '뇌 (THUNDER)' },
+  { value: 'NONE', label: '명시적 무속성 (明)' },
+];
+
+/** 아이템 등록 폼 */
+function ItemRegisterForm({ notify }: { notify: (m: string) => void }) {
+  const [name, setName] = useState('');
+  const [type, setType] = useState('MATERIAL');
+  const [tradeCategory, setTradeCategory] = useState('');
+  const [slot, setSlot] = useState('WEAPON');
+  const [equipKind, setEquipKind] = useState('NORMAL');
+  const [setId, setSetId] = useState('');
+  const [ritualApplicable, setRitualApplicable] = useState(false);
+  const [hasSlotOption, setHasSlotOption] = useState(false);
+  const [stats, setStats] = useState<EditableStat[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  const addStat = () => setStats((s) => [...s, { statType: '', value: '', scope: 'SELF' }]);
+  const removeStat = (i: number) => setStats((s) => s.filter((_, idx) => idx !== i));
+  const updateStat = (i: number, field: keyof EditableStat, val: string) =>
+    setStats((s) => s.map((row, idx) => (idx === i ? { ...row, [field]: val } : row)));
+
+  const handleSubmit = async () => {
+    if (!name.trim()) { notify('오류 - 아이템명을 입력해주세요'); return; }
+    if (type === 'EQUIPMENT' && !slot) { notify('오류 - 장비 슬롯을 선택해주세요'); return; }
+    setSaving(true);
+    try {
+      const body: Record<string, unknown> = {
+        name: name.trim(),
+        type,
+        tradeCategory: tradeCategory.trim() || null,
+        stats: stats
+          .filter((s) => s.statType && s.value)
+          .map((s) => ({
+            statType: s.statType,
+            element: s.element || null,
+            value: Number(s.value),
+            scope: s.scope || null,
+          })),
+      };
+      if (type === 'EQUIPMENT') {
+        body.slot = slot;
+        body.equipmentKind = equipKind;
+        body.equipmentSetId = setId ? Number(setId) : null;
+        body.ritualApplicable = ritualApplicable;
+        body.hasSlotOption = hasSlotOption;
+      }
+      await req('/admin/items', { method: 'POST', body: JSON.stringify(body) });
+      notify('✅ 아이템 등록 완료');
+      setName(''); setTradeCategory(''); setSetId('');
+      setStats([]); setRitualApplicable(false); setHasSlotOption(false);
+    } catch (e) {
+      notify(`오류 - ${e instanceof Error ? e.message : '등록 실패'}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-xs text-gray-400 mb-1">아이템명 *</label>
+          <Input value={name} onChange={setName} placeholder="예: 흑요석" />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-400 mb-1">타입 *</label>
+          <select
+            value={type}
+            onChange={(e) => setType(e.target.value)}
+            className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm w-full"
+          >
+            {ITEM_TYPE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs text-gray-400 mb-1">거래 카테고리</label>
+          <Input value={tradeCategory} onChange={setTradeCategory} placeholder="예: 보석" />
+        </div>
+      </div>
+
+      {type === 'EQUIPMENT' && (
+        <div className="border border-gray-600 rounded p-3 space-y-3">
+          <p className="text-xs text-yellow-400 font-medium">장비 정보</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">슬롯 *</label>
+              <select
+                value={slot}
+                onChange={(e) => setSlot(e.target.value)}
+                className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm w-full"
+              >
+                {SLOT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">장비 종류 *</label>
+              <select
+                value={equipKind}
+                onChange={(e) => setEquipKind(e.target.value)}
+                className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm w-full"
+              >
+                {EQUIP_KIND_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">세트 ID</label>
+              <Input value={setId} onChange={setSetId} placeholder="세트에 속하면 ID 입력" type="number" />
+            </div>
+          </div>
+          <div className="flex gap-6">
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={ritualApplicable}
+                onChange={(e) => setRitualApplicable(e.target.checked)}
+                className="w-4 h-4"
+              />
+              주술 가능
+            </label>
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={hasSlotOption}
+                onChange={(e) => setHasSlotOption(e.target.checked)}
+                className="w-4 h-4"
+              />
+              슬롯 옵션(홈) 있음
+            </label>
+          </div>
+        </div>
+      )}
+
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs text-gray-400">부여 스탯</p>
+          <Btn onClick={addStat} color="gray">+ 스탯 추가</Btn>
+        </div>
+        {stats.length > 0 && (
+          <div className="space-y-2">
+            {stats.map((s, i) => (
+              <div key={i} className="flex gap-2 flex-wrap items-center">
+                <select
+                  value={s.statType}
+                  onChange={(e) => updateStat(i, 'statType', e.target.value)}
+                  className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm"
+                >
+                  <option value="">스탯 선택</option>
+                  {STAT_TYPE_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+                <select
+                  value={s.element ?? ''}
+                  onChange={(e) => updateStat(i, 'element', e.target.value)}
+                  className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm"
+                >
+                  {ELEMENT_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+                <input
+                  type="number"
+                  value={s.value}
+                  onChange={(e) => updateStat(i, 'value', e.target.value)}
+                  placeholder="수치"
+                  className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm w-24"
+                />
+                <select
+                  value={s.scope ?? 'SELF'}
+                  onChange={(e) => updateStat(i, 'scope', e.target.value)}
+                  className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm"
+                >
+                  {BUFF_SCOPE_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+                <Btn onClick={() => removeStat(i)} color="red">삭제</Btn>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <Btn onClick={handleSubmit} color="yellow" disabled={saving}>
+        {saving ? '저장 중...' : '아이템 등록'}
+      </Btn>
+    </div>
+  );
+}
+
+/** 스킬 등록 폼 */
+function SkillRegisterForm({ notify }: { notify: (m: string) => void }) {
+  const [skillName, setSkillName] = useState('');
+  const [behaviorType, setBehaviorType] = useState('');
+  const [replacesBase, setReplacesBase] = useState(false);
+  const [triggerN, setTriggerN] = useState('');
+  const [triggerBaseKey, setTriggerBaseKey] = useState('');
+  const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!skillName.trim()) { notify('오류 - 스킬명을 입력해주세요'); return; }
+    setSaving(true);
+    try {
+      await req('/admin/skills', {
+        method: 'POST',
+        body: JSON.stringify({
+          skillName: skillName.trim(),
+          skillBehaviorType: behaviorType || null,
+          replacesBaseSkill: replacesBase,
+          triggerEveryN: triggerN ? Number(triggerN) : null,
+          triggerBaseSkillKey: triggerBaseKey.trim() || null,
+          note: note.trim() || null,
+        }),
+      });
+      notify('✅ 스킬 등록 완료');
+      setSkillName(''); setBehaviorType(''); setReplacesBase(false);
+      setTriggerN(''); setTriggerBaseKey(''); setNote('');
+    } catch (e) {
+      notify(`오류 - ${e instanceof Error ? e.message : '등록 실패'}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-xs text-gray-400 mb-1">스킬명 *</label>
+          <Input value={skillName} onChange={setSkillName} placeholder="예: 화룡진" />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-400 mb-1">발동 방식</label>
+          <select
+            value={behaviorType}
+            onChange={(e) => setBehaviorType(e.target.value)}
+            className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm w-full"
+          >
+            {SKILL_BEHAVIOR_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <label className="flex items-center gap-2 text-sm cursor-pointer">
+        <input
+          type="checkbox"
+          checked={replacesBase}
+          onChange={(e) => setReplacesBase(e.target.checked)}
+          className="w-4 h-4"
+        />
+        기본 공격 대체 스킬
+      </label>
+
+      {behaviorType === 'TRIGGER' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs text-gray-400 mb-1">트리거 주기 N (N번마다 1회 발동)</label>
+            <Input value={triggerN} onChange={setTriggerN} placeholder="예: 3" type="number" />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-400 mb-1">카운트 기준 스킬 키</label>
+            <Input value={triggerBaseKey} onChange={setTriggerBaseKey} placeholder="기준 스킬 키" />
+          </div>
+        </div>
+      )}
+
+      <div>
+        <label className="block text-xs text-gray-400 mb-1">메모</label>
+        <textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="계산 제외 사유 또는 특이사항"
+          rows={3}
+          className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm text-gray-100 w-full resize-none"
+        />
+      </div>
+
+      <Btn onClick={handleSubmit} color="yellow" disabled={saving}>
+        {saving ? '저장 중...' : '스킬 등록'}
+      </Btn>
+    </div>
+  );
+}
+
+type MonsterResult = {
+  id: number;
+  name: string;
+  elementValue: number | null;
+  element: string | null;
+  hidden: boolean;
+};
+
+/** 몬스터 등록 폼 */
+function MonsterRegisterForm({ notify }: { notify: (m: string) => void }) {
+  const [name, setName] = useState('');
+  const [hp, setHp] = useState('');
+  const [hittingResist, setHittingResist] = useState('');
+  const [magicResist, setMagicResist] = useState('');
+  const [elementValue, setElementValue] = useState('');
+  const [element, setElement] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [lastResult, setLastResult] = useState<MonsterResult | null>(null);
+
+  const handleSubmit = async () => {
+    if (!name.trim()) { notify('오류 - 몬스터 이름을 입력해주세요'); return; }
+    setSaving(true);
+    try {
+      const result = await req<MonsterResult>('/admin/monsters', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: name.trim(),
+          hp: hp ? Number(hp) : null,
+          hittingResistance: hittingResist ? Number(hittingResist) : null,
+          magicResistance: magicResist ? Number(magicResist) : null,
+          elementValue: elementValue ? Number(elementValue) : null,
+          element: element || null,
+        }),
+      });
+      setLastResult(result);
+      notify(result.hidden ? '✅ 등록 완료 (속성값 없음 → 자동 숨김)' : '✅ 몬스터 등록 완료 (공개)');
+      setName(''); setHp(''); setHittingResist('');
+      setMagicResist(''); setElementValue(''); setElement('');
+    } catch (e) {
+      notify(`오류 - ${e instanceof Error ? e.message : '등록 실패'}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleHidden = async () => {
+    if (!lastResult) return;
+    try {
+      const updated = await req<MonsterResult>(`/admin/monsters/${lastResult.id}/hidden`, {
+        method: 'PATCH',
+        body: JSON.stringify({ hidden: !lastResult.hidden }),
+      });
+      setLastResult(updated);
+      notify(updated.hidden ? '🙈 숨김 처리됨' : '👁 공개로 변경됨');
+    } catch (e) {
+      notify(`오류 - ${e instanceof Error ? e.message : '변경 실패'}`);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-gray-400">
+        속성값이 없거나 이름에 (明)이 포함된 몬스터는 자동으로 숨김 처리됩니다.
+      </p>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-xs text-gray-400 mb-1">몬스터 이름 *</label>
+          <Input value={name} onChange={setName} placeholder="예: 적룡왕(火)" />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-400 mb-1">생명력 (HP)</label>
+          <Input value={hp} onChange={setHp} placeholder="예: 500000" type="number" />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-400 mb-1">타격저항력 (%)</label>
+          <Input value={hittingResist} onChange={setHittingResist} placeholder="예: 75" type="number" />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-400 mb-1">마법저항력 (%)</label>
+          <Input value={magicResist} onChange={setMagicResist} placeholder="예: 80" type="number" />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-400 mb-1">속성값 (없으면 자동 숨김)</label>
+          <Input value={elementValue} onChange={setElementValue} placeholder="예: 200" type="number" />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-400 mb-1">속성</label>
+          <select
+            value={element}
+            onChange={(e) => setElement(e.target.value)}
+            className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm w-full"
+          >
+            {MONSTER_ELEMENT_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <Btn onClick={handleSubmit} color="yellow" disabled={saving}>
+        {saving ? '저장 중...' : '몬스터 등록'}
+      </Btn>
+
+      {lastResult && (
+        <div className={`flex items-center gap-3 mt-2 px-3 py-2 rounded text-sm ${
+          lastResult.hidden ? 'bg-gray-700 text-gray-300' : 'bg-green-900 text-green-200'
+        }`}>
+          <span>
+            <span className="font-medium">{lastResult.name}</span>
+            {' — '}
+            {lastResult.hidden
+              ? <span className="text-gray-400">숨김 처리됨</span>
+              : <span className="text-green-400">공개 중</span>}
+          </span>
+          <Btn onClick={toggleHidden} color={lastResult.hidden ? 'green' : 'gray'}>
+            {lastResult.hidden ? '공개로 변경' : '숨기기'}
+          </Btn>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 용병 등록 폼 */
+function MercenaryRegisterForm({ notify }: { notify: (m: string) => void }) {
+  const [name, setName] = useState('');
+  const [category, setCategory] = useState('');
+  const [nation, setNation] = useState('');
+  const [nature, setNature] = useState('');
+  const [natureValue, setNatureValue] = useState('');
+  const [comingSoon, setComingSoon] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!name.trim()) { notify('오류 - 용병명을 입력해주세요'); return; }
+    setSaving(true);
+    try {
+      await req('/admin/mercenaries', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: name.trim(),
+          category: category || null,
+          nation: nation || null,
+          nature: nature || null,
+          natureValue: natureValue ? Number(natureValue) : null,
+          comingSoon,
+        }),
+      });
+      notify('✅ 용병 등록 완료');
+      setName(''); setCategory(''); setNation('');
+      setNature(''); setNatureValue(''); setComingSoon(false);
+    } catch (e) {
+      notify(`오류 - ${e instanceof Error ? e.message : '등록 실패'}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-xs text-gray-400 mb-1">용병명 *</label>
+          <Input value={name} onChange={setName} placeholder="예: 각성 군다리명왕" />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-400 mb-1">카테고리</label>
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm w-full"
+          >
+            {MERC_CATEGORY_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs text-gray-400 mb-1">국가</label>
+          <select
+            value={nation}
+            onChange={(e) => setNation(e.target.value)}
+            className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm w-full"
+          >
+            {NATION_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs text-gray-400 mb-1">속성</label>
+          <select
+            value={nature}
+            onChange={(e) => setNature(e.target.value)}
+            className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm w-full"
+          >
+            {NATURE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs text-gray-400 mb-1">속성값</label>
+          <Input value={natureValue} onChange={setNatureValue} placeholder="예: 150" type="number" />
+        </div>
+      </div>
+
+      <label className="flex items-center gap-2 text-sm cursor-pointer">
+        <input
+          type="checkbox"
+          checked={comingSoon}
+          onChange={(e) => setComingSoon(e.target.checked)}
+          className="w-4 h-4"
+        />
+        출시 예정 (크롤링 대상 제외)
+      </label>
+
+      <Btn onClick={handleSubmit} color="yellow" disabled={saving}>
+        {saving ? '저장 중...' : '용병 등록'}
+      </Btn>
+    </div>
+  );
+}
+
+/** 데이터 등록 탭 — 아이템/스킬/몬스터/용병 신규 등록 */
+function RegisterTab({ notify }: { notify: (m: string) => void }) {
+  const [subTab, setSubTab] = useState('item');
+
+  return (
+    <div>
+      {/* 서브 탭 */}
+      <div className="flex gap-1 mb-4 border-b border-gray-700">
+        {REGISTER_SUB_TABS.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setSubTab(t.id)}
+            className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 transition-colors ${
+              subTab === t.id
+                ? 'border-blue-400 text-blue-400'
+                : 'border-transparent text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <Section title={
+        subTab === 'item' ? '아이템 등록' :
+        subTab === 'skill' ? '스킬 등록' :
+        subTab === 'monster' ? '몬스터 등록' :
+        '용병 등록'
+      }>
+        {subTab === 'item' && <ItemRegisterForm notify={notify} />}
+        {subTab === 'skill' && <SkillRegisterForm notify={notify} />}
+        {subTab === 'monster' && <MonsterRegisterForm notify={notify} />}
+        {subTab === 'mercenary' && <MercenaryRegisterForm notify={notify} />}
+      </Section>
+    </div>
+  );
+}
+
 // ───────────────────────── 메인 관리자 페이지 ─────────────────────────
 
 const TABS = [
   { id: 'crawler', label: '크롤러' },
   { id: 'reports', label: '신고 관리' },
   { id: 'listings', label: '등록글 관리' },
+  { id: 'register', label: '데이터 등록' },
   { id: 'items', label: '아이템' },
   { id: 'mercenaries', label: '용병' },
+  { id: 'monsters', label: '몬스터' },
   { id: 'sets', label: '세트' },
   { id: 'images', label: '이미지 등록' },
 ];
@@ -2380,8 +3151,10 @@ export default function AdminPage() {
       {tab === 'crawler' && <CrawlerTab notify={notify} />}
       {tab === 'reports' && <ReportsTab notify={notify} />}
       {tab === 'listings' && <ListingsTab notify={notify} />}
+      {tab === 'register' && <RegisterTab notify={notify} />}
       {tab === 'items' && <ItemsTab notify={notify} />}
       {tab === 'mercenaries' && <MercenariesTab notify={notify} />}
+      {tab === 'monsters' && <MonstersTab notify={notify} />}
       {tab === 'sets' && <SetsTab notify={notify} />}
       {tab === 'images' && <ImageTab notify={notify} />}
 

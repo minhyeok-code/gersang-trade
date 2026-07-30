@@ -23,21 +23,21 @@ public class MonsterService {
     private final MonsterRepository monsterRepository;
 
     /**
-     * 몬스터 목록 조회.
+     * 몬스터 목록 조회 — hidden=false인 몬스터만 반환한다.
      * element 파라미터가 있으면 해당 속성만 필터링한다.
      */
     public List<MonsterResponse> getMonsters(Element element) {
         var monsters = (element != null)
-                ? monsterRepository.findByElement(element)
-                : monsterRepository.findAll();
+                ? monsterRepository.findByElementAndHiddenFalse(element)
+                : monsterRepository.findByHiddenFalse();
         return monsters.stream().map(MonsterResponse::from).toList();
     }
 
     /**
-     * 몬스터 이름 자동완성 — q를 포함하는 몬스터를 limit개 반환한다.
+     * 몬스터 이름 자동완성 — hidden=false인 몬스터만 검색한다.
      */
     public List<MonsterAutocompleteResponse> searchMonsters(String q, int limit) {
-        return monsterRepository.findByNameContaining(q, PageRequest.of(0, limit))
+        return monsterRepository.findVisibleByNameContaining(q, PageRequest.of(0, limit))
                 .stream().map(MonsterAutocompleteResponse::from).toList();
     }
 

@@ -5,6 +5,7 @@ import org.example.gersangtrade.admin.dto.request.CharacteristicCreateRequest;
 import org.example.gersangtrade.admin.dto.request.CharacteristicLevelSaveRequest;
 import org.example.gersangtrade.admin.dto.request.CharacteristicUpdateRequest;
 import org.example.gersangtrade.admin.dto.request.MercenaryBulkUpdateRequest;
+import org.example.gersangtrade.admin.dto.request.MercenaryCreateRequest;
 import org.example.gersangtrade.admin.dto.request.MercenaryStatReplaceRequest;
 import org.example.gersangtrade.admin.dto.request.MercenaryUpdateRequest;
 import org.example.gersangtrade.admin.dto.request.SkillEffectReplaceRequest;
@@ -66,6 +67,31 @@ public class MercenaryAdminService {
     @Transactional(readOnly = true)
     public MercenaryDetailAdminResponse getMercenary(Long mercenaryId) {
         return buildDetail(mercenaryId);
+    }
+
+    // ── 용병 신규 등록 ───────────────────────────────────────────────────────────
+
+    /**
+     * 용병을 신규 등록한다.
+     * 동일한 name이 이미 존재하면 409 (CONFLICT)를 반환한다.
+     * nation, nature가 null이면 각각 Nation.NONE, Nature.NONE으로 기본값 처리한다.
+     */
+    @Transactional
+    @CacheEvict(value = CacheConfig.MERCENARIES, allEntries = true)
+    public MercenaryDetailAdminResponse createMercenary(MercenaryCreateRequest req) {
+        if (mercenaryRepository.findByName(req.name()).isPresent()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "이미 존재하는 용병 이름입니다: " + req.name());
+        }
+        Mercenary mercenary = mercenaryRepository.save(Mercenary.builder()
+                .name(req.name())
+                .category(req.category())
+                .nation(req.nation() != null ? req.nation() : Nation.NONE)
+                .nature(req.nature() != null ? req.nature() : Nature.NONE)
+                .natureValue(req.natureValue())
+                .comingSoon(req.comingSoon())
+                .build());
+        return buildDetail(mercenary.getId());
     }
 
     // ── 용병 기본정보 수정 ───────────────────────────────────────────────────────

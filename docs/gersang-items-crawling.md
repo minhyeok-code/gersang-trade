@@ -18,14 +18,7 @@
 - 아이템 전체 목록, 용병 전체 목록, 서버별 가격 모두 정적 HTML에 포함
 - URL 패턴: `keyword` 파라미터로 아이템 검색, `serverId` 파라미터로 서버 구분
 
-### 소스 2 — gerniverse.app (마스터 데이터 상세 정보)
-
-- robots.txt: `User-agent: * / Allow: /` → 일반 봇 전체 허용
-- **정적 HTML** (Next.js SSR) → Jsoup 파싱 가능
-- 아이템/용병 상세 페이지에서 능력치, 재료, 이미지 경로 수집
-- JSON-LD 스키마(`<script type="application/ld+json">`)에 구조화된 데이터 포함
-
-### 소스 3 — gersanginfo.com (참고, 사용 보류)
+### 소스 2 — gersanginfo.com (참고, 사용 보류)
 
 - 내부 REST API 존재: `/api/game/market/new/items`, `/api/game/market/history`
 - 외부 직접 호출 시 `{"message":"외부 접근 차단됨"}` 응답
@@ -51,37 +44,6 @@ URL: https://geota.co.kr/gersang/calculator/mercenary?serverId=1
 방식: 정적 HTML 파싱
 특징: 전체 용병명 + 제작 재료 + 재료별 서버 가격이 한 페이지에 렌더링됨
 수집 항목: 용병명, 제작 재료명, 재료 수량, 재료 단가(서버별)
-```
-
-### 아이템 상세 정보
-
-```
-URL: https://gerniverse.app/item/{아이템명(한글)}
-방식: 정적 HTML 파싱 + JSON-LD 파싱
-수집 항목:
-  - 아이템명 (h1 태그)
-  - 카테고리 대/소분류 (badge span 태그)
-  - 상점 판매가
-  - 능력치 (공격력, 생명력, 지력 등)
-  - 요구 레벨
-  - 제작 비용
-  - 필요 재료 (재료명 + 수량) → a[href^=/item/] 링크에서 파싱
-  - 이미지 경로 → JSON-LD image 필드: "item/weapon/doll/{영문키}"
-```
-
-### 용병 상세 정보
-
-```
-URL: https://gerniverse.app/mercenary/{용병명(한글)}
-방식: 정적 HTML 파싱 + JSON-LD 파싱
-수집 항목:
-  - 용병명 (h1 태그)
-  - 종류 (각성명왕, 사천왕 등)
-  - 저항깎 수치 → JSON-LD additionalProperty에서 파싱
-    예: {"name":"마법 저항","value":"100%"} → 디버프 수치로 변환
-  - 속성값
-  - 고용 재료 (재료명 + 수량)
-  - 이미지 경로 → JSON-LD image 필드: "thumbnail/{경로}/{영문키}"
 ```
 
 ### 가격 데이터 (서버별 실거래가)
@@ -158,45 +120,6 @@ GEM_NAMES 중 하나가 아이템명에 포함되면 → `Gem` 분류
 | `<태산북두> 챠우인형` | EquipmentItem | ritual=태산북두, hasSlot=false |
 | `홈이있는 <태산북두> 챠우인형` | EquipmentItem | ritual=태산북두, hasSlot=true |
 | `각성석`, `힘의기억` 등 | MaterialItem | 재료 아이템 |
-
----
-
-## 이미지 수집 및 S3 저장
-
-### 이미지 URL 패턴
-
-```
-아이템 이미지:
-  원본: https://images.gerniverse.app/tr:cm-pad_resize,w-120,h-120,f-auto,q-80/{imageKey}.webp
-  imageKey 예시: item/weapon/doll/gkstkdwkdmldlsgud
-  JSON-LD image 필드에서 추출
-
-용병 이미지:
-  원본: https://images.gerniverse.app/tr:cm-pad_resize,w-120,h-120,f-auto,q-80/{imageKey}.webp
-  imageKey 예시: thumbnail/myeong-kings/awakening/gakGoondari
-  JSON-LD image 필드에서 추출
-```
-
-### S3 저장 경로
-
-```
-아이템: s3://버킷명/items/{imageKey}.webp
-용병:   s3://버킷명/mercenaries/{imageKey}.webp
-```
-
-### 저장 흐름
-
-```
-gerniverse 상세 페이지 파싱
-    ↓
-JSON-LD에서 imageKey 추출
-    ↓
-images.gerniverse.app/{imageKey}.webp 다운로드 (Jsoup ignoreContentType)
-    ↓
-S3 업로드 (AWS SDK v2 PutObjectRequest)
-    ↓
-S3 URL → item.imageUrl 또는 mercenary.imageUrl 컬럼 저장
-```
 
 ---
 
@@ -580,20 +503,9 @@ Step 1: ItemListReader
   - Gem → gems 테이블 UPSERT
   - EquipmentItem / MaterialItem → items 테이블 UPSERT
 
-Step 2: ItemDetailWriter
-  - items 테이블에서 image_url IS NULL 항목 조회
-  - gerniverse /item/{아이템명} 파싱
-  - 능력치, 재료, 이미지 수집
-  - 이미지 S3 업로드 후 image_url 업데이트
-
-Step 3: MercenaryListReader
+Step 2: MercenaryListReader
   - geota /gersang/calculator/mercenary 파싱
   - 용병명 전체 수집 → mercenaries 테이블 UPSERT
-
-Step 4: MercenaryDetailWriter
-  - gerniverse /mercenary/{용병명} 파싱
-  - 저항깎, 속성값, 재료, 이미지 수집
-  - S3 업로드 후 image_url 업데이트
 ```
 
 ### Job 2 — 가격 데이터 수집 (매월 1일 새벽 3시 자동 실행)
@@ -746,29 +658,7 @@ URL: https://geota.co.kr/gersang/yukeuijeon?serverId=1&page=2
   - 소규모 서버(신구, 단군 등) 최소 샘플 기준 충족 여부
 ```
 
-### 검증 4 — gerniverse 아이템 JSON-LD 구조 재확인
-
-```
-URL: https://gerniverse.app/item/각성석 (재료 아이템)
-확인 항목:
-  - 재료 아이템과 장비 아이템의 JSON-LD 구조 차이
-  - image 필드가 항상 배열인지, null이 올 수 있는지
-  - 일부 아이템에 이미지가 없는 경우 fallback 처리 방식
-```
-
-### 검증 5 — gerniverse 용병 저항깎 수치 파싱 방식
-
-```
-URL: https://gerniverse.app/mercenary/{저항깎 용병명}
-확인 항목:
-  - JSON-LD additionalProperty의 value 형식 ("100%" vs 숫자)
-  - 마법저항깎과 타격저항깎 분리 여부
-  - 스킬로 인한 저항깎 (조건부)과 기본 저항깎 구분 방식
-    예: 각성 군다리명왕 — 공중 몬스터 마법저항 10 감소 스킬
-        → 고정 수치 저장 vs 스킬 설명 텍스트 저장 정책 결정 필요
-```
-
-### 검증 6 — 보석 기간제/특수 패턴 확인
+### 검증 4 — 보석 기간제/특수 패턴 확인
 
 ```
 URL: https://geota.co.kr/gersang/calculator/item?serverId=1

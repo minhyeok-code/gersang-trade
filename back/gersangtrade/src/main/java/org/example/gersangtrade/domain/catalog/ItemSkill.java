@@ -91,6 +91,11 @@ public class ItemSkill {
         this.skillKey = skillKey;
     }
 
+    /** 관리자 스킬명 수정 */
+    public void updateSkillName(String skillName) {
+        this.skillName = skillName;
+    }
+
     /** 거니버스 데이터 적재 시 스킬 분류 정보 갱신 */
     public void updateBehavior(SkillBehaviorType skillBehaviorType, boolean replacesBaseSkill,
                                Integer triggerEveryN, String triggerBaseSkillKey, String note) {

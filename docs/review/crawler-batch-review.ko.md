@@ -16,9 +16,9 @@ Job 구성:
 - 설정: `crawler/job/MasterDataJobConfig.java`
 - Step 구성:
   - Step1 `ItemListTasklet`: geota 아이템 목록 → `items`, `gems` UPSERT
-  - Step2 `ItemDetailReader/Writer`: gerniverse 아이템 상세 + 이미지 S3 업로드 + `equipment_items`/`material_items`/`item_stats` 적재
+  - Step2 `ItemDetailReader/Writer`: 아이템 상세 + 이미지 S3 업로드 + `equipment_items`/`material_items`/`item_stats` 적재
   - Step3 `MercenaryListTasklet`: geota 용병 목록 → `mercenaries` UPSERT
-  - Step4 `MercenaryDetailReader/Writer`: gerniverse 용병 상세 + 이미지 + 재료(`mercenary_materials`) 재적재
+  - Step4 `MercenaryDetailReader/Writer`: 용병 상세 + 이미지 + 재료(`mercenary_materials`) 재적재
 - 실행 방식: **관리자 수동 트리거**
   - `POST /admin/crawler/master` (`admin/controller/CrawlerAdminController.java`)
 
@@ -160,7 +160,7 @@ Job 구성:
 #### 이슈 3-A — `mercenaryType` 미갱신 (`MercenaryDetailWriter.java`, `Mercenary.java`)
 
 - **판정**: 이슈 확인됨. 수정 완료.
-- **근거**: `GerniverseParser.parseMercenary()`는 `MercenaryData.mercenaryType()`을 올바르게 파싱하지만, `MercenaryDetailWriter.applyMercenaryData()`에서 `mercenary.updateSpec(resistPierce, elementValue, s3Url)` 호출 시 `mercenaryType`을 전달하지 않았다. `Mercenary.updateSpec()`도 해당 파라미터를 받지 않았으므로 mercenaryType은 초기 저장값에서 갱신되지 않았다.
+- **근거**: `MercenaryDetailWriter.applyMercenaryData()`에서 `mercenary.updateSpec(resistPierce, elementValue, s3Url)` 호출 시 `mercenaryType`을 전달하지 않았다. `Mercenary.updateSpec()`도 해당 파라미터를 받지 않았으므로 mercenaryType은 초기 저장값에서 갱신되지 않았다.
 - **수정**: `Mercenary.updateSpec()`에 `mercenaryType` 파라미터 추가. null/공백이면 기존 값 유지. `MercenaryDetailWriter`에서 `data.mercenaryType()`을 전달하도록 변경.
 
 #### 이슈 3-B — 주석/의도 불일치 (`MercenaryDetailWriter.java`)
@@ -195,7 +195,7 @@ Job 구성:
 #### 이슈 2 — 장비 플래그(`ritualApplicable`, `hasSlotOption`)가 저장에 반영되지 않음
 
 - **판정**: 이슈 확인됨. 수정 보류.
-- **근거**: `ItemListTasklet(Step1)`에서 수집한 `equipmentFlags` Map은 `ItemDetailWriter(Step2)`에서 전혀 접근할 수 없다. `GerniverseParser.ItemData`에도 이 두 필드가 없다. 수정하려면 (a) `JobExecutionContext`를 통해 flags Map을 직렬화/전달하거나, (b) `GerniverseParser.parseItem()`이 gerniverse 페이지에서 주술 가능 여부/홈 버전 존재 여부를 직접 파싱하도록 보강해야 한다. 두 방법 모두 구조적 변경이 필요하므로 이번 수정 범위에서 제외한다.
+- **근거**: `ItemListTasklet(Step1)`에서 수집한 `equipmentFlags` Map은 `ItemDetailWriter(Step2)`에서 전혀 접근할 수 없다. 수정하려면 (a) `JobExecutionContext`를 통해 flags Map을 직렬화/전달하거나, (b) `ItemDetailWriter.parseItem()`이 페이지에서 주술 가능 여부/홈 버전 존재 여부를 직접 파싱하도록 보강해야 한다. 두 방법 모두 구조적 변경이 필요하므로 이번 수정 범위에서 제외한다.
 - **결론**: `EquipmentItem.ritualApplicable`과 `hasSlotOption`은 현재 항상 `false`로 저장됨. 이 필드에 의존하는 기능(필터링, UI 표시) 구현 전까지는 실질적 영향 없음.
 
 #### 이슈 4.3 — `PriceCrawlTasklet` 트랜잭션 범위 정책 모호

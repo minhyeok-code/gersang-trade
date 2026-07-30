@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.example.gersangtrade.admin.dto.enums.ItemCleanupCriterion;
 import org.example.gersangtrade.admin.dto.request.EquipmentDetailUpdateRequest;
 import org.example.gersangtrade.admin.dto.request.ItemBulkDeleteRequest;
+import org.example.gersangtrade.admin.dto.request.ItemCreateRequest;
 import org.example.gersangtrade.admin.dto.request.ItemRestrictionAddRequest;
 import org.example.gersangtrade.admin.dto.request.ItemStatReplaceRequest;
 import org.example.gersangtrade.admin.dto.request.ItemUpdateRequest;
@@ -54,6 +55,14 @@ public class ItemAdminController {
 
     private final ItemAdminService itemAdminService;
     private final MyeongwangWeaponStatCleanupService myeongwangWeaponStatCleanupService;
+
+    /** 아이템 신규 등록 — EQUIPMENT이면 slot, equipmentKind 필수. */
+    @PostMapping
+    public ResponseEntity<ItemDetailAdminResponse> createItem(
+            @Valid @RequestBody ItemCreateRequest req) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(itemAdminService.createItem(req));
+    }
 
     /**
      * 아이템 목록 조회.

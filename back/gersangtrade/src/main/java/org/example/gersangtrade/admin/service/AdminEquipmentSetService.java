@@ -3,6 +3,7 @@ package org.example.gersangtrade.admin.service;
 import lombok.RequiredArgsConstructor;
 import org.example.gersangtrade.admin.dto.request.ItemRestrictionAddRequest;
 import org.example.gersangtrade.admin.dto.response.ItemRestrictionResponse;
+import org.example.gersangtrade.admin.dto.set.AdminSetCreateRequest;
 import org.example.gersangtrade.admin.dto.set.AdminSetResponse;
 import org.example.gersangtrade.admin.dto.set.AdminSetUpdateRequest;
 import org.example.gersangtrade.catalog.repository.EquipmentItemRepository;
@@ -30,6 +31,26 @@ public class AdminEquipmentSetService {
     private final EquipmentItemRepository equipmentItemRepository;
     private final ItemMercenaryRestrictionRepository itemMercenaryRestrictionRepository;
     private final MercenaryRepository mercenaryRepository;
+
+    // ── 세트 신규 등록 ────────────────────────────────────────────────────────
+
+    /**
+     * 장비 세트를 신규 등록한다.
+     * 동일 이름이 이미 존재하면 409를 반환한다.
+     */
+    @Transactional
+    public AdminSetResponse createSet(AdminSetCreateRequest req) {
+        if (equipmentSetRepository.findByName(req.name()).isPresent()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "이미 동일한 이름의 세트가 존재합니다: " + req.name());
+        }
+        EquipmentSet set = equipmentSetRepository.save(EquipmentSet.builder()
+                .name(req.name())
+                .totalPieces(req.totalPieces())
+                .isTradeable(req.isTradeable())
+                .build());
+        return AdminSetResponse.from(set);
+    }
 
     /** 세트 목록 — 이름 검색 + 페이징 */
     @Transactional(readOnly = true)

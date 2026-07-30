@@ -77,163 +77,17 @@ geota 아이템 계산기는 `li.cursor-pointer` 선택자로 드롭다운 목�
 
 ---
 
-## 2. gerniverse.app 아이템 상세 페이지
-
-### 접근 URL
-
-```
-https://gerniverse.app/item/{아이템명(한글 URL 인코딩)}
-예: https://gerniverse.app/item/챠우인형
-    https://gerniverse.app/item/각성석
-```
-
-### h1 태그 — 아이템명
-
-```java
-// Jsoup
-String itemName = doc.select("h1").first().text();
-// → "챠우인형"
-
-// 확인된 클래스:
-// "font-black text-3xl md:text-5xl text-slate-900 dark:text-slate-100 text-center"
-```
-
-### JSON-LD — 이미지 경로
-
-```java
-// script[type="application/ld+json"] 파싱
-Element jsonLdEl = doc.select("script[type=application/ld+json]").first();
-JsonNode root = mapper.readTree(jsonLdEl.data());
-JsonNode imageArr = root.get("image");  // 배열 형태
-
-String imageKey = imageArr.get(0).asText();
-// 장비 예: "item/weapon/doll/cidndlsgud"
-// 재료 예: "item/cash/rkrtjdtjr"
-// 용병 예: "thumbnail/myeong-kings/awakening/gakGoondari"
-```
-
-**주의사항**:
-- `image` 필드는 항상 배열(`[]`)로 감싸져 있음
-- 재료 아이템도 image 필드 존재함 (null 케이스 미확인 → 방어 코드 필요)
-- JSON-LD에 카테고리 정보 없음 → HTML에서 별도 파싱 필요
-
-### 카테고리 배지 — 대분류/소분류
-
-```java
-// 선택자: div.inline-flex > span (class 없는 span)
-// 부모 div 클래스 키워드: "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50"
-
-Elements badgeDivs = doc.select("div.inline-flex.items-center.gap-1\\.5");
-// 첫 번째 배지 div의 첫 번째 span = 대분류 (예: "무기")
-// 첫 번째 배지 div의 두 번째 span = 소분류 (예: "인형")
-// chevron icon(svg)는 span이 아니므로 자동으로 무시됨
-
-String categoryMain = badgeDivs.get(0).select("span").get(0).text(); // "무기"
-String categorySub  = badgeDivs.get(0).select("span").get(1).text(); // "인형"
-```
-
-**주의사항**:
-- 재료 아이템(각성석 등)은 카테고리 배지 없음 → null 처리 필요
-- 배지 div가 2개 이상인 경우도 있음 (카테고리 + 기타 정보 배지)
-- 첫 번째 배지만 카테고리로 취급
-
-### 재료 링크 — 필요 재료 목록
-
-```java
-// 선택자: a[href^="/item/"]
-Elements matLinks = doc.select("a[href^=/item/]");
-
-for (Element link : matLinks) {
-    String href = link.attr("href");
-    // href 예: "/item/%EB%AC%BC%EC%9D%98%EC%86%8D%EC%84%B1%EC%84%9D"
-    String matName = URLDecoder.decode(href.replace("/item/", ""), StandardCharsets.UTF_8);
-    // → "물의속성석"
-
-    // 수량: "x15" 형식 텍스트 요소 (link 내부 또는 인접 sibling)
-    String qtyText = link.select("[class*='x']").text(); // "x15" 형식
-    // 또는 정규식으로 link 주변 텍스트에서 x\d+ 패턴 추출
-    int quantity = Integer.parseInt(qtyText.replace("x", "").trim());
-}
-```
-
-**주의사항**:
-- 수량 텍스트("x15")는 a 태그 내부에 있을 수도, sibling에 있을 수도 있음
-- 일부 아이템은 재료 없이 NPC 구매만 가능 → matLinks가 빈 리스트
-- 수량 없는 경우 quantity = 1로 기본값 처리
-
-### 상점 판매가 / 제작 비용
-
-```java
-// 페이지 텍스트에서 정규식 파싱 (이전 대화에서 확인됨)
-String fullText = doc.select("main").text();
-
-// 상점 판매가: "상점 판매가1,000,000냥" 패턴
-Pattern pricePattern = Pattern.compile("상점 판매가([\\d,]+)냥");
-
-// 제작 비용: "제작 비용100,000,000냥" 패턴
-Pattern craftPattern = Pattern.compile("제작 비용([\\d,]+)냥");
-```
-
----
-
-## 3. gerniverse.app 용병 상세 페이지
-
-### 접근 URL
-
-```
-https://gerniverse.app/mercenary/{용병명(한글 URL 인코딩)}
-예: https://gerniverse.app/mercenary/각성 군다리명왕
-```
-
-### JSON-LD — 저항깎 수치
-
-```java
-// JSON-LD additionalProperty 배열에서 파싱
-JsonNode props = root.get("additionalProperty"); // 배열
-for (JsonNode prop : props) {
-    String name  = prop.get("name").asText();   // "타격 저항", "마법 저항"
-    String value = prop.get("value").asText();  // "100%"
-
-    // value 파싱: "100%" → 100
-    int debuff = Integer.parseInt(value.replace("%", "").trim());
-
-    if (name.equals("마법 저항")) { magicResistDebuff = debuff; }
-    if (name.equals("타격 저항")) { physicalResistDebuff = debuff; }
-}
-```
-
-**주의사항**:
-- value 형식이 "100%" 문자열임 (숫자가 아님)
-- 마법저항깎과 타격저항깎이 분리되어 있음
-- 저항깎 수치가 스킬에서 추가로 발생하는 경우는 텍스트 파싱 별도 필요
-  예: "공중 몬스터 마법저항 10 감소" → 스킬 설명 텍스트에서만 확인 가능
-
-### 이미지 경로
-
-```java
-// JSON-LD image 필드 (아이템과 동일한 구조)
-String imageKey = root.get("image").get(0).asText();
-// 예: "thumbnail/myeong-kings/awakening/gakGoondari"
-```
-
----
-
-## 4. 파싱 주의사항 종합
+## 2. 파싱 주의사항 종합
 
 | 항목 | 주의사항 |
 |------|----------|
 | geota keyword URL | 한글 아이템명 URL 인코딩 필요 (`URLEncoder.encode(name, UTF-8)`) |
 | geota 가격 | "냥" 제거 + 콤마 제거 후 Long 변환 |
 | geota 구 데이터 | `강화된 {보석명}(+N)` 패턴은 가격 없음 → skip |
-| gerniverse h1 | 페이지 로딩 완료 후 파싱 (SSR이므로 Jsoup 직접 접근 가능) |
-| gerniverse image | 배열 첫 번째 요소 사용, null 방어 코드 필요 |
-| gerniverse 카테고리 | 재료 아이템은 카테고리 배지 없음 → null 처리 |
-| gerniverse 재료 수량 | "x15" 형식, x 제거 후 정수 변환 |
-| gerniverse 저항깎 | "100%" 문자열 → % 제거 후 정수 변환 |
 
 ---
 
-## 5. 검증이 필요한 잔여 항목
+## 3. 검증이 필요한 잔여 항목
 
 ### 미확인 1 — geota 전체 아이템 목록 수집 방식
 
@@ -252,17 +106,3 @@ URL: https://geota.co.kr/gersang/yukeuijeon?serverId=1&page=2
            전체 거래 건수 파악
 ```
 
-### 미확인 3 — gerniverse 재료 수량 선택자 정확한 위치
-
-```
-URL: https://gerniverse.app/item/한상자의인형 (재료 여러 개인 아이템)
-확인 항목: "x15" 수량 텍스트가 a[href^=/item/] 내부에 있는지,
-           sibling 요소에 있는지 정확한 DOM 위치
-```
-
-### 미확인 4 — gerniverse image 필드 null 케이스
-
-```
-확인 항목: 이미지가 없는 아이템의 JSON-LD image 필드가
-           null인지, 빈 배열([])인지, 아예 필드가 없는지
-```

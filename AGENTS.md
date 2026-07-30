@@ -19,7 +19,7 @@ gersangTrade/
     instance-data-input-strategy.ko.md
     value-for-money-feature.ko.md    # 능력치별 가성비 비교 기획
     calculator.md                    # 가성비 계산기 기획 (데미지 공식, 가성비 점수)
-    gersang-items-crawling.md        # 크롤링 전략·엔티티 설계 (geota/gerniverse)
+    gersang-items-crawling.md        # 크롤링 전략·엔티티 설계 (geota)
 ```
 
 ## Tech Stack (Backend)
@@ -28,7 +28,7 @@ gersangTrade/
 - **Spring Data JPA** + MySQL
 - **Spring Security** + OAuth2 Client
 - **Spring Batch** — 크롤링 Job (마스터 데이터 수집, 가격 수집) + 거래 통계 집계
-- **Jsoup 1.17.2** — geota/gerniverse 정적 HTML 크롤링
+- **Jsoup 1.17.2** — geota/거상짱 정적 HTML 크롤링
 - **AWS SDK v2 (S3)** — 아이템/용병 이미지 S3 업로드
 - **Lombok**
 - **Gradle** wrapper (`gradlew`)
@@ -53,7 +53,7 @@ Run from `back/gersangtrade/`:
 - Each implementation step builds on the previous step's output
 - **`items` CRUD API·admin UI는 구현하지 않는다** — Item 조회/등록/수정 REST API와 관리자 화면은 out of scope. 단, 크롤링 Batch Job에서 items/material_items/equipment_items 테이블에 UPSERT하는 것은 허용
 - **사통팔달 크롤링·연동 기능 구현 금지** — 사통팔달은 기획 문서에서 서비스 필요성 정당화 맥락으로만 언급; 관련 수집·파싱 기능은 구현하지 않는다
-- **geota/gerniverse 크롤링은 구현 범위** — `gersang-items-crawling.md` 기준. geota.co.kr(아이템/용병 목록·가격)과 gerniverse.app(상세 정보·이미지)은 robots.txt 허용 정적 HTML이며 Spring Batch Job으로 구현한다. gersanginfo.com은 외부 접근 차단으로 사용하지 않는다
+- **거상짱/geota 크롤링은 구현 범위** — `gersang-items-crawling.md` 기준. 거상짱(gersangjjang.com)은 마스터 데이터 수집, geota.co.kr은 가격 데이터 수집에 사용한다. gersanginfo.com은 외부 접근 차단으로 사용하지 않는다
 - **OAuth2: Google만 MVP 범위** — Kakao 소셜 로그인은 추가기능(확장)으로 분류; MVP에서 구현하지 않는다
 - **가성비 계산기·크롤링은 추가기능(확장)** — PRD 기준 추가기능. MVP 완성 후 구현. 상세 기획은 `docs/calculator.md`, `docs/gersang-items-crawling.md` 참고
 - **적극적 피드백 원칙** — 요청에 설계·용어·논리 오류가 있거나 더 나은 방법이 있으면, 구현 전 또는 완료 직후 반드시 먼저 언급한다. 이상한 점을 그냥 넘어가지 않는다
@@ -107,7 +107,7 @@ Flyway 또는 크롤링 Batch로 적재. 거의 변경되지 않으며 모든 �
 - `Mercenary` — 용병 정보. `name`, `resistPierce`(저항깎), `elementValue`(속성값), 고용 재료, 이미지 URL. 가성비 계산기 대상
 
 ### Crawler (크롤링 집계 데이터) — 추가기능 범위
-geota/gerniverse 크롤링 결과 적재. 가성비 계산기의 가격 기본값으로 사용.
+geota 크롤링 결과 적재. 가성비 계산기의 가격 기본값으로 사용.
 
 - `MaterialPriceHistory` — 서버별 재료 월간 실거래가 집계. `avgPrice`, `minPrice`, `sampleCount`. IQR 이상치 제거 후 저장
 

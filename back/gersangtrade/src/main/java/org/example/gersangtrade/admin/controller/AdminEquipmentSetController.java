@@ -1,8 +1,10 @@
 package org.example.gersangtrade.admin.controller;
 
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.example.gersangtrade.admin.dto.request.ItemRestrictionAddRequest;
 import org.example.gersangtrade.admin.dto.response.ItemRestrictionResponse;
+import org.example.gersangtrade.admin.dto.set.AdminSetCreateRequest;
 import org.example.gersangtrade.admin.dto.set.AdminSetResponse;
 import org.example.gersangtrade.admin.dto.set.AdminSetUpdateRequest;
 import org.example.gersangtrade.admin.service.AdminEquipmentSetService;
@@ -33,6 +35,14 @@ import java.util.List;
 public class AdminEquipmentSetController {
 
     private final AdminEquipmentSetService adminEquipmentSetService;
+
+    /** 세트 신규 등록 — 이름 중복 시 409. */
+    @PostMapping
+    public ResponseEntity<AdminSetResponse> createSet(
+            @Valid @RequestBody AdminSetCreateRequest req) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(adminEquipmentSetService.createSet(req));
+    }
 
     /**
      * 세트 목록.

@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.example.gersangtrade.admin.dto.enums.ItemCleanupCriterion;
 import org.example.gersangtrade.admin.dto.request.EquipmentDetailUpdateRequest;
 import org.example.gersangtrade.admin.dto.request.ItemBulkDeleteRequest;
+import org.example.gersangtrade.admin.dto.request.ItemCreateRequest;
 import org.example.gersangtrade.admin.dto.request.ItemStatReplaceRequest;
 import org.example.gersangtrade.admin.dto.request.ItemUpdateRequest;
 import org.example.gersangtrade.admin.dto.request.SkillEffectReplaceRequest;
@@ -31,6 +32,7 @@ import org.example.gersangtrade.domain.catalog.EquipmentItem;
 import org.example.gersangtrade.domain.catalog.EquipmentSet;
 import org.example.gersangtrade.domain.catalog.Item;
 import org.example.gersangtrade.domain.catalog.ItemMercenaryRestriction;
+import org.example.gersangtrade.domain.catalog.MaterialItem;
 import org.example.gersangtrade.domain.catalog.ItemSkill;
 import org.example.gersangtrade.domain.catalog.ItemSkillEffect;
 import org.example.gersangtrade.domain.catalog.ItemSkillMapping;
@@ -97,6 +99,71 @@ public class ItemAdminService {
 
         return page.map(item -> ItemAdminResponse.of(item,
                 statCounts.getOrDefault(item.getId(), 0L).intValue()));
+    }
+
+    // ── 아이템 신규 등록 ────────────────────────────────────────────────────────
+
+    /**
+     * 아이템을 신규 등록한다.
+     * type=EQUIPMENT이면 slot, equipmentKind가 필수다.
+     * stats가 있으면 ItemStat으로 저장한다 (element null→NONE, scope null→SELF).
+     */
+    @Transactional
+    @Caching(evict = {
+            @CacheEvict(value = CacheConfig.EQUIPMENT_SLOT, allEntries = true),
+            @CacheEvict(value = CacheConfig.RITUALS_BY_ITEM, allEntries = true)
+    })
+    public ItemDetailAdminResponse createItem(ItemCreateRequest req) {
+        // EQUIPMENT 타입이면 slot, equipmentKind 필수 검증
+        if (req.type() == ItemType.EQUIPMENT) {
+            if (req.slot() == null || req.equipmentKind() == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "EQUIPMENT 타입은 slot과 equipmentKind가 필수입니다.");
+            }
+        }
+
+        // Item 저장
+        Item item = itemRepository.save(Item.builder()
+                .name(req.name())
+                .type(req.type())
+                .tradeCategory(req.tradeCategory())
+                .build());
+
+        // 타입별 서브 엔티티 저장
+        if (req.type() == ItemType.MATERIAL) {
+            materialItemRepository.save(MaterialItem.builder()
+                    .item(item)
+                    .build());
+        } else if (req.type() == ItemType.EQUIPMENT) {
+            EquipmentSet equipmentSet = null;
+            if (req.equipmentSetId() != null) {
+                equipmentSet = equipmentSetRepository.findById(req.equipmentSetId())
+                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                                "존재하지 않는 세트 ID입니다: " + req.equipmentSetId()));
+            }
+            equipmentItemRepository.save(EquipmentItem.builder()
+                    .item(item)
+                    .slot(req.slot())
+                    .equipmentKind(req.equipmentKind())
+                    .equipmentSet(equipmentSet)
+                    .ritualApplicable(req.ritualApplicable())
+                    .hasSlotOption(req.hasSlotOption())
+                    .build());
+        }
+
+        // 스탯 저장 (있는 경우)
+        if (req.stats() != null) {
+            req.stats().forEach(e -> itemStatRepository.save(ItemStat.builder()
+                    .item(item)
+                    .statType(e.statType())
+                    .element(e.element() != null ? e.element() : Element.NONE)
+                    .value(e.value())
+                    .statUnit(StatUnit.FLAT)
+                    .scope(e.scope() != null ? e.scope() : BuffTarget.SELF)
+                    .build()));
+        }
+
+        return buildDetail(item.getId());
     }
 
     /**

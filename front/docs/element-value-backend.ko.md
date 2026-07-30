@@ -63,7 +63,7 @@ int memberElementValue = stats.getOrDefault(StatType.ELEMENT_VALUE, 0);
 |------|------|
 | 로드 | `mercenaryStatRepository.findByMercenaryIdIn()` → `StatType.ELEMENT_VALUE`만 base로 사용 |
 | 미사용 | `Mercenary.natureValue` 컬럼은 DPS·스탯 합산에 **포함되지 않음** |
-| 적재 | 크롤링(gerniverse/거상짱) 또는 시더 → `mercenary_stats` |
+| 적재 | 크롤링(거상짱) 또는 시더 → `mercenary_stats` |
 
 **주의**: 목록 API의 `elementValue`(= `natureValue`)와 DPS base가 DB 불일치 시 숫자가 다르게 보일 수 있음.
 

@@ -504,13 +504,12 @@ geota.co.kr 크롤링 결과를 IQR 이상치 제거 후 집계하는 테이블.
 | `ritualApplicable` | 주술 적용 가능 여부 |
 | `hasSlotOption` | `<홈이있는>` 버전 존재 여부 |
 
-> 두 필드 모두 gerniverse 상세 파싱 후 갱신. 기존 `RitualApplicability`로도 주술 가능 여부 판단 가능하나, 빠른 필터링을 위해 플래그 형태로도 보유.
+> 두 필드 모두 크롤링 후 갱신. 기존 `RitualApplicability`로도 주술 가능 여부 판단 가능하나, 빠른 필터링을 위해 플래그 형태로도 보유.
 
 ---
 
 ### 14.6 `Mercenary` / `MercenaryStat` / `MercenaryMaterial` — `docs/mercenary.md` 반영
 
-> 크롤링 전략 및 엔티티 상세는 `back/gersangtrade/docs/mercenary.md` 참고.
 > 모든 PK는 Long Auto Increment 사용.
 
 #### `Mercenary` (용병 마스터)
@@ -519,7 +518,7 @@ geota.co.kr 크롤링 결과를 IQR 이상치 제거 후 집계하는 테이블.
 |------|------|------|------|
 | `id` | Long (PK, AI) | NO | |
 | `name` | String (unique) | NO | 용병 풀네임. 예: "각성 군다리명왕" |
-| `key` | String (unique) | YES | gerniverse 내부 키. 상세 파싱 후 채워진다 |
+| `key` | String (unique) | YES | 용병 식별 키. 크롤링 후 채워진다 |
 | `category` | `MercenaryCategory` Enum | YES | 주인공/사천왕/각성사천왕/명왕/각성명왕/전설장수/신수/흉수/각성흉수/고용몬스터/전직몬스터/정령몬스터/각성장수/개조장수/2차장수/1차장수/용병 |
 | `nation` | `Nation` Enum | YES | 조선/중국/일본/대만/인도/NONE |
 | `nature` | `Nature` Enum | YES | 화/수/뇌/풍/토/NONE. 무속성은 NONE |
@@ -556,7 +555,7 @@ Phase 2 확장: `STRENGTH` / `VITALITY` / `DEXTERITY` / `INTELLECT` / `DEFENSE` 
 | `id` | Long (PK, AI) | NO | |
 | `result_mercenary_id` | FK → Mercenary | NO | 완성되는 용병 |
 | `material_mercenary_id` | FK → Mercenary | YES | 재료 용병. 아이템 재료이면 null |
-| `material_item_key` | String | YES | 재료 아이템명(gerniverse URL 디코딩). 용병 재료이면 null |
+| `material_item_key` | String | YES | 재료 아이템명. 용병 재료이면 null |
 | `quantity` | Integer | NO | |
 | `required_level` | Integer | YES | 전직 요구 레벨 |
 | `required_credit` | Integer | YES | 전직 요구 공헌도 |
@@ -726,13 +725,13 @@ TradeReview(reviewer=counterparty, target=poster,       revealAt=now+3일)
 
 #### `MercenaryCharacteristic` (용병 특성)
 
-각성 사천왕·명왕·주인공·전설장수의 특성 트리 노드. 전설장수 패시브도 이 엔티티로 통합 관리 (gerniverse RSC payload가 동일 구조로 제공).
+각성 사천왕·명왕·주인공·전설장수의 특성 트리 노드. 전설장수 패시브도 이 엔티티로 통합 관리.
 
 | 필드 | 타입 | Null | 설명 |
 |------|------|------|------|
 | `id` | Long (PK, AI) | NO | |
 | `mercenary_id` | FK → Mercenary | NO | |
-| `characteristic_key` | String (UNIQUE) | NO | gerniverse 내부 키. 크롤링 UPSERT 기준 |
+| `characteristic_key` | String (UNIQUE) | NO | 특성 식별 키. 크롤링 UPSERT 기준 |
 | `name` | String | NO | 특성명. 예: "광풍", "기습" |
 | `point` | Integer | YES | 포인트 비용. 각성 특성은 null |
 | `description` | String | YES | |
