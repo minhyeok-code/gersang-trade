@@ -11,7 +11,7 @@ import lombok.NoArgsConstructor;
  */
 @Entity
 @Table(
-        name = "item_skill_mappings",
+        name = "item_skill_mapping",
         uniqueConstraints = @UniqueConstraint(
                 name = "uq_item_skill_mapping",
                 columnNames = {"item_id", "skill_id"}

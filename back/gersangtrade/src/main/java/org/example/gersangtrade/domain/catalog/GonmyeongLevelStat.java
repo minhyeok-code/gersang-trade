@@ -16,7 +16,7 @@ import org.example.gersangtrade.domain.catalog.enums.StatType;
  */
 @Entity
 @Table(
-        name = "gonmyeong_level_stats",
+        name = "gonmyeong_level_stat",
         uniqueConstraints = @UniqueConstraint(columnNames = {"level", "stat_type"})
 )
 @Getter

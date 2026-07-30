@@ -16,7 +16,7 @@ import org.example.gersangtrade.domain.catalog.enums.StatType;
  * startValue/incrementPerLevels/incrementValue가 null이면 계산 스킵 (미확정 데이터).
  */
 @Entity
-@Table(name = "legend_general_passives")
+@Table(name = "legend_general_passive")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class LegendGeneralPassive {

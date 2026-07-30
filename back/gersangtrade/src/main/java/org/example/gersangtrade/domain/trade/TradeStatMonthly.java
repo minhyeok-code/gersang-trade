@@ -15,7 +15,7 @@ import org.example.gersangtrade.domain.catalog.Server;
  */
 @Entity
 @Table(
-        name = "trade_stat_monthlies",
+        name = "trade_stat_monthly",
         uniqueConstraints = @UniqueConstraint(
                 name = "uq_trade_stat_monthly_month_key_server",
                 columnNames = {"stat_month", "stat_key", "server_id"}

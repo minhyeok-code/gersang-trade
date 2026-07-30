@@ -19,7 +19,7 @@ import java.time.LocalDateTime;
  * cancelled=true인 레코드는 통계 집계 시 제외된다.
  */
 @Entity
-@Table(name = "trade_confirmeds")
+@Table(name = "trade_confirmed")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class TradeConfirmed {

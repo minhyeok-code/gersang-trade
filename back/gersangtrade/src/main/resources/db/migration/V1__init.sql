@@ -1,7 +1,6 @@
 -- ============================================================
 -- V1__init.sql — 전체 스키마 초기화
 -- 엔티티 기반으로 작성. 외래키 의존 순서에 따라 테이블 생성.
--- 모든 테이블명 복수형.
 -- ============================================================
 
 -- ============================================================
@@ -60,7 +59,7 @@ CREATE TABLE spirits (
     PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE deck_buff_sources (
+CREATE TABLE deck_buff_source (
     id          BIGINT      NOT NULL AUTO_INCREMENT,
     source_type VARCHAR(20) NOT NULL,
     source_id   BIGINT      NOT NULL,
@@ -68,22 +67,22 @@ CREATE TABLE deck_buff_sources (
     PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE gonmyeong_level_stats (
+CREATE TABLE gonmyeong_level_stat (
     id        BIGINT      NOT NULL AUTO_INCREMENT,
     level     INT         NOT NULL,
     stat_type VARCHAR(30) NOT NULL,
     value     INT         NOT NULL,
     PRIMARY KEY (id),
-    UNIQUE KEY uq_gonmyeong_level_stats (level, stat_type)
+    UNIQUE KEY uq_gonmyeong_level_stat (level, stat_type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE gaho_level_stats (
+CREATE TABLE gaho_level_stat (
     id        BIGINT      NOT NULL AUTO_INCREMENT,
     level     INT         NOT NULL,
     stat_type VARCHAR(30) NOT NULL,
     value     INT         NOT NULL,
     PRIMARY KEY (id),
-    UNIQUE KEY uq_gaho_level_stats (level, stat_type)
+    UNIQUE KEY uq_gaho_level_stat (level, stat_type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
@@ -123,25 +122,14 @@ CREATE TABLE item_skills (
     CONSTRAINT uq_item_skills_skill_name UNIQUE (skill_name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE item_skill_mappings (
+CREATE TABLE item_skill_mapping (
     id       BIGINT NOT NULL AUTO_INCREMENT,
     item_id  BIGINT NOT NULL,
     skill_id BIGINT NOT NULL,
     PRIMARY KEY (id),
-    CONSTRAINT uq_item_skill_mappings UNIQUE (item_id, skill_id),
+    CONSTRAINT uq_item_skill_mapping UNIQUE (item_id, skill_id),
     CONSTRAINT fk_ism_item  FOREIGN KEY (item_id)  REFERENCES items (id),
     CONSTRAINT fk_ism_skill FOREIGN KEY (skill_id) REFERENCES item_skills (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-CREATE TABLE item_skill_effects (
-    id         BIGINT      NOT NULL AUTO_INCREMENT,
-    skill_id   BIGINT      NOT NULL,
-    stat_key   VARCHAR(30) NOT NULL,
-    stat_value INT         NOT NULL,
-    value_type VARCHAR(10) NOT NULL,
-    PRIMARY KEY (id),
-    CONSTRAINT uq_item_skill_effect_skill_stat UNIQUE (skill_id, stat_key),
-    CONSTRAINT fk_ise_skill FOREIGN KEY (skill_id) REFERENCES item_skills (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
@@ -197,17 +185,6 @@ CREATE TABLE mercenary_skills (
     CONSTRAINT fk_mercenary_skills_merc FOREIGN KEY (mercenary_id) REFERENCES mercenaries (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE mercenary_skill_effects (
-    id         BIGINT      NOT NULL AUTO_INCREMENT,
-    skill_id   BIGINT      NOT NULL,
-    stat_key   VARCHAR(30) NOT NULL,
-    stat_value INT         NOT NULL,
-    value_type VARCHAR(10) NOT NULL,
-    PRIMARY KEY (id),
-    CONSTRAINT uq_skill_effect_skill_stat UNIQUE (skill_id, stat_key),
-    CONSTRAINT fk_mse_skill FOREIGN KEY (skill_id) REFERENCES mercenary_skills (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
 CREATE TABLE mercenary_characteristics (
     id                           BIGINT       NOT NULL AUTO_INCREMENT,
     mercenary_id                 BIGINT       NOT NULL,
@@ -235,7 +212,7 @@ CREATE TABLE mercenary_characteristic_levels (
     CONSTRAINT fk_merc_char_level_char FOREIGN KEY (characteristic_id) REFERENCES mercenary_characteristics (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE player_character_details (
+CREATE TABLE player_character_detail (
     id            BIGINT      NOT NULL AUTO_INCREMENT,
     mercenary_id  BIGINT      NOT NULL,
     nation        VARCHAR(20) NOT NULL,
@@ -411,16 +388,16 @@ CREATE TABLE spirit_buffs (
 -- 8. 전설장수
 -- ============================================================
 
-CREATE TABLE legend_generals (
+CREATE TABLE legend_general (
     id            BIGINT      NOT NULL AUTO_INCREMENT,
     mercenary_id  BIGINT      NOT NULL,
     type          VARCHAR(10) NOT NULL,
     PRIMARY KEY (id),
-    UNIQUE KEY uq_legend_generals_merc (mercenary_id),
-    CONSTRAINT fk_legend_generals_merc FOREIGN KEY (mercenary_id) REFERENCES mercenaries (id)
+    UNIQUE KEY uq_legend_general_merc (mercenary_id),
+    CONSTRAINT fk_legend_general_merc FOREIGN KEY (mercenary_id) REFERENCES mercenaries (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE legend_general_passives (
+CREATE TABLE legend_general_passive (
     id                    BIGINT      NOT NULL AUTO_INCREMENT,
     legend_general_id     BIGINT      NOT NULL,
     stat_type             VARCHAR(30) NOT NULL,
@@ -433,10 +410,10 @@ CREATE TABLE legend_general_passives (
     increment_value       FLOAT,
     max_value             FLOAT,
     PRIMARY KEY (id),
-    CONSTRAINT fk_lgp_legend_generals FOREIGN KEY (legend_general_id) REFERENCES legend_generals (id)
+    CONSTRAINT fk_lgp_legend_general FOREIGN KEY (legend_general_id) REFERENCES legend_general (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE legend_general_characteristics (
+CREATE TABLE legend_general_characteristic (
     id                      BIGINT      NOT NULL AUTO_INCREMENT,
     legend_general_id       BIGINT      NOT NULL,
     characteristic_index    INT         NOT NULL,
@@ -444,7 +421,7 @@ CREATE TABLE legend_general_characteristics (
     level                   INT         NOT NULL,
     PRIMARY KEY (id),
     UNIQUE KEY uq_lgc_gen_index_level (legend_general_id, characteristic_index, level),
-    CONSTRAINT fk_lgc_legend_generals FOREIGN KEY (legend_general_id) REFERENCES legend_generals (id)
+    CONSTRAINT fk_lgc_legend_general FOREIGN KEY (legend_general_id) REFERENCES legend_general (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE characteristic_effects (
@@ -456,46 +433,14 @@ CREATE TABLE characteristic_effects (
     value              FLOAT       NOT NULL,
     target             VARCHAR(10) NOT NULL,
     PRIMARY KEY (id),
-    CONSTRAINT fk_ce_characteristic FOREIGN KEY (characteristic_id) REFERENCES legend_general_characteristics (id)
+    CONSTRAINT fk_ce_characteristic FOREIGN KEY (characteristic_id) REFERENCES legend_general_characteristic (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
--- 9. 스킬 계수
+-- 9. 덱 버프 소스
 -- ============================================================
 
-CREATE TABLE skill_coefficients (
-    id                   BIGINT       NOT NULL AUTO_INCREMENT,
-    mercenary_skill_id   BIGINT,
-    item_skill_id        BIGINT,
-    set_granted_skill_id BIGINT,
-    row_id               VARCHAR(100),
-    coef_str             FLOAT        NOT NULL,
-    coef_dex             FLOAT        NOT NULL,
-    coef_vit             FLOAT        NOT NULL,
-    coef_int             FLOAT        NOT NULL,
-    coef_atk             FLOAT        NOT NULL,
-    coef_lvl             FLOAT        NOT NULL,
-    hit_count            INT          NOT NULL,
-    damage_range_factor  FLOAT        NOT NULL,
-    skill_type           VARCHAR(20),
-    casts_per_second     FLOAT,
-    tick_interval_ms     INT,
-    confidence           VARCHAR(20),
-    measurement_note     TEXT,
-    PRIMARY KEY (id),
-    CONSTRAINT uq_skill_coefficients_row_id UNIQUE (row_id),
-    CONSTRAINT chk_skill_coef_one_skill
-        CHECK (mercenary_skill_id IS NOT NULL OR item_skill_id IS NOT NULL OR set_granted_skill_id IS NOT NULL),
-    CONSTRAINT fk_sc_merc_skill  FOREIGN KEY (mercenary_skill_id)   REFERENCES mercenary_skills (id),
-    CONSTRAINT fk_sc_item_skill  FOREIGN KEY (item_skill_id)        REFERENCES item_skills (id),
-    CONSTRAINT fk_sc_set_skill   FOREIGN KEY (set_granted_skill_id) REFERENCES set_granted_skills (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- ============================================================
--- 10. 덱 버프 소스
--- ============================================================
-
-CREATE TABLE deck_buffs (
+CREATE TABLE deck_buff (
     id          BIGINT      NOT NULL AUTO_INCREMENT,
     source_id   BIGINT      NOT NULL,
     stat_type   VARCHAR(30) NOT NULL,
@@ -504,11 +449,11 @@ CREATE TABLE deck_buffs (
     value       FLOAT       NOT NULL,
     target      VARCHAR(10) NOT NULL,
     PRIMARY KEY (id),
-    CONSTRAINT fk_deck_buffs_source FOREIGN KEY (source_id) REFERENCES deck_buff_sources (id)
+    CONSTRAINT fk_deck_buff_source FOREIGN KEY (source_id) REFERENCES deck_buff_source (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
--- 11. 몬스터
+-- 10. 몬스터
 -- ============================================================
 
 CREATE TABLE monsters (
@@ -526,7 +471,7 @@ CREATE TABLE monsters (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
--- 12. 사용자
+-- 11. 사용자
 -- ============================================================
 
 CREATE TABLE users (
@@ -589,7 +534,7 @@ CREATE TABLE user_watch_targets (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
--- 13. 덱
+-- 12. 덱
 -- ============================================================
 
 CREATE TABLE user_decks (
@@ -610,8 +555,8 @@ CREATE TABLE user_decks (
     CONSTRAINT fk_user_decks_user      FOREIGN KEY (user_id)             REFERENCES users (id),
     CONSTRAINT fk_user_decks_spirit1   FOREIGN KEY (spirit_1_id)         REFERENCES spirits (id),
     CONSTRAINT fk_user_decks_spirit2   FOREIGN KEY (spirit_2_id)         REFERENCES spirits (id),
-    CONSTRAINT fk_user_decks_jinbeop   FOREIGN KEY (jinbeop_source_id)   REFERENCES deck_buff_sources (id),
-    CONSTRAINT fk_user_decks_cheungjin FOREIGN KEY (cheungjin_source_id) REFERENCES deck_buff_sources (id)
+    CONSTRAINT fk_user_decks_jinbeop   FOREIGN KEY (jinbeop_source_id)   REFERENCES deck_buff_source (id),
+    CONSTRAINT fk_user_decks_cheungjin FOREIGN KEY (cheungjin_source_id) REFERENCES deck_buff_source (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE user_deck_members (
@@ -676,7 +621,7 @@ CREATE TABLE user_deck_member_characteristics (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
--- 14. 거래 등록
+-- 13. 거래 등록
 -- ============================================================
 
 CREATE TABLE trade_listings (
@@ -744,7 +689,7 @@ CREATE TABLE bundle_equipment_rituals (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
--- 15. 구매 희망
+-- 14. 구매 희망
 -- ============================================================
 
 CREATE TABLE wanted_listings (
@@ -793,7 +738,7 @@ CREATE TABLE wanted_ritual_conditions (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
--- 16. 거래 신청 및 확정
+-- 15. 거래 신청 및 확정
 -- ============================================================
 
 CREATE TABLE trade_applications (
@@ -810,7 +755,7 @@ CREATE TABLE trade_applications (
     CONSTRAINT fk_trade_app_buyer   FOREIGN KEY (buyer_id)   REFERENCES users (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE trade_confirmeds (
+CREATE TABLE trade_confirmed (
     id                  BIGINT       NOT NULL AUTO_INCREMENT,
     chat_room_id        BIGINT,
     seller_id           BIGINT,
@@ -841,12 +786,12 @@ CREATE TABLE trade_reviews (
     PRIMARY KEY (id),
     CONSTRAINT uq_trade_reviews_confirmed_reviewer UNIQUE (trade_confirmed_id, reviewer_id),
     KEY idx_trade_reviews_reveal_at (reveal_at, is_published),
-    CONSTRAINT fk_tr_confirmed FOREIGN KEY (trade_confirmed_id) REFERENCES trade_confirmeds (id),
+    CONSTRAINT fk_tr_confirmed FOREIGN KEY (trade_confirmed_id) REFERENCES trade_confirmed (id),
     CONSTRAINT fk_tr_reviewer  FOREIGN KEY (reviewer_id)        REFERENCES users (id),
     CONSTRAINT fk_tr_target    FOREIGN KEY (target_id)          REFERENCES users (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE trade_stat_dailies (
+CREATE TABLE trade_stat_daily (
     id           BIGINT      NOT NULL AUTO_INCREMENT,
     stat_date    DATE        NOT NULL,
     server_id    INT         NOT NULL,
@@ -857,11 +802,11 @@ CREATE TABLE trade_stat_dailies (
     price_min    BIGINT      NOT NULL,
     price_max    BIGINT      NOT NULL,
     PRIMARY KEY (id),
-    CONSTRAINT uq_trade_stat_dailies_date_key_server UNIQUE (stat_date, stat_key, server_id),
+    CONSTRAINT uq_trade_stat_daily_date_key_server UNIQUE (stat_date, stat_key, server_id),
     CONSTRAINT fk_tsd_server FOREIGN KEY (server_id) REFERENCES servers (server_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE trade_stat_monthlies (
+CREATE TABLE trade_stat_monthly (
     id           BIGINT      NOT NULL AUTO_INCREMENT,
     stat_month   VARCHAR(7)  NOT NULL,
     server_id    INT         NOT NULL,
@@ -872,11 +817,11 @@ CREATE TABLE trade_stat_monthlies (
     price_min    BIGINT,
     price_max    BIGINT,
     PRIMARY KEY (id),
-    CONSTRAINT uq_trade_stat_monthlies_month_key_server UNIQUE (stat_month, stat_key, server_id),
+    CONSTRAINT uq_trade_stat_monthly_month_key_server UNIQUE (stat_month, stat_key, server_id),
     CONSTRAINT fk_tsm_server FOREIGN KEY (server_id) REFERENCES servers (server_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE value_metric_monthlies (
+CREATE TABLE value_metric_monthly (
     id              BIGINT      NOT NULL AUTO_INCREMENT,
     item_id         BIGINT      NOT NULL,
     month           VARCHAR(7)  NOT NULL,
@@ -887,12 +832,12 @@ CREATE TABLE value_metric_monthlies (
     value_for_money DOUBLE      NOT NULL,
     trade_count     INT         NOT NULL,
     PRIMARY KEY (id),
-    UNIQUE KEY uq_value_metric_monthlies (month, item_id, stat_type, element),
+    UNIQUE KEY uq_value_metric_monthly (month, item_id, stat_type, element),
     CONSTRAINT fk_vmm_item FOREIGN KEY (item_id) REFERENCES items (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
--- 17. 채팅
+-- 16. 채팅
 -- ============================================================
 
 CREATE TABLE chat_rooms (
@@ -917,8 +862,8 @@ CREATE TABLE chat_rooms (
     CONSTRAINT fk_chat_rooms_counterparty FOREIGN KEY (counterparty_id) REFERENCES users (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- trade_confirmeds의 chat_room_id FK는 chat_rooms 생성 후 추가
-ALTER TABLE trade_confirmeds
+-- trade_confirmed의 chat_room_id FK는 chat_rooms 생성 후 추가
+ALTER TABLE trade_confirmed
     ADD CONSTRAINT fk_tc_chat_room FOREIGN KEY (chat_room_id) REFERENCES chat_rooms (id) ON DELETE SET NULL;
 
 CREATE TABLE chat_messages (
@@ -940,7 +885,7 @@ CREATE TABLE chat_messages (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
--- 18. 알림 / 신고
+-- 17. 알림 / 신고
 -- ============================================================
 
 CREATE TABLE notifications (
@@ -991,7 +936,7 @@ CREATE TABLE keyword_blacklists (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================================
--- 19. 가성비 계산기
+-- 18. 가성비 계산기
 -- ============================================================
 
 CREATE TABLE deck_snapshots (
@@ -1043,33 +988,4 @@ CREATE TABLE dps_value_evaluations (
     CONSTRAINT fk_dps_eval_baseline_snapshot FOREIGN KEY (baseline_deck_snapshot_id) REFERENCES deck_snapshots (id),
     CONSTRAINT fk_dps_eval_scenario_snapshot FOREIGN KEY (scenario_deck_snapshot_id) REFERENCES deck_snapshots (id),
     CONSTRAINT fk_dps_eval_server            FOREIGN KEY (server_id)                 REFERENCES servers (server_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- ============================================================
--- 20. 사냥 허브 (클리어타임)
--- ============================================================
-
-CREATE TABLE user_clear_times (
-    id                       BIGINT      NOT NULL AUTO_INCREMENT,
-    user_id                  BIGINT      NOT NULL,
-    monster_id               BIGINT      NOT NULL,
-    deck_id                  BIGINT      NOT NULL,
-    deck_snapshot_id         BIGINT      NOT NULL,
-    total_resist_pierce      INT,
-    total_element_pierce     INT,
-    raw_dps                  BIGINT,
-    adjust_dps               BIGINT,
-    final_dps                BIGINT      NOT NULL,
-    resist_after_debuff      INT,
-    effective_monster_element INT,
-    resist_pass_rate         DOUBLE,
-    clear_time_seconds       INT         NOT NULL,
-    is_public                BOOLEAN     NOT NULL DEFAULT TRUE,
-    status                   VARCHAR(20) NOT NULL,
-    exp_granted              BOOLEAN     NOT NULL,
-    recorded_at              DATETIME(6) NOT NULL,
-    PRIMARY KEY (id),
-    CONSTRAINT fk_uct_user          FOREIGN KEY (user_id)         REFERENCES users (id),
-    CONSTRAINT fk_uct_monster       FOREIGN KEY (monster_id)      REFERENCES monsters (id),
-    CONSTRAINT fk_uct_deck_snapshot FOREIGN KEY (deck_snapshot_id) REFERENCES deck_snapshots (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
