@@ -64,6 +64,10 @@ dependencies {
     // 헬스체크 엔드포인트 (/actuator/health)
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
 
+    // Flyway (DB 마이그레이션)
+    implementation 'org.flywaydb:flyway-core'
+    implementation 'org.flywaydb:flyway-mysql'
+
     // HTML 크롤링 (거상짱 정적 HTML 파싱)
     implementation 'org.jsoup:jsoup:1.17.2'
 
