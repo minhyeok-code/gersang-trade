@@ -90,8 +90,10 @@ jobs:
             done
 
             # 6. nginx upstream 전환 (무중단)
+            #    상시 서비스(db/front/nginx)를 먼저 보장 — 최초 배포/재기동 시에도 nginx가 뜨도록
             echo "upstream spring_boot { server app-$NEXT:8080; }" > nginx/upstream.conf
-            $COMPOSE exec nginx nginx -s reload
+            $COMPOSE up -d db front nginx
+            $COMPOSE exec nginx nginx -s reload || true
             echo "[원격] nginx → app-$NEXT 전환 완료"
 
             # 7. 이전 슬롯 종료
