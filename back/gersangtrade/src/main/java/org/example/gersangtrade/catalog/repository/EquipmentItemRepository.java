@@ -85,10 +85,11 @@ public interface EquipmentItemRepository extends JpaRepository<EquipmentItem, Lo
      */
     @Query("""
             SELECT ei FROM EquipmentItem ei
-            JOIN FETCH ei.item
+            JOIN FETCH ei.item i
             LEFT JOIN FETCH ei.equipmentSet
             LEFT JOIN FETCH ei.mercenary
             WHERE ei.equipSlot = :slot
+              AND i.hidden = false
             """)
     List<EquipmentItem> findByEquipSlot(@Param("slot") EquipSlot slot);
 
@@ -98,19 +99,21 @@ public interface EquipmentItemRepository extends JpaRepository<EquipmentItem, Lo
      */
     @Query("""
             SELECT ei FROM EquipmentItem ei
-            JOIN FETCH ei.item
+            JOIN FETCH ei.item i
             LEFT JOIN FETCH ei.equipmentSet
             LEFT JOIN FETCH ei.mercenary
             WHERE ei.slot = :slot
+              AND i.hidden = false
             """)
     List<EquipmentItem> findBySlotWithItem(@Param("slot") EquipmentSlot slot);
 
     /** 전체 장비 목록 조회 (덱 설정 페이지 초기 로딩용) */
     @Query("""
             SELECT ei FROM EquipmentItem ei
-            JOIN FETCH ei.item
+            JOIN FETCH ei.item i
             LEFT JOIN FETCH ei.equipmentSet
             LEFT JOIN FETCH ei.mercenary
+            WHERE i.hidden = false
             """)
     List<EquipmentItem> findAllWithItem();
 
@@ -130,7 +133,8 @@ public interface EquipmentItemRepository extends JpaRepository<EquipmentItem, Lo
             LEFT JOIN FETCH ei.equipmentSet
             LEFT JOIN FETCH ei.mercenary
             LEFT JOIN ItemMercenaryRestriction r ON r.item = i AND r.mercenary.id = :mercenaryId
-            WHERE ei.mercenary.id = :mercenaryId OR r.id IS NOT NULL
+            WHERE (ei.mercenary.id = :mercenaryId OR r.id IS NOT NULL)
+              AND i.hidden = false
             """)
     List<EquipmentItem> findExclusiveEquipmentByMercenaryId(@Param("mercenaryId") Long mercenaryId);
 }

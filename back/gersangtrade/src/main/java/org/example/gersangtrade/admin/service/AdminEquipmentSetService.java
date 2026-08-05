@@ -4,16 +4,27 @@ import lombok.RequiredArgsConstructor;
 import org.example.gersangtrade.admin.dto.request.ItemRestrictionAddRequest;
 import org.example.gersangtrade.admin.dto.response.ItemRestrictionResponse;
 import org.example.gersangtrade.admin.dto.set.AdminSetCreateRequest;
+import org.example.gersangtrade.admin.dto.set.AdminSetDetailResponse;
 import org.example.gersangtrade.admin.dto.set.AdminSetResponse;
 import org.example.gersangtrade.admin.dto.set.AdminSetUpdateRequest;
+import org.example.gersangtrade.admin.dto.set.SetEffectAddRequest;
+import org.example.gersangtrade.admin.dto.set.SetEffectResponse;
+import org.example.gersangtrade.admin.dto.set.SetPieceAddRequest;
+import org.example.gersangtrade.admin.dto.set.SetPieceResponse;
 import org.example.gersangtrade.catalog.repository.EquipmentItemRepository;
+import org.example.gersangtrade.catalog.repository.EquipmentSetEffectRepository;
+import org.example.gersangtrade.catalog.repository.EquipmentSetPieceRepository;
 import org.example.gersangtrade.catalog.repository.EquipmentSetRepository;
 import org.example.gersangtrade.catalog.repository.ItemMercenaryRestrictionRepository;
 import org.example.gersangtrade.catalog.repository.MercenaryRepository;
 import org.example.gersangtrade.domain.catalog.EquipmentItem;
 import org.example.gersangtrade.domain.catalog.EquipmentSet;
+import org.example.gersangtrade.domain.catalog.EquipmentSetEffect;
+import org.example.gersangtrade.domain.catalog.EquipmentSetPiece;
 import org.example.gersangtrade.domain.catalog.ItemMercenaryRestriction;
 import org.example.gersangtrade.domain.catalog.Mercenary;
+import org.example.gersangtrade.domain.catalog.enums.BuffTarget;
+import org.example.gersangtrade.domain.catalog.enums.Element;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -31,6 +42,8 @@ public class AdminEquipmentSetService {
     private final EquipmentItemRepository equipmentItemRepository;
     private final ItemMercenaryRestrictionRepository itemMercenaryRestrictionRepository;
     private final MercenaryRepository mercenaryRepository;
+    private final EquipmentSetPieceRepository equipmentSetPieceRepository;
+    private final EquipmentSetEffectRepository equipmentSetEffectRepository;
 
     // ── 세트 신규 등록 ────────────────────────────────────────────────────────
 
@@ -114,6 +127,83 @@ public class AdminEquipmentSetService {
                 .toList();
 
         return created.stream().map(ItemRestrictionResponse::of).toList();
+    }
+
+    // ── 세트 상세 (피스·효과 포함) ──────────────────────────────────────────────
+
+    /** 세트 상세 — 기본 정보 + 피스 목록 + 효과 목록. */
+    @Transactional(readOnly = true)
+    public AdminSetDetailResponse getSetDetail(Long setId) {
+        EquipmentSet set = findOrThrow(setId);
+        List<SetPieceResponse> pieces = equipmentSetPieceRepository
+                .findWithItemByEquipmentSetId(setId)
+                .stream().map(SetPieceResponse::from).toList();
+        List<SetEffectResponse> effects = equipmentSetEffectRepository
+                .findByEquipmentSetId(setId)
+                .stream().map(SetEffectResponse::from).toList();
+        return AdminSetDetailResponse.of(set, pieces, effects);
+    }
+
+    // ── 피스 ────────────────────────────────────────────────────────────────────
+
+    /** 세트에 피스(슬롯+아이템+개수) 추가. */
+    @Transactional
+    public SetPieceResponse addPiece(Long setId, SetPieceAddRequest req) {
+        EquipmentSet set = findOrThrow(setId);
+        EquipmentItem item = equipmentItemRepository.findWithItemByItemId(req.equipmentItemId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "장비 아이템을 찾을 수 없습니다: " + req.equipmentItemId()));
+        EquipmentSetPiece piece = EquipmentSetPiece.builder()
+                .equipmentSet(set)
+                .slot(req.slot())
+                .equipmentItem(item)
+                .pieceCount(req.pieceCount() != null ? req.pieceCount() : 1)
+                .build();
+        equipmentSetPieceRepository.save(piece);
+        return SetPieceResponse.from(piece);
+    }
+
+    /** 세트 피스 삭제. */
+    @Transactional
+    public void deletePiece(Long setId, Long pieceId) {
+        EquipmentSetPiece piece = equipmentSetPieceRepository.findById(pieceId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "피스를 찾을 수 없습니다: " + pieceId));
+        if (!piece.getEquipmentSet().getId().equals(setId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "해당 세트의 피스가 아닙니다.");
+        }
+        equipmentSetPieceRepository.delete(piece);
+    }
+
+    // ── 효과 ────────────────────────────────────────────────────────────────────
+
+    /** 세트에 효과(임계 피스수별 스탯 보너스) 추가. */
+    @Transactional
+    public SetEffectResponse addEffect(Long setId, SetEffectAddRequest req) {
+        EquipmentSet set = findOrThrow(setId);
+        EquipmentSetEffect effect = EquipmentSetEffect.builder()
+                .equipmentSet(set)
+                .requiredPieces(req.requiredPieces())
+                .statType(req.statType())
+                .statValue(req.statValue())
+                .statUnit(req.statUnit())
+                .element(req.element() != null ? req.element() : Element.NONE)
+                .scope(req.scope() != null ? req.scope() : BuffTarget.SELF)
+                .build();
+        equipmentSetEffectRepository.save(effect);
+        return SetEffectResponse.from(effect);
+    }
+
+    /** 세트 효과 삭제. */
+    @Transactional
+    public void deleteEffect(Long setId, Long effectId) {
+        EquipmentSetEffect effect = equipmentSetEffectRepository.findById(effectId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "효과를 찾을 수 없습니다: " + effectId));
+        if (!effect.getEquipmentSet().getId().equals(setId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "해당 세트의 효과가 아닙니다.");
+        }
+        equipmentSetEffectRepository.delete(effect);
     }
 
     private boolean isDuplicate(Long itemId, ItemRestrictionAddRequest req) {

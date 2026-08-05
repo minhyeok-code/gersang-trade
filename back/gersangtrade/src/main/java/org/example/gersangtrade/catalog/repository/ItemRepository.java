@@ -31,6 +31,10 @@ public interface ItemRepository extends JpaRepository<Item, Long> {
     /** 아이템명으로 단건 조회 — 크롤러 UPSERT 패턴에서 기존 레코드 확인에 사용된다 */
     Optional<Item> findByName(String name);
 
+    /** 공백 무시 이름 매칭 — 가이드 주입 시 "고급 천왕검" ↔ "고급천왕검" 흡수 (0/1/N건 판별용) */
+    @Query(value = "SELECT * FROM items WHERE REPLACE(name, ' ', '') = :despaced", nativeQuery = true)
+    List<Item> findByNameSpaceInsensitive(@Param("despaced") String despaced);
+
     /** 이름에 특정 문자열이 포함된 아이템 목록 — ItemStat correction 등에서 사용 */
     List<Item> findByNameContaining(String keyword);
 

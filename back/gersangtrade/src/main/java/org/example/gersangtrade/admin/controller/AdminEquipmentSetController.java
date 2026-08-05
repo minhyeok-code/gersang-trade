@@ -5,8 +5,13 @@ import lombok.RequiredArgsConstructor;
 import org.example.gersangtrade.admin.dto.request.ItemRestrictionAddRequest;
 import org.example.gersangtrade.admin.dto.response.ItemRestrictionResponse;
 import org.example.gersangtrade.admin.dto.set.AdminSetCreateRequest;
+import org.example.gersangtrade.admin.dto.set.AdminSetDetailResponse;
 import org.example.gersangtrade.admin.dto.set.AdminSetResponse;
 import org.example.gersangtrade.admin.dto.set.AdminSetUpdateRequest;
+import org.example.gersangtrade.admin.dto.set.SetEffectAddRequest;
+import org.example.gersangtrade.admin.dto.set.SetEffectResponse;
+import org.example.gersangtrade.admin.dto.set.SetPieceAddRequest;
+import org.example.gersangtrade.admin.dto.set.SetPieceResponse;
 import org.example.gersangtrade.admin.service.AdminEquipmentSetService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -60,6 +65,44 @@ public class AdminEquipmentSetController {
     @GetMapping("/{id}")
     public ResponseEntity<AdminSetResponse> getSet(@PathVariable Long id) {
         return ResponseEntity.ok(adminEquipmentSetService.getSet(id));
+    }
+
+    /** 세트 상세 — 피스·효과 포함 (편집 화면용) */
+    @GetMapping("/{id}/detail")
+    public ResponseEntity<AdminSetDetailResponse> getSetDetail(@PathVariable Long id) {
+        return ResponseEntity.ok(adminEquipmentSetService.getSetDetail(id));
+    }
+
+    /** 피스 추가 */
+    @PostMapping("/{id}/pieces")
+    public ResponseEntity<SetPieceResponse> addPiece(
+            @PathVariable Long id,
+            @Valid @RequestBody SetPieceAddRequest req) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(adminEquipmentSetService.addPiece(id, req));
+    }
+
+    /** 피스 삭제 */
+    @DeleteMapping("/{id}/pieces/{pieceId}")
+    public ResponseEntity<Void> deletePiece(@PathVariable Long id, @PathVariable Long pieceId) {
+        adminEquipmentSetService.deletePiece(id, pieceId);
+        return ResponseEntity.noContent().build();
+    }
+
+    /** 효과 추가 */
+    @PostMapping("/{id}/effects")
+    public ResponseEntity<SetEffectResponse> addEffect(
+            @PathVariable Long id,
+            @Valid @RequestBody SetEffectAddRequest req) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(adminEquipmentSetService.addEffect(id, req));
+    }
+
+    /** 효과 삭제 */
+    @DeleteMapping("/{id}/effects/{effectId}")
+    public ResponseEntity<Void> deleteEffect(@PathVariable Long id, @PathVariable Long effectId) {
+        adminEquipmentSetService.deleteEffect(id, effectId);
+        return ResponseEntity.noContent().build();
     }
 
     /** 세트 수정 (이름, 피스 수, 거래 노출 여부) */

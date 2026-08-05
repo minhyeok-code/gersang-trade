@@ -52,6 +52,15 @@ public class Item extends BaseEntity {
     @Column(name = "item_key", length = 100, unique = true)
     private String itemKey;
 
+    /**
+     * 공개 노출 숨김 여부.
+     * true이면 공개 조회(검색·장비목록 등)에서 제외된다.
+     * 이미지가 붙으면 false로 전환된다(ImageAdminService).
+     * 기존 시드 데이터는 이미지 백필 전까지 숨김(true)이 기본값.
+     */
+    @Column(name = "hidden", nullable = false)
+    private boolean hidden = true;
+
     @Builder
     public Item(String name, ItemType type, String tradeCategory) {
         this.name = name;
@@ -69,6 +78,11 @@ public class Item extends BaseEntity {
     /** 관리자 직접 업로드 후 S3 URL 저장 */
     public void updateImageUrl(String imageUrl) {
         this.imageUrl = imageUrl;
+    }
+
+    /** 공개 노출 숨김 여부 설정 — 이미지 부착 시 false로 전환 */
+    public void updateHidden(boolean hidden) {
+        this.hidden = hidden;
     }
 
     public void updateType(ItemType type) {

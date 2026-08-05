@@ -48,7 +48,8 @@ public class ImageAdminController {
     // ── S3 동기화 ─────────────────────────────────────────────────────────────────
 
     /**
-     * S3 폴더 구조(items/, monsters/)를 읽어 각 엔티티의 imageUrl을 일괄 갱신한다.
+     * S3 폴더 구조(items/, monsters/, mercenaries/)를 읽어 각 엔티티의 imageUrl을 일괄 갱신한다.
+     * 이미지가 붙은 대상은 hidden=false로 전환된다(몬스터는 데이터 규칙도 함께 판정).
      * 파일명이 숫자 ID가 아닌 경우 건너뛴다.
      */
     @PostMapping("/sync")

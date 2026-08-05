@@ -48,7 +48,7 @@ public class MercenaryService {
 
     /**
      * 용병 목록 조회.
-     * comingSoon=true인 용병은 제외한다.
+     * hidden=true(이미지 미부착 등) 또는 comingSoon=true인 용병은 제외한다.
      *
      * @param element 속성 필터 (Nature enum name, null이면 전체)
      * @param q       이름 검색어 (null이면 전체)
@@ -58,8 +58,9 @@ public class MercenaryService {
     public List<MercenaryResponse> listMercenaries(String element, String q, Integer limit) {
         List<Mercenary> all = mercenaryRepository.findAll();
 
-        // comingSoon 제외 + 필터 적용
+        // hidden(이미지 미부착 등)·comingSoon 제외 + 필터 적용
         List<Mercenary> filtered = all.stream()
+                .filter(m -> !m.isHidden())
                 .filter(m -> !m.isComingSoon())
                 .filter(m -> element == null || element.isBlank()
                         || (m.getNature() != null && m.getNature().name().equalsIgnoreCase(element)))

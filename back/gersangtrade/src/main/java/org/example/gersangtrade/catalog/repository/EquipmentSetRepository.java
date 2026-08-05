@@ -4,13 +4,20 @@ import org.example.gersangtrade.domain.catalog.EquipmentSet;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 
 /** 장비 세트 레포지토리 */
 public interface EquipmentSetRepository extends JpaRepository<EquipmentSet, Long> {
 
     Optional<EquipmentSet> findByName(String name);
+
+    /** 공백 무시 이름 매칭 — 가이드 주입용 (0/1/N건 판별) */
+    @Query(value = "SELECT * FROM equipment_sets WHERE REPLACE(name, ' ', '') = :despaced", nativeQuery = true)
+    List<EquipmentSet> findByNameSpaceInsensitive(@Param("despaced") String despaced);
 
     Page<EquipmentSet> findByNameContaining(String name, Pageable pageable);
 

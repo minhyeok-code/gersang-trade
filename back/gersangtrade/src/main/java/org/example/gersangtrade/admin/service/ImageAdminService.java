@@ -54,7 +54,7 @@ public class ImageAdminService {
     private final MercenaryRepository mercenaryRepository;
     private final MonsterRepository monsterRepository;
 
-    @Value("${aws.s3-bucket:}")
+    @Value("${aws.s3.bucket:}")
     private String bucket;
 
     @Value("${aws.region:ap-northeast-2}")
@@ -89,8 +89,10 @@ public class ImageAdminService {
         Item item = itemRepository.findById(itemId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                         "아이템을 찾을 수 없습니다: " + itemId));
-        String imageUrl = upload(file, "images/items/" + itemId);
+        // sync 경로(items/{id})와 통일 — 단건 업로드분도 이후 sync가 동일 키로 인식한다.
+        String imageUrl = upload(file, "items/" + itemId);
         item.updateImageUrl(imageUrl);
+        item.updateHidden(false); // 이미지 부착 → 공개 노출
         return new ImageUploadResponse(imageUrl);
     }
 
@@ -117,7 +119,8 @@ public class ImageAdminService {
         Gem gem = gemRepository.findById(gemId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                         "보석을 찾을 수 없습니다: " + gemId));
-        String imageUrl = upload(file, "images/gems/" + gemId);
+        // 타입별 폴더 컨벤션 통일 — gems/{id} (Gem에는 hidden 개념 없음)
+        String imageUrl = upload(file, "gems/" + gemId);
         gem.updateImageUrl(imageUrl);
         return new ImageUploadResponse(imageUrl);
     }
@@ -145,8 +148,10 @@ public class ImageAdminService {
         Mercenary mercenary = mercenaryRepository.findById(mercenaryId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                         "용병을 찾을 수 없습니다: " + mercenaryId));
-        String imageUrl = upload(file, "images/mercenaries/" + mercenaryId);
+        // sync 경로(mercenaries/{id})와 통일
+        String imageUrl = upload(file, "mercenaries/" + mercenaryId);
         mercenary.updateImageUrl(imageUrl);
+        mercenary.updateHidden(false); // 이미지 부착 → 공개 노출 (규칙: 이미지 유무만)
         return new ImageUploadResponse(imageUrl);
     }
 
@@ -160,11 +165,12 @@ public class ImageAdminService {
     public ImageSyncResult syncFromS3() {
         if (s3Client == null || bucket.isBlank()) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                    "S3가 설정되지 않았습니다. aws.access-key, aws.secret-key, aws.s3-bucket을 확인하세요.");
+                    "S3가 설정되지 않았습니다. aws.access-key, aws.secret-key, aws.s3.bucket을 확인하세요.");
         }
         int itemsUpdated = syncItems();
         int monstersUpdated = syncMonsters();
-        return new ImageSyncResult(itemsUpdated, monstersUpdated);
+        int mercenariesUpdated = syncMercenaries();
+        return new ImageSyncResult(itemsUpdated, monstersUpdated, mercenariesUpdated);
     }
 
     private int syncItems() {
@@ -174,7 +180,11 @@ public class ImageAdminService {
             Long id = extractId(obj.key(), "items/");
             if (id == null) continue;
             String url = buildUrl(obj.key());
-            itemRepository.findById(id).ifPresent(item -> item.updateImageUrl(url));
+            var found = itemRepository.findById(id);
+            if (found.isEmpty()) continue;      // DB에 없는 파일은 카운트 제외
+            Item item = found.get();
+            item.updateImageUrl(url);
+            item.updateHidden(false);           // 이미지 부착 → 공개 노출
             count++;
         }
         return count;
@@ -187,7 +197,30 @@ public class ImageAdminService {
             Long id = extractId(obj.key(), "monsters/");
             if (id == null) continue;
             String url = buildUrl(obj.key());
-            monsterRepository.findById(id).ifPresent(m -> m.updateImageUrl(url));
+            var found = monsterRepository.findById(id);
+            if (found.isEmpty()) continue;
+            Monster m = found.get();
+            m.updateImageUrl(url);
+            // 규칙: 이미지 AND 데이터 규칙(elementValue 있음·非明속성) 둘 다 통과해야 노출.
+            // computeHidden이 데이터 규칙상 숨김이면 이미지가 있어도 숨김 유지한다.
+            m.updateHidden(Monster.computeHidden(m.getName(), m.getElementValue()));
+            count++;
+        }
+        return count;
+    }
+
+    private int syncMercenaries() {
+        List<S3Object> objects = listAll("mercenaries/");
+        int count = 0;
+        for (S3Object obj : objects) {
+            Long id = extractId(obj.key(), "mercenaries/");
+            if (id == null) continue;
+            String url = buildUrl(obj.key());
+            var found = mercenaryRepository.findById(id);
+            if (found.isEmpty()) continue;
+            Mercenary mercenary = found.get();
+            mercenary.updateImageUrl(url);
+            mercenary.updateHidden(false);      // 규칙: 이미지 유무만으로 노출 결정
             count++;
         }
         return count;
@@ -231,13 +264,13 @@ public class ImageAdminService {
 
     /**
      * 파일을 S3에 업로드하고 공개 URL을 반환한다.
-     * s3KeyBase에 확장자를 붙인 키로 저장한다 (예: "images/items/1.png").
+     * s3KeyBase에 확장자를 붙인 키로 저장한다 (예: "items/1.png").
      * aws.access-key 미설정 환경에서는 503을 반환한다.
      */
     private String upload(MultipartFile file, String s3KeyBase) {
         if (s3Client == null || bucket.isBlank()) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                    "S3가 설정되지 않았습니다. aws.access-key, aws.secret-key, aws.s3-bucket을 확인하세요.");
+                    "S3가 설정되지 않았습니다. aws.access-key, aws.secret-key, aws.s3.bucket을 확인하세요.");
         }
         String ext = resolveExtension(file);
         String s3Key = s3KeyBase + "." + ext;

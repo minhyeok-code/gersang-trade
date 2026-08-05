@@ -73,7 +73,8 @@ public class ItemJooqRepository {
                 LEFT JOIN equipment_items ei ON i.id = ei.item_id
                 LEFT JOIN equipment_sets  es ON ei.set_id = es.id
                 LEFT JOIN material_items  mi ON i.id = mi.item_id
-                WHERE i.name LIKE ?
+                WHERE i.hidden = false
+                  AND i.name LIKE ?
                 """);
 
         List<Object> bindings = new ArrayList<>();

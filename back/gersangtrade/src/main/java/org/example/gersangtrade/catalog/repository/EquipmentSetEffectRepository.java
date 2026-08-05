@@ -18,6 +18,9 @@ public interface EquipmentSetEffectRepository extends JpaRepository<EquipmentSet
     boolean existsByEquipmentSet_IdAndRequiredPiecesAndStatTypeAndElement(
             Long equipmentSetId, Integer requiredPieces, StatType statType, Element element);
 
+    /** 세트 ID로 효과 목록 조회 (관리자 상세·편집용) */
+    List<EquipmentSetEffect> findByEquipmentSetId(Long equipmentSetId);
+
     /** 세트 ID 목록에 해당하는 효과 일괄 조회 — DPS 계산기 배치 로딩용 */
     @Query("SELECT e FROM EquipmentSetEffect e WHERE e.equipmentSet.id IN :setIds")
     List<EquipmentSetEffect> findBySetIdIn(@Param("setIds") List<Long> setIds);

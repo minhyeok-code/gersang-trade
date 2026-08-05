@@ -26,6 +26,10 @@ public interface MercenaryRepository extends JpaRepository<Mercenary, Long> {
      */
     Optional<Mercenary> findByName(String name);
 
+    /** 공백 무시 이름 매칭 — 가이드 주입용 (0/1/N건 판별) */
+    @Query(value = "SELECT * FROM mercenaries WHERE REPLACE(name, ' ', '') = :despaced", nativeQuery = true)
+    List<Mercenary> findByNameSpaceInsensitive(@Param("despaced") String despaced);
+
     /** mercenary_key로 단건 조회 — 거니버스 스킬 계수 적재 시 용병 FK 조회에 사용된다 */
     Optional<Mercenary> findByKey(String key);
 
