@@ -7,9 +7,12 @@ import org.example.gersangtrade.domain.guide.UserGuideStep;
 import org.example.gersangtrade.domain.guide.enums.GuideStepType;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 유저 가이드 스텝 응답 — 진행도(checked)와 커스텀 여부를 포함한다.
+ * setPieceIcons: 세트 연결 스텝에서 피스 아이템 이미지 목록(최대 4). 세트는 단일 이미지가 없어
+ * 프론트에서 피스 이미지를 콜라주로 표시하는 데 쓴다.
  */
 public record UserGuideStepResponse(
         Long id,
@@ -24,13 +27,14 @@ public record UserGuideStepResponse(
         Long linkedSetId,
         String linkedSetName,
         boolean linkedSetTradeable,
+        List<String> setPieceIcons,
         Long linkedMercenaryId,
         String linkedMercenaryName,
         boolean custom,
         boolean checked,
         LocalDateTime checkedAt
 ) {
-    public static UserGuideStepResponse of(UserGuideStep s) {
+    public static UserGuideStepResponse of(UserGuideStep s, List<String> setPieceIcons) {
         Item item = s.getLinkedItem();
         EquipmentSet set = s.getLinkedSet();
         Mercenary merc = s.getLinkedMercenary();
@@ -47,6 +51,7 @@ public record UserGuideStepResponse(
                 set != null ? set.getId() : null,
                 set != null ? set.getName() : null,
                 set != null && set.isTradeable(),
+                setPieceIcons != null ? setPieceIcons : List.of(),
                 merc != null ? merc.getId() : null,
                 merc != null ? merc.getName() : null,
                 s.isCustom(),

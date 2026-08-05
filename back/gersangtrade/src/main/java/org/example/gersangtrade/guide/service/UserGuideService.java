@@ -1,6 +1,7 @@
 package org.example.gersangtrade.guide.service;
 
 import lombok.RequiredArgsConstructor;
+import org.example.gersangtrade.catalog.repository.EquipmentSetPieceRepository;
 import org.example.gersangtrade.catalog.repository.EquipmentSetRepository;
 import org.example.gersangtrade.catalog.repository.ItemRepository;
 import org.example.gersangtrade.catalog.repository.MercenaryRepository;
@@ -26,7 +27,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 유저 가이드 사본 서비스.
@@ -45,6 +48,7 @@ public class UserGuideService {
     private final UserRepository userRepository;
     private final ItemRepository itemRepository;
     private final EquipmentSetRepository equipmentSetRepository;
+    private final EquipmentSetPieceRepository equipmentSetPieceRepository;
     private final MercenaryRepository mercenaryRepository;
 
     // ── 사본 생성/조회 ────────────────────────────────────────────────────────────
@@ -59,8 +63,9 @@ public class UserGuideService {
                 .findByUser_IdAndSourceGuide_IdAndDeletedAtIsNull(userId, guideId)
                 .orElse(null);
         if (existing != null) {
-            return UserGuideDetailResponse.of(existing,
-                    userGuideStepRepository.findByUserGuideIdOrderByStepOrderAsc(existing.getId()));
+            List<UserGuideStep> existingSteps =
+                    userGuideStepRepository.findByUserGuideIdOrderByStepOrderAsc(existing.getId());
+            return UserGuideDetailResponse.of(existing, existingSteps, buildSetIcons(existingSteps));
         }
 
         Guide guide = guideRepository.findByIdAndPublishedTrue(guideId)
@@ -97,7 +102,7 @@ public class UserGuideService {
                 .toList();
         userGuideStepRepository.saveAll(copies);
 
-        return UserGuideDetailResponse.of(userGuide, copies);
+        return UserGuideDetailResponse.of(userGuide, copies, buildSetIcons(copies));
     }
 
     /** 유저의 활성 사본 목록 (최신순, 진행도 포함). */
@@ -115,8 +120,8 @@ public class UserGuideService {
     @Transactional(readOnly = true)
     public UserGuideDetailResponse getMyGuideDetail(Long userId, Long userGuideId) {
         UserGuide userGuide = loadOwnedGuide(userId, userGuideId);
-        return UserGuideDetailResponse.of(userGuide,
-                userGuideStepRepository.findByUserGuideIdOrderByStepOrderAsc(userGuideId));
+        List<UserGuideStep> steps = userGuideStepRepository.findByUserGuideIdOrderByStepOrderAsc(userGuideId);
+        return UserGuideDetailResponse.of(userGuide, steps, buildSetIcons(steps));
     }
 
     // ── 진행도 ───────────────────────────────────────────────────────────────────
@@ -162,7 +167,8 @@ public class UserGuideService {
                 .custom(true)
                 .build();
         userGuideStepRepository.save(step);
-        return UserGuideStepResponse.of(step);
+        return UserGuideStepResponse.of(step, buildSetIcons(List.of(step))
+                .getOrDefault(step.getLinkedSet() != null ? step.getLinkedSet().getId() : -1L, List.of()));
     }
 
     /** 스텝 표시 내용 수정. */
@@ -212,6 +218,26 @@ public class UserGuideService {
     }
 
     // ── 내부 헬퍼 ────────────────────────────────────────────────────────────────
+
+    /** 스텝들의 연결 세트별 피스 이미지 목록(최대 4)을 만든다 — 프론트 세트 콜라주용. */
+    private Map<Long, List<String>> buildSetIcons(List<UserGuideStep> steps) {
+        List<Long> setIds = steps.stream()
+                .map(UserGuideStep::getLinkedSet)
+                .filter(x -> x != null)
+                .map(EquipmentSet::getId)
+                .distinct()
+                .toList();
+        Map<Long, List<String>> map = new HashMap<>();
+        for (Long setId : setIds) {
+            List<String> icons = equipmentSetPieceRepository.findWithItemByEquipmentSetId(setId).stream()
+                    .map(p -> p.getEquipmentItem().getItem().getImageUrl())
+                    .filter(url -> url != null && !url.isBlank())
+                    .limit(5)
+                    .toList();
+            map.put(setId, icons);
+        }
+        return map;
+    }
 
     /** 활성 사본을 소유자 검증과 함께 로드한다. */
     private UserGuide loadOwnedGuide(Long userId, Long userGuideId) {
