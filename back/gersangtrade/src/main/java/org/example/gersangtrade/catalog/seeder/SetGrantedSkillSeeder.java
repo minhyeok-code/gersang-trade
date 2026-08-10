@@ -10,8 +10,8 @@ import org.example.gersangtrade.domain.catalog.enums.TriggerSource;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.core.annotation.Order;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
@@ -48,22 +48,30 @@ public class SetGrantedSkillSeeder implements ApplicationRunner {
     );
 
     @Override
-    @Transactional
     public void run(ApplicationArguments args) {
+        // 메서드 전체를 하나의 트랜잭션으로 묶지 않는다.
+        // 각 save를 개별 커밋해, 동시 시딩 경쟁으로 한 건이 유니크 제약에 걸려도
+        // 나머지 시딩이 롤백되지 않고 계속되도록 한다.
         int seeded = 0;
         for (SkillRow row : SKILL_ROWS) {
-            if (setGrantedSkillRepository.findBySkillKey(row.skillKey()).isPresent()) continue;
-            setGrantedSkillRepository.save(SetGrantedSkill.builder()
-                    .skillKey(row.skillKey())
-                    .skillName(row.skillName())
-                    .skillBehaviorType(row.behaviorType())
-                    .statSource(row.statSource())
-                    .triggerSource(row.triggerSource())
-                    .triggerEveryN(row.triggerEveryN())
-                    .triggerBaseSkillKey(row.triggerBaseSkillKey())
-                    .note(row.note())
-                    .build());
-            seeded++;
+            // exists로 존재 확인 — 중복 데이터가 있어도 NonUniqueResult 예외가 나지 않는다.
+            if (setGrantedSkillRepository.existsBySkillKey(row.skillKey())) continue;
+            try {
+                setGrantedSkillRepository.save(SetGrantedSkill.builder()
+                        .skillKey(row.skillKey())
+                        .skillName(row.skillName())
+                        .skillBehaviorType(row.behaviorType())
+                        .statSource(row.statSource())
+                        .triggerSource(row.triggerSource())
+                        .triggerEveryN(row.triggerEveryN())
+                        .triggerBaseSkillKey(row.triggerBaseSkillKey())
+                        .note(row.note())
+                        .build());
+                seeded++;
+            } catch (DataIntegrityViolationException e) {
+                // 블루-그린 동시 기동 등 경쟁으로 다른 인스턴스가 먼저 삽입한 경우 — 무시하고 계속
+                log.debug("세트 부여 스킬 이미 존재(동시 삽입): {}", row.skillKey());
+            }
         }
         if (seeded > 0) log.info("세트 부여 스킬 시딩 완료 ({}건)", seeded);
         else log.debug("세트 부여 스킬 시딩 skip: 이미 존재");

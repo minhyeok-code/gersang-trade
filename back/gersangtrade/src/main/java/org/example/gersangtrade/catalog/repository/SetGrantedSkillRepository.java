@@ -8,4 +8,7 @@ import java.util.Optional;
 public interface SetGrantedSkillRepository extends JpaRepository<SetGrantedSkill, Long> {
 
     Optional<SetGrantedSkill> findBySkillKey(String skillKey);
+
+    /** 존재 여부만 확인 — 중복 데이터가 있어도 NonUniqueResult 예외 없이 안전(시딩용) */
+    boolean existsBySkillKey(String skillKey);
 }
