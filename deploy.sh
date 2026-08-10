@@ -21,9 +21,10 @@ ssh -i "$SSH_KEY" "$EC2_USER@$EC2_HOST" bash << EOF
 set -e
 cd $REMOTE_DIR
 
-# 1. 최신 코드 반영
-echo "[원격] git pull..."
-git pull origin main
+# 1. 최신 코드 반영 (서버 로컬 변경 무시 — 항상 원격 main 기준으로 강제 정렬)
+echo "[원격] git fetch + reset --hard..."
+git fetch origin main
+git reset --hard origin/main
 
 # 2. 현재/다음 슬롯 결정
 ACTIVE=\$(cat .active-slot 2>/dev/null || echo "blue")

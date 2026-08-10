@@ -39,7 +39,7 @@ services:
       NAVER_CLIENT_SECRET: ${NAVER_CLIENT_SECRET}
       AWS_S3_BUCKET: ${AWS_S3_BUCKET}
       OAUTH2_REDIRECT_URI: ${OAUTH2_REDIRECT_URI}
-      COOKIE_SECURE: "false"
+      COOKIE_SECURE: "true"
     volumes:
       - ./back/logs:/app/logs
     healthcheck:
@@ -75,7 +75,7 @@ services:
       NAVER_CLIENT_SECRET: ${NAVER_CLIENT_SECRET}
       AWS_S3_BUCKET: ${AWS_S3_BUCKET}
       OAUTH2_REDIRECT_URI: ${OAUTH2_REDIRECT_URI}
-      COOKIE_SECURE: "false"
+      COOKIE_SECURE: "true"
     volumes:
       - ./back/logs:/app/logs
     healthcheck:
@@ -107,13 +107,15 @@ services:
       - front
     ports:
       - "80:80"
-      # HTTPS 사용 시: - "443:443"
+      - "443:443"
     volumes:
       # deploy.sh가 이 파일을 교체 후 nginx -s reload → 무중단 슬롯 전환
       - ./nginx/upstream.conf:/etc/nginx/conf.d/upstream.conf
-      # HTTPS 인증서 마운트 시:
-      # - /etc/letsencrypt/live/yourdomain.com/fullchain.pem:/etc/nginx/certs/fullchain.pem:ro
-      # - /etc/letsencrypt/live/yourdomain.com/privkey.pem:/etc/nginx/certs/privkey.pem:ro
+      # HTTPS 인증서 — Cloudflare Origin Certificate 를 호스트 /etc/nginx/certs 에 저장 후 마운트
+      #   /etc/nginx/certs/fullchain.pem  : Origin Certificate(PEM)
+      #   /etc/nginx/certs/privkey.pem    : Private Key(PEM)
+      # ⚠ 이 두 파일이 없으면 nginx 컨테이너가 기동 실패한다 — 첫 배포 전 반드시 EC2에 배치할 것
+      - /etc/nginx/certs:/etc/nginx/certs:ro
 
 volumes:
   gersang-trade-data:

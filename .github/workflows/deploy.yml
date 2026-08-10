@@ -51,12 +51,15 @@ jobs:
             AWS_S3_BASE_URL=${AWS_S3_BASE_URL}
             JWT_SECRET=${JWT_SECRET}
             OAUTH2_REDIRECT_URI=${OAUTH2_REDIRECT_URI}
-            COOKIE_SECURE=false
+            COOKIE_SECURE=true
             ENV
 
-            # 2. 최신 코드 반영
-            echo "[원격] git pull..."
-            git pull origin main
+            # 2. 최신 코드 반영 (서버 로컬 변경을 무시하고 항상 원격 main 기준으로 강제 정렬)
+            #    배포 서버 작업트리는 언제든 버려도 되는 것으로 취급 — 서버에서 파일을 직접 수정해도
+            #    'git pull' 충돌로 배포가 막히지 않는다. (.env·.active-slot은 git 미추적이라 보존됨)
+            echo "[원격] git fetch + reset --hard..."
+            git fetch origin main
+            git reset --hard origin/main
 
             # 3. 현재/다음 슬롯 결정
             ACTIVE=$(cat .active-slot 2>/dev/null || echo "blue")
