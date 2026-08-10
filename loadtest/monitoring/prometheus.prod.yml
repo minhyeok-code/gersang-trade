@@ -1,0 +1,22 @@
+# 운영용 Prometheus 수집 설정
+# 앱 컨테이너를 '컨테이너 이름'으로 내부 스크랩한다 (actuator를 외부/nginx에 노출하지 않음).
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  # 운영 앱 (blue 슬롯) — docker-compose.prod.yml의 container_name 기준
+  - job_name: 'gersang-app'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['gersang-trade-app-blue:8080']
+        labels:
+          application: 'gersang-trade'
+          slot: 'blue'
+    # green 슬롯을 테스트할 때는 아래 주석을 해제(또는 위 target을 green으로 교체)
+    #   - targets: ['gersang-trade-app-green:8080']
+    #     labels: { application: 'gersang-trade', slot: 'green' }
+
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
