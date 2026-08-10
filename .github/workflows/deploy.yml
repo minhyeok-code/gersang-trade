@@ -94,8 +94,11 @@ jobs:
 
             # 6. nginx upstream 전환 (무중단)
             #    상시 서비스(db/front/nginx)를 먼저 보장 — 최초 배포/재기동 시에도 nginx가 뜨도록
+            #    ⚠ --build 필수: nginx/front 설정·소스는 이미지에 COPY로 구워지므로
+            #       --build 없이는 default.conf/locations.conf, 프론트 변경이 반영되지 않는다
+            #       (mysql은 image 기반이라 --build 대상에서 자동 제외)
             echo "upstream spring_boot { server app-$NEXT:8080; }" > nginx/upstream.conf
-            $COMPOSE up -d mysql front nginx
+            $COMPOSE up -d --build mysql front nginx
             $COMPOSE exec nginx nginx -s reload || true
             echo "[원격] nginx → app-$NEXT 전환 완료"
 
