@@ -18,3 +18,12 @@ Thumbs.db
 # 환경변수 (민감 정보)
 .env
 back/logs/
+
+# 로드테스트 산출물 (결과·리포트·출력)
+loadtest/**/results/
+loadtest/**/output/
+loadtest/**/*.summary.json
+*.k6-result.json
+
+# 모니터링 데이터 (Prometheus TSDB·Grafana 로컬 데이터)
+loadtest/monitoring/**/data/

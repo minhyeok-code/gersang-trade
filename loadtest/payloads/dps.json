@@ -1,0 +1,42 @@
+[
+  { "deckId": 1, "monsterId": 14, "resistanceType": "HITTING" },
+  { "deckId": 1, "monsterId": 16, "resistanceType": "HITTING" },
+  { "deckId": 1, "monsterId": 14, "resistanceType": "MAGIC" },
+  { "deckId": 1, "monsterId": 12, "resistanceType": "HITTING" },
+  { "deckId": 1, "monsterId": 13, "resistanceType": "HITTING" },
+  { "deckId": 1, "monsterId": 15, "resistanceType": "MAGIC" },
+  {
+    "deckId": 1,
+    "monsterId": 16,
+    "resistanceType": "HITTING",
+    "memberInputs": [
+      { "memberId": 5,  "level": 250, "bonusTarget": "MAIN_STAT", "bonusAmount": 0 },
+      { "memberId": 13, "level": 250, "bonusTarget": "MAIN_STAT", "bonusAmount": 0 },
+      { "memberId": 15, "level": 250, "bonusTarget": "MAIN_STAT", "bonusAmount": 0 },
+      { "memberId": 16, "level": 250, "bonusTarget": "MAIN_STAT", "bonusAmount": 0 },
+      { "memberId": 19, "level": 250, "bonusTarget": "MAIN_STAT", "bonusAmount": 0 },
+      { "memberId": 20, "level": 250, "bonusTarget": "MAIN_STAT", "bonusAmount": 0 },
+      { "memberId": 21, "level": 250, "bonusTarget": "MAIN_STAT", "bonusAmount": 0 },
+      { "memberId": 22, "level": 250, "bonusTarget": "MAIN_STAT", "bonusAmount": 0 },
+      { "memberId": 23, "level": 250, "bonusTarget": "MAIN_STAT", "bonusAmount": 0 },
+      { "memberId": 24, "level": 250, "bonusTarget": "MAIN_STAT", "bonusAmount": 0 }
+    ]
+  },
+  {
+    "deckId": 1,
+    "monsterId": 14,
+    "resistanceType": "MAGIC",
+    "memberInputs": [
+      { "memberId": 5,  "level": 260, "bonusTarget": "MAIN_STAT", "bonusAmount": 1000 },
+      { "memberId": 13, "level": 260, "bonusTarget": "VITALITY",  "bonusAmount": 700 },
+      { "memberId": 15, "level": 250, "bonusTarget": "MAIN_STAT", "bonusAmount": 500 },
+      { "memberId": 16, "level": 260, "bonusTarget": "MAIN_STAT", "bonusAmount": 900 },
+      { "memberId": 19, "level": 250, "bonusTarget": "VITALITY",  "bonusAmount": 300 },
+      { "memberId": 20, "level": 260, "bonusTarget": "MAIN_STAT", "bonusAmount": 1000 },
+      { "memberId": 21, "level": 250, "bonusTarget": "MAIN_STAT", "bonusAmount": 0 },
+      { "memberId": 22, "level": 260, "bonusTarget": "VITALITY",  "bonusAmount": 500 },
+      { "memberId": 23, "level": 250, "bonusTarget": "MAIN_STAT", "bonusAmount": 700 },
+      { "memberId": 24, "level": 260, "bonusTarget": "MAIN_STAT", "bonusAmount": 900 }
+    ]
+  }
+]

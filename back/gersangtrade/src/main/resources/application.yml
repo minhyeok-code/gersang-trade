@@ -28,7 +28,7 @@ spring:
     type: caffeine
     caffeine:
       spec: expireAfterWrite=86400s,maximumSize=1000
-    cache-names: servers,mercenaries,mercenary-characteristics,equipment-all,equipment-by-slot,rituals-by-item,rituals-all,priceWatch
+    cache-names: servers,mercenaries,mercenary-characteristics,equipment-all,equipment-by-slot,rituals-by-item,rituals-all,priceWatch,characteristics-by-merc,char-levels-by-char
     # priceWatch TTL은 CacheConfig.priceWatchCacheCustomizer()에서 2분으로 별도 설정
 
   # ── JPA / Hibernate ───────────────────────────────────────────────────────
@@ -69,6 +69,20 @@ server:
   # Next.js dev 프록시(X-Forwarded-*) 뒤에서 OAuth redirect_uri를 localhost:3000 기준으로 맞춤
   forward-headers-strategy: framework
 
+# ── Actuator / 모니터링 (Prometheus) ──────────────────────────────────────
+# /actuator/prometheus 로 메트릭 노출 (부하테스트 모니터링용)
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, prometheus
+  metrics:
+    tags:
+      application: gersang-trade   # 메트릭에 공통 라벨 부여
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true # Grafana에서 p95/p99 계산용 히스토그램 버킷 생성
+
 # ── OAuth2 클라이언트 자격증명 (OAuth2ClientRegistrationConfig에서 주입) ─────
 oauth2:
   google:
@@ -103,12 +117,12 @@ app:
 # ── 로깅 ──────────────────────────────────────────────────────────────────
 logging:
   level:
-    root: INFO
-    org.example.gersangtrade: INFO
+    root: WARN
+    org.example.gersangtrade: WARN
     # SQL 로그는 application-local.yml에서 DEBUG로 오버라이드
-    org.hibernate.SQL: INFO
-    org.springframework.security: INFO
-    org.springframework.batch: INFO
+    org.hibernate.SQL: WARN
+    org.springframework.security: WARN
+    org.springframework.batch: WARN
   file:
     # 로그 파일 경로 — 크롤러 실행 후 이 파일에서 DEBUG 로그 확인 가능
     name: ${LOG_FILE:logs/gersangtrade.log}

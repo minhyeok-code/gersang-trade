@@ -1,6 +1,8 @@
 package org.example.gersangtrade.catalog.repository;
 
+import org.example.gersangtrade.config.CacheConfig;
 import org.example.gersangtrade.domain.catalog.MercenaryCharacteristic;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -11,7 +13,12 @@ import java.util.Optional;
 
 public interface MercenaryCharacteristicRepository extends JpaRepository<MercenaryCharacteristic, Long> {
 
-    /** 용병별 전체 특성 조회 */
+    /**
+     * 용병별 전체 특성 조회.
+     * DPS 계산기가 용병마다 반복 호출하는 정적 카탈로그 데이터라 캐싱한다(N+1·커넥션 점유 완화).
+     * 관리자 특성 수정 시 {@code MercenaryAdminService}에서 @CacheEvict로 무효화한다.
+     */
+    @Cacheable(CacheConfig.CHARACTERISTICS_BY_MERC)
     List<MercenaryCharacteristic> findByMercenaryId(Long mercenaryId);
 
     /** 용병 ID 목록으로 특성 일괄 조회 — 관리자 목록 페이지 N+1 방지 */

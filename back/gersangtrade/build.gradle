@@ -64,6 +64,9 @@ dependencies {
     // 헬스체크 엔드포인트 (/actuator/health)
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
 
+    // Prometheus 메트릭 노출 (/actuator/prometheus)
+    runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
+
     // Flyway (DB 마이그레이션)
     implementation 'org.flywaydb:flyway-core'
     implementation 'org.flywaydb:flyway-mysql'

@@ -28,6 +28,10 @@ public class CacheConfig {
     public static final String EQUIPMENT_SLOT            = "equipment-by-slot";
     public static final String RITUALS_BY_ITEM           = "rituals-by-item";
     public static final String RITUALS_ALL               = "rituals-all";
+    /** DPS 계산기 N+1 완화 — 용병별 특성 목록(정적 카탈로그) */
+    public static final String CHARACTERISTICS_BY_MERC   = "characteristics-by-merc";
+    /** DPS 계산기 N+1 완화 — 특성별 레벨 수치 목록(정적 카탈로그) */
+    public static final String CHAR_LEVELS_BY_CHAR       = "char-levels-by-char";
     /** 관심 아이템 시세 — userId:serverId 키, TTL 2분 */
     public static final String PRICE_WATCH               = "priceWatch";
 

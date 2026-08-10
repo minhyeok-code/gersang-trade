@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import Link from 'next/link';
 
 const BASE = '';
 
@@ -1288,6 +1289,13 @@ function MercenariesTab({ notify }: { notify: (m: string) => void }) {
   // 특성 편집
   const [newChar, setNewChar] = useState({ name: '', point: '1', description: '', requiredCharacteristicId: '' });
   const [charLevels, setCharLevels] = useState<Record<number, EditableLevel[]>>({});
+  // 기본정보 편집
+  const [emName, setEmName] = useState('');
+  const [emCategory, setEmCategory] = useState('');
+  const [emNation, setEmNation] = useState('');
+  const [emNature, setEmNature] = useState('');
+  const [emNatureValue, setEmNatureValue] = useState('');
+  const [emComingSoon, setEmComingSoon] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -1309,9 +1317,15 @@ function MercenariesTab({ notify }: { notify: (m: string) => void }) {
     setSelectedId(id);
     try {
       const [detail, charList] = await Promise.all([
-        req<{ stats: { id?: number; statType: string; value: number }[]; skills: { id: number; skillName: string; effects: { statKey: string; statValue: number; valueType?: string }[] }[] }>(`/admin/mercenaries/${id}`),
+        req<{ name?: string; category?: string | null; nation?: string | null; nature?: string | null; natureValue?: number | null; comingSoon?: boolean; stats: { id?: number; statType: string; value: number }[]; skills: { id: number; skillName: string; effects: { statKey: string; statValue: number; valueType?: string }[] }[] }>(`/admin/mercenaries/${id}`),
         req<CharRow[]>(`/admin/mercenaries/${id}/characteristics`),
       ]);
+      setEmName(detail.name ?? '');
+      setEmCategory(detail.category ?? '');
+      setEmNation(detail.nation ?? '');
+      setEmNature(detail.nature ?? '');
+      setEmNatureValue(detail.natureValue != null ? String(detail.natureValue) : '');
+      setEmComingSoon(!!detail.comingSoon);
       setMercStats((detail.stats ?? []).map((stat) => ({
         id: stat.id,
         statType: stat.statType,
@@ -1337,6 +1351,26 @@ function MercenariesTab({ notify }: { notify: (m: string) => void }) {
     } catch (e: unknown) {
       notify(`오류 - ${(e as Error).message}`);
     }
+  }
+
+  async function saveMercInfo() {
+    if (!selectedId) return;
+    if (!emName.trim()) { notify('오류 - 용병명을 입력하세요'); return; }
+    try {
+      await req(`/admin/mercenaries/${selectedId}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          name: emName.trim(),
+          category: emCategory || null,
+          nation: emNation || null,
+          nature: emNature || null,
+          natureValue: emNatureValue ? Number(emNatureValue) : null,
+          comingSoon: emComingSoon,
+        }),
+      });
+      notify('✅ 기본정보 수정 완료');
+      load();
+    } catch (e: unknown) { notify(`오류 - ${(e as Error).message}`); }
   }
 
   async function saveStats() {
@@ -1532,6 +1566,42 @@ function MercenariesTab({ notify }: { notify: (m: string) => void }) {
                   삭제는 DB에서 실제로 제거합니다. 덱, 장비, 재료 등에서 참조 중이면 실패합니다.
                 </p>
                 <Btn color="red" onClick={deleteMercenary}>용병 삭제</Btn>
+              </Section>
+
+              <Section title="기본 정보 수정">
+                <div className="grid grid-cols-2 gap-3 max-w-lg">
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">이름</label>
+                    <Input value={emName} onChange={setEmName} placeholder="예: 각성 쎄스노카미" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">카테고리</label>
+                    <select value={emCategory} onChange={(e) => setEmCategory(e.target.value)} className={inputClass('w-full')}>
+                      {MERC_CATEGORY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">국가</label>
+                    <select value={emNation} onChange={(e) => setEmNation(e.target.value)} className={inputClass('w-full')}>
+                      {NATION_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">속성</label>
+                    <select value={emNature} onChange={(e) => setEmNature(e.target.value)} className={inputClass('w-full')}>
+                      {NATURE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">속성값</label>
+                    <Input value={emNatureValue} onChange={setEmNatureValue} type="number" />
+                  </div>
+                  <label className="flex items-center gap-2 text-sm self-end">
+                    <input type="checkbox" checked={emComingSoon} onChange={(e) => setEmComingSoon(e.target.checked)} className="w-4 h-4" />
+                    출시 예정 (크롤링 제외)
+                  </label>
+                </div>
+                <div className="mt-3"><Btn color="yellow" onClick={saveMercInfo}>기본정보 저장</Btn></div>
               </Section>
 
               <Section title="스탯">
@@ -1735,9 +1805,28 @@ function MercenariesTab({ notify }: { notify: (m: string) => void }) {
 interface SetRow {
   id: number;
   name: string;
-  pieceCount: number;
-  tradeable: boolean;
+  totalPieces: number;
+  isTradeable: boolean;
 }
+
+interface SetPiece { id: number; slot: string; equipmentItemId: number; itemName: string; pieceCount: number; }
+interface SetEffect { id: number; requiredPieces: number; statType: string; statValue: number; statUnit: string; element: string; scope: string; }
+interface SetDetail { id: number; name: string; totalPieces: number; isTradeable: boolean; pieces: SetPiece[]; effects: SetEffect[]; }
+interface ItemHit { id: number; name: string; }
+
+const SET_SLOT_OPTIONS = [
+  { value: 'WEAPON', label: '무기' }, { value: 'HELMET', label: '투구' }, { value: 'ARMOR', label: '갑옷' },
+  { value: 'GLOVES', label: '장갑' }, { value: 'BELT', label: '허리띠' }, { value: 'SHOES', label: '신발' },
+  { value: 'RING', label: '반지' }, { value: 'NECKLACE', label: '목걸이' }, { value: 'EARRING', label: '귀걸이' },
+  { value: 'BRACELET', label: '팔찌' }, { value: 'TALISMAN', label: '부적' }, { value: 'ACCESSORY', label: '장신구' },
+  { value: 'DIVINE', label: '신물' }, { value: 'LEGGING', label: '각반' }, { value: 'ORB', label: '보주' },
+  { value: 'WING', label: '날개' }, { value: 'TITLE', label: '칭호' },
+];
+const STAT_UNIT_OPTIONS = [
+  { value: 'FLAT', label: '고정' }, { value: 'PERCENT', label: '%' }, { value: 'LEVEL', label: '레벨' },
+];
+const labelOf = (opts: readonly { value: string; label: string }[], v: string) =>
+  opts.find((o) => o.value === v)?.label ?? v;
 
 function SetsTab({ notify }: { notify: (m: string) => void }) {
   const [sets, setSets] = useState<SetRow[]>([]);
@@ -1748,6 +1837,21 @@ function SetsTab({ notify }: { notify: (m: string) => void }) {
   const [editName, setEditName] = useState('');
   const [editPiece, setEditPiece] = useState('');
   const [editTradeable, setEditTradeable] = useState(true);
+  const [newName, setNewName] = useState('');
+  const [newPiece, setNewPiece] = useState('5');
+  const [newTradeable, setNewTradeable] = useState(true);
+  const [detail, setDetail] = useState<SetDetail | null>(null);
+  const [pcSlot, setPcSlot] = useState('ARMOR');
+  const [pcCount, setPcCount] = useState('1');
+  const [pcQuery, setPcQuery] = useState('');
+  const [pcHits, setPcHits] = useState<ItemHit[]>([]);
+  const [pcItem, setPcItem] = useState<ItemHit | null>(null);
+  const [efReq, setEfReq] = useState('2');
+  const [efStat, setEfStat] = useState('');
+  const [efVal, setEfVal] = useState('');
+  const [efUnit, setEfUnit] = useState('FLAT');
+  const [efElem, setEfElem] = useState('');
+  const [efScope, setEfScope] = useState('SELF');
 
   const load = useCallback(async () => {
     try {
@@ -1763,11 +1867,32 @@ function SetsTab({ notify }: { notify: (m: string) => void }) {
 
   useEffect(() => { load(); }, [load]);
 
+  const loadDetail = useCallback(async (id: number) => {
+    try {
+      setDetail(await req<SetDetail>(`/admin/sets/${id}/detail`));
+    } catch (e: unknown) { notify(`오류 - 세트 상세: ${(e as Error).message}`); }
+  }, [notify]);
+
   function selectSet(s: SetRow) {
     setSelected(s);
     setEditName(s.name);
-    setEditPiece(String(s.pieceCount));
-    setEditTradeable(s.tradeable);
+    setEditPiece(String(s.totalPieces));
+    setEditTradeable(s.isTradeable);
+    setPcItem(null); setPcQuery(''); setPcHits([]);
+    loadDetail(s.id);
+  }
+
+  async function createSet() {
+    if (!newName.trim()) { notify('세트 이름을 입력하세요'); return; }
+    try {
+      await req('/admin/sets', {
+        method: 'POST',
+        body: JSON.stringify({ name: newName.trim(), totalPieces: parseInt(newPiece) || 0, isTradeable: newTradeable }),
+      });
+      notify(`✅ 세트 "${newName}" 등록`);
+      setNewName('');
+      load();
+    } catch (e: unknown) { notify(`오류 - ${(e as Error).message}`); }
   }
 
   async function saveSet() {
@@ -1775,16 +1900,87 @@ function SetsTab({ notify }: { notify: (m: string) => void }) {
     try {
       await req(`/admin/sets/${selected.id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ name: editName, pieceCount: parseInt(editPiece), tradeable: editTradeable }),
+        body: JSON.stringify({ name: editName, totalPieces: parseInt(editPiece), isTradeable: editTradeable }),
       });
       notify(`✅ 세트 #${selected.id} 수정 완료`);
       load();
     } catch (e: unknown) { notify(`오류 - ${(e as Error).message}`); }
   }
 
+  async function searchItems() {
+    if (!pcQuery.trim()) return;
+    try {
+      const hits = await req<ItemHit[]>(`/api/items/search?q=${encodeURIComponent(pcQuery.trim())}&type=EQUIPMENT`);
+      setPcHits(hits ?? []);
+    } catch (e: unknown) { notify(`오류 - 아이템 검색: ${(e as Error).message}`); }
+  }
+
+  async function addPiece() {
+    if (!selected || !pcItem) { notify('아이템을 검색해 선택하세요'); return; }
+    try {
+      await req(`/admin/sets/${selected.id}/pieces`, {
+        method: 'POST',
+        body: JSON.stringify({ slot: pcSlot, equipmentItemId: pcItem.id, pieceCount: parseInt(pcCount) || 1 }),
+      });
+      setPcItem(null); setPcQuery(''); setPcHits([]);
+      loadDetail(selected.id);
+    } catch (e: unknown) { notify(`오류 - 피스 추가: ${(e as Error).message}`); }
+  }
+
+  async function delPiece(pieceId: number) {
+    if (!selected) return;
+    try {
+      await req(`/admin/sets/${selected.id}/pieces/${pieceId}`, { method: 'DELETE' });
+      loadDetail(selected.id);
+    } catch (e: unknown) { notify(`오류 - ${(e as Error).message}`); }
+  }
+
+  async function addEffect() {
+    if (!selected) return;
+    if (!efStat) { notify('스탯 종류를 선택하세요'); return; }
+    try {
+      await req(`/admin/sets/${selected.id}/effects`, {
+        method: 'POST',
+        body: JSON.stringify({
+          requiredPieces: parseInt(efReq) || 0,
+          statType: efStat,
+          statValue: parseInt(efVal) || 0,
+          statUnit: efUnit,
+          element: efElem || 'NONE',
+          scope: efScope,
+        }),
+      });
+      setEfVal('');
+      loadDetail(selected.id);
+    } catch (e: unknown) { notify(`오류 - 효과 추가: ${(e as Error).message}`); }
+  }
+
+  async function delEffect(effectId: number) {
+    if (!selected) return;
+    try {
+      await req(`/admin/sets/${selected.id}/effects/${effectId}`, { method: 'DELETE' });
+      loadDetail(selected.id);
+    } catch (e: unknown) { notify(`오류 - ${(e as Error).message}`); }
+  }
+
   return (
     <div className="flex gap-4">
       <div className="w-72 shrink-0">
+        <Section title="새 세트 등록">
+          <div className="grid gap-2">
+            <Input value={newName} onChange={setNewName} placeholder="세트 이름 (예: 반고셋)" />
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-400 w-14">피스 수</span>
+              <Input value={newPiece} onChange={setNewPiece} type="number" />
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={newTradeable} onChange={(e) => setNewTradeable(e.target.checked)} className="w-4 h-4" />
+              거래 노출 허용
+            </label>
+            <Btn color="yellow" onClick={createSet}>등록</Btn>
+          </div>
+        </Section>
+
         <Section title="세트 목록">
           <div className="mb-2">
             <Input value={filterName} onChange={(v) => { setFilterName(v); setPage(0); }} placeholder="이름 검색" />
@@ -1799,8 +1995,8 @@ function SetsTab({ notify }: { notify: (m: string) => void }) {
                 className={`py-1.5 px-1 cursor-pointer text-sm hover:bg-gray-700 ${selected?.id === s.id ? 'bg-gray-700 text-yellow-300' : ''}`}
               >
                 <span className="font-medium">{s.name}</span>
-                <span className="ml-1 text-xs text-gray-400">({s.pieceCount}피스)</span>
-                {!s.tradeable && <span className="ml-1 text-xs text-gray-500">미노출</span>}
+                <span className="ml-1 text-xs text-gray-400">({s.totalPieces}피스)</span>
+                {!s.isTradeable && <span className="ml-1 text-xs text-gray-500">미노출</span>}
               </li>
             ))}
           </ul>
@@ -1815,31 +2011,142 @@ function SetsTab({ notify }: { notify: (m: string) => void }) {
 
       <div className="flex-1">
         {!selected ? (
-          <p className="text-gray-500 mt-8 text-center">세트를 선택하세요</p>
+          <p className="text-gray-500 mt-8 text-center">세트를 선택하거나 새로 등록하세요</p>
         ) : (
-          <Section title={`세트 #${selected.id} 수정`}>
-            <div className="grid gap-3 max-w-sm">
-              <div>
-                <label className="text-xs text-gray-400 block mb-1">이름</label>
-                <Input value={editName} onChange={setEditName} />
+          <>
+            <Section title={`세트 #${selected.id} 수정`}>
+              <div className="grid gap-3 max-w-sm">
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">이름</label>
+                  <Input value={editName} onChange={setEditName} />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">피스 수</label>
+                  <Input value={editPiece} onChange={setEditPiece} type="number" />
+                </div>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={editTradeable} onChange={(e) => setEditTradeable(e.target.checked)} className="w-4 h-4" />
+                  거래 노출 허용
+                </label>
+                <Btn color="yellow" onClick={saveSet}>저장</Btn>
               </div>
-              <div>
-                <label className="text-xs text-gray-400 block mb-1">피스 수</label>
-                <Input value={editPiece} onChange={setEditPiece} type="number" />
+            </Section>
+
+            <Section title="피스 구성">
+              {detail && detail.pieces.length > 0 ? (
+                <table className="w-full text-sm mb-3">
+                  <thead className="text-gray-400 text-left">
+                    <tr><th className="py-1 pr-3">슬롯</th><th className="py-1 pr-3">아이템</th><th className="py-1 pr-3">개수</th><th className="py-1"></th></tr>
+                  </thead>
+                  <tbody>
+                    {detail.pieces.map((p) => (
+                      <tr key={p.id} className="border-t border-gray-700">
+                        <td className="py-1.5 pr-3 text-gray-300">{labelOf(SET_SLOT_OPTIONS, p.slot)}</td>
+                        <td className="py-1.5 pr-3">{p.itemName}</td>
+                        <td className="py-1.5 pr-3 text-gray-400">{p.pieceCount}</td>
+                        <td className="py-1.5"><button onClick={() => delPiece(p.id)} className="text-xs bg-red-800 hover:bg-red-700 px-2 py-0.5 rounded">삭제</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : <p className="text-xs text-gray-500 mb-3">등록된 피스가 없습니다.</p>}
+
+              <div className="border-t border-gray-700 pt-3">
+                <p className="text-xs text-gray-400 mb-2">피스 추가</p>
+                <div className="flex flex-wrap items-end gap-2">
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">슬롯</label>
+                    <select value={pcSlot} onChange={(e) => setPcSlot(e.target.value)} className={inputClass('w-28')}>
+                      {SET_SLOT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">개수</label>
+                    <input value={pcCount} onChange={(e) => setPcCount(e.target.value)} type="number" className={inputClass('w-16')} />
+                  </div>
+                  <div className="flex-1 min-w-[180px]">
+                    <label className="text-xs text-gray-400 block mb-1">아이템 검색</label>
+                    <div className="flex gap-1">
+                      <input value={pcQuery} onChange={(e) => setPcQuery(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && searchItems()}
+                        placeholder="장비 이름" className={inputClass('flex-1')} />
+                      <Btn color="gray" onClick={searchItems}>검색</Btn>
+                    </div>
+                  </div>
+                </div>
+                {pcItem && <p className="text-xs text-green-400 mt-2">선택: {pcItem.name}</p>}
+                {pcHits.length > 0 && (
+                  <ul className="mt-2 max-h-40 overflow-y-auto border border-gray-700 rounded divide-y divide-gray-700">
+                    {pcHits.map((h) => (
+                      <li key={h.id} onClick={() => { setPcItem(h); setPcHits([]); }}
+                        className="py-1 px-2 text-sm cursor-pointer hover:bg-gray-700">{h.name}</li>
+                    ))}
+                  </ul>
+                )}
+                <div className="mt-2"><Btn color="yellow" onClick={addPiece} disabled={!pcItem}>피스 추가</Btn></div>
               </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="tradeable"
-                  checked={editTradeable}
-                  onChange={(e) => setEditTradeable(e.target.checked)}
-                  className="w-4 h-4"
-                />
-                <label htmlFor="tradeable" className="text-sm">거래 노출 허용</label>
+            </Section>
+
+            <Section title="세트 효과">
+              {detail && detail.effects.length > 0 ? (
+                <table className="w-full text-sm mb-3">
+                  <thead className="text-gray-400 text-left">
+                    <tr><th className="py-1 pr-3">피스</th><th className="py-1 pr-3">스탯</th><th className="py-1 pr-3">값</th><th className="py-1 pr-3">단위</th><th className="py-1 pr-3">속성</th><th className="py-1 pr-3">대상</th><th className="py-1"></th></tr>
+                  </thead>
+                  <tbody>
+                    {detail.effects.map((ef) => (
+                      <tr key={ef.id} className="border-t border-gray-700">
+                        <td className="py-1.5 pr-3 text-gray-300">{ef.requiredPieces}세트</td>
+                        <td className="py-1.5 pr-3">{labelOf(STAT_TYPE_OPTIONS, ef.statType)}</td>
+                        <td className="py-1.5 pr-3">{ef.statValue}</td>
+                        <td className="py-1.5 pr-3 text-gray-400">{labelOf(STAT_UNIT_OPTIONS, ef.statUnit)}</td>
+                        <td className="py-1.5 pr-3 text-gray-400">{ef.element === 'NONE' ? '-' : labelOf(ELEMENT_OPTIONS, ef.element)}</td>
+                        <td className="py-1.5 pr-3 text-gray-400">{labelOf(BUFF_SCOPE_OPTIONS, ef.scope)}</td>
+                        <td className="py-1.5"><button onClick={() => delEffect(ef.id)} className="text-xs bg-red-800 hover:bg-red-700 px-2 py-0.5 rounded">삭제</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : <p className="text-xs text-gray-500 mb-3">등록된 효과가 없습니다.</p>}
+
+              <div className="border-t border-gray-700 pt-3">
+                <p className="text-xs text-gray-400 mb-2">효과 추가</p>
+                <div className="grid grid-cols-2 gap-2 max-w-lg">
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">필요 피스수</label>
+                    <input value={efReq} onChange={(e) => setEfReq(e.target.value)} type="number" className={inputClass('w-full')} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">스탯 종류</label>
+                    <StatTypeSelect value={efStat} onChange={setEfStat} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">값</label>
+                    <input value={efVal} onChange={(e) => setEfVal(e.target.value)} type="number" className={inputClass('w-full')} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">단위</label>
+                    <select value={efUnit} onChange={(e) => setEfUnit(e.target.value)} className={inputClass('w-full')}>
+                      {STAT_UNIT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">속성 (ELEMENT_VALUE만)</label>
+                    <select value={efElem} onChange={(e) => setEfElem(e.target.value)} className={inputClass('w-full')}>
+                      {ELEMENT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">적용 대상</label>
+                    <select value={efScope} onChange={(e) => setEfScope(e.target.value)} className={inputClass('w-full')}>
+                      {BUFF_SCOPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="mt-2"><Btn color="yellow" onClick={addEffect}>효과 추가</Btn></div>
               </div>
-              <Btn color="yellow" onClick={saveSet}>저장</Btn>
-            </div>
-          </Section>
+            </Section>
+          </>
         )}
       </div>
     </div>
@@ -2539,23 +2846,33 @@ const SKILL_BEHAVIOR_OPTIONS = [
 
 const MERC_CATEGORY_OPTIONS = [
   { value: '', label: '없음' },
-  { value: 'HEAVENLY_KING', label: '사천왕' },
-  { value: 'AWAKENED_HEAVENLY_KING', label: '각성 사천왕' },
-  { value: 'MYEONGWANG', label: '명왕' },
-  { value: 'LEGEND', label: '전설장수' },
-  { value: 'GENERAL_1', label: '1차 장수' },
-  { value: 'GENERAL_2', label: '2차 장수' },
-  { value: 'HIRE_MONSTER', label: '고용몬' },
   { value: 'PROTAGONIST', label: '주인공' },
+  { value: 'FOUR_HEAVENLY_KINGS', label: '사천왕' },
+  { value: 'FOUR_HEAVENLY_KINGS_AWAKENING', label: '각성 사천왕' },
+  { value: 'MYEONG_KING', label: '명왕' },
+  { value: 'MYEONG_KING_AWAKENING', label: '각성 명왕' },
+  { value: 'LEGENDARY_GENERAL', label: '전설장수' },
+  { value: 'DIVINE_BEAST', label: '신수' },
+  { value: 'EVIL_BEAST', label: '마수' },
+  { value: 'EVIL_BEAST_AWAKENING', label: '각성 마수' },
+  { value: 'HIRED_MONSTER', label: '고용 몬스터' },
+  { value: 'EVOLVE_MONSTER', label: '진화 몬스터' },
+  { value: 'SPIRIT_MONSTER', label: '정령 몬스터' },
+  { value: 'GENERAL_AWAKENING', label: '각성 장수' },
+  { value: 'MODIFIED_GENERAL', label: '개조 장수' },
+  { value: 'FIRST_GRADE_GENERAL', label: '1급 장수' },
+  { value: 'SECOND_GRADE_GENERAL', label: '2급 장수' },
+  { value: 'MERCENARY', label: '용병' },
 ];
 
 const NATION_OPTIONS = [
   { value: '', label: '없음 (NONE)' },
+  { value: 'JOSEON', label: '조선' },
   { value: 'CHINA', label: '중국' },
-  { value: 'KOREA', label: '한국' },
   { value: 'JAPAN', label: '일본' },
+  { value: 'TAIWAN', label: '대만' },
   { value: 'INDIA', label: '인도' },
-  { value: 'MIDDLE_EAST', label: '중동' },
+  { value: 'MONGOL', label: '몽골' },
 ];
 
 const NATURE_OPTIONS = [
@@ -3169,6 +3486,13 @@ export default function AdminPage() {
             {t.label}
           </button>
         ))}
+        {/* 가이드 주입은 별도 페이지 — 탭이 아니라 링크로 이동 */}
+        <Link
+          href="/admin/guide-import"
+          className="px-4 py-2 text-sm font-medium -mb-px border-b-2 border-transparent text-gray-400 hover:text-gray-200"
+        >
+          가이드 주입 ↗
+        </Link>
       </div>
 
       {tab === 'crawler' && <CrawlerTab notify={notify} />}

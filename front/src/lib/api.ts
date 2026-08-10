@@ -317,7 +317,75 @@ export const api = {
     request<WatchTargetDto>('/api/watchlist', { method: 'POST', body: JSON.stringify(body) }),
   removeWatchTarget: (entryId: number) =>
     request<void>(`/api/watchlist/${entryId}`, { method: 'DELETE' }),
+
+  // ── 가이드 (육성 로드맵) ──
+  getRecommendedGuides: () => request<GuideSummary[]>('/api/guides/recommended'),
+  getMyGuides: () => request<UserGuideSummary[]>('/api/user-guides'),
+  startGuide: (guideId: number) =>
+    request<UserGuideDetail>(`/api/user-guides?guideId=${guideId}`, { method: 'POST' }),
+  getUserGuide: (id: number) => request<UserGuideDetail>(`/api/user-guides/${id}`),
+  checkGuideStep: (stepId: number) =>
+    request<void>(`/api/user-guides/steps/${stepId}/check`, { method: 'POST' }),
+  uncheckGuideStep: (stepId: number) =>
+    request<void>(`/api/user-guides/steps/${stepId}/check`, { method: 'DELETE' }),
 };
+
+export interface GuideSummary {
+  id: number;
+  title: string;
+  phase: 'NORMAL' | 'AWAKENED';
+  version: string;
+  author: string | null;
+  targetMercenaryId: number | null;
+  targetMercenaryName: string | null;
+  targetMercenaryImageUrl: string | null;
+}
+
+export interface UserGuideSummary {
+  id: number;
+  title: string;
+  sourceGuideId: number | null;
+  sourceVersion: string;
+  targetMercenaryId: number | null;
+  targetMercenaryName: string | null;
+  targetMercenaryImageUrl: string | null;
+  totalSteps: number;
+  completedSteps: number;
+  createdAt: string;
+}
+
+export interface UserGuideStepDto {
+  id: number;
+  stepOrder: number;
+  stepType: string;
+  label: string;
+  note: string | null;
+  iconUrl: string | null;
+  displayIconUrl: string | null;
+  linkedItemId: number | null;
+  linkedItemName: string | null;
+  linkedSetId: number | null;
+  linkedSetName: string | null;
+  linkedSetTradeable: boolean;
+  setPieceIcons: string[];
+  linkedMercenaryId: number | null;
+  linkedMercenaryName: string | null;
+  custom: boolean;
+  checked: boolean;
+  checkedAt: string | null;
+}
+
+export interface UserGuideDetail {
+  id: number;
+  title: string;
+  sourceGuideId: number | null;
+  sourceVersion: string;
+  targetMercenaryId: number | null;
+  targetMercenaryName: string | null;
+  targetMercenaryImageUrl: string | null;
+  createdAt: string;
+  steps: UserGuideStepDto[];
+}
 
 // ── 타입 정의 ──
 

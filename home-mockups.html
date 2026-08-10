@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>거상인 홈 시안 3종</title>
+<style>
+  :root{
+    --bg:#F3ECDA; --card:#FBF7EC; --white:#FFFFFF;
+    --brown:#8A5A2B; --brown-dark:#5E3C1C; --brown-soft:#B98A56;
+    --border:#E4D8BF; --text:#3A2E1F; --muted:#8B7A5E; --beige:#F3ECDA;
+    --sell:#2F7D53; --sell-bg:#E6F1E9; --buy:#2E5E97; --buy-bg:#E6EDF5;
+    --done:#8B7A5E; --done-bg:#EFE9DC; --up:#C0472B; --down:#2E5E97;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#ECE3CE;color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Malgun Gothic","Apple SD Gothic Neo",sans-serif;line-height:1.5;padding:32px 16px 80px}
+  .wrap{max-width:1060px;margin:0 auto}
+  .serif{font-family:Georgia,"Nanum Myeongjo",serif}
+  .page-title{font-size:26px;font-weight:700;margin-bottom:6px}
+  .page-sub{color:#6b5c44;font-size:14px;margin-bottom:28px;max-width:720px}
+
+  .anno{margin:44px 0 12px}
+  .anno-tag{display:inline-block;font-size:12px;font-weight:700;letter-spacing:.5px;color:var(--brown);background:#EFE3CE;padding:3px 10px;border-radius:20px}
+  .anno-h{font-size:20px;font-weight:700;margin:10px 0 6px}
+  .anno-row{display:flex;gap:24px;flex-wrap:wrap;font-size:13px;color:#5c4d38;margin-top:4px}
+  .anno-row b{color:var(--text)}
+
+  /* browser chrome */
+  .browser{border:1px solid #D9CBAC;border-radius:12px;overflow:hidden;box-shadow:0 8px 30px rgba(80,60,30,.12);background:var(--bg)}
+  .chrome{display:flex;align-items:center;gap:8px;background:#E7DCC4;padding:9px 12px;border-bottom:1px solid #D9CBAC}
+  .dot{width:11px;height:11px;border-radius:50%}
+  .url{flex:1;background:#F6EFDE;border:1px solid #D9CBAC;border-radius:6px;font-size:12px;color:#7a6a50;padding:4px 10px;margin-left:8px}
+  .screen{padding:0}
+
+  /* site nav */
+  .nav{display:flex;align-items:center;justify-content:space-between;padding:14px 22px;background:var(--card);border-bottom:1px solid var(--border)}
+  .logo{font-size:20px;font-weight:700;color:var(--brown-dark)}
+  .nav-links{display:flex;gap:18px;font-size:13px;color:#6b5c44}
+  .nav-right{display:flex;gap:10px;align-items:center}
+  .server-sel{font-size:12px;color:#6b5c44;border:1px solid var(--border);border-radius:6px;padding:5px 10px;background:var(--white)}
+  .btn{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;border-radius:7px;padding:8px 16px;cursor:pointer;border:1px solid transparent;text-decoration:none}
+  .btn-primary{background:var(--brown);color:#F6EFDE}
+  .btn-primary:hover{background:var(--brown-dark)}
+  .btn-ghost{background:var(--white);color:var(--brown-dark);border-color:var(--border)}
+  .btn-ghost:hover{border-color:var(--brown-soft)}
+
+  .search{display:flex;background:var(--white);border:1.5px solid var(--brown-soft);border-radius:10px;overflow:hidden}
+  .search input{flex:1;border:0;outline:0;padding:13px 16px;font-size:15px;background:transparent;color:var(--text)}
+  .search .go{background:var(--brown);color:#F6EFDE;border:0;padding:0 22px;font-size:14px;font-weight:600;cursor:pointer}
+
+  .sec-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .sec-h h3{font-size:15px;font-weight:700}
+  .sec-h a{font-size:12px;color:var(--brown);text-decoration:none}
+
+  .listing{display:flex;align-items:center;gap:12px;background:var(--white);border:1px solid var(--border);border-radius:10px;padding:11px 13px}
+  .thumb{width:40px;height:40px;border-radius:8px;background:#EFE3CE;flex:none;display:flex;align-items:center;justify-content:center;color:var(--brown-soft);font-size:11px}
+  .l-name{font-size:14px;font-weight:600}
+  .l-meta{font-size:12px;color:var(--muted)}
+  .l-price{font-weight:700;color:var(--brown-dark);font-size:14px;white-space:nowrap}
+  .pill{font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px}
+  .p-sell{color:var(--sell);background:var(--sell-bg)}
+  .p-buy{color:var(--buy);background:var(--buy-bg)}
+  .p-done{color:var(--done);background:var(--done-bg)}
+
+  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px}
+  .muted{color:var(--muted)}
+  .grid{display:grid;gap:12px}
+  .ico{width:22px;height:22px;stroke:var(--brown);fill:none;stroke-width:2}
+  .ico-lg{width:30px;height:30px;stroke:var(--brown);fill:none;stroke-width:1.7}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="page-title serif">거상인 · 홈 시안 3종</div>
+  <div class="page-sub">첫 방문한 <b>비로그인 신규 유저</b> 기준. 세 방향은 철학이 서로 달라 — 보면서 "이건 좋다 / 이건 싫다"만 반응해줘. 섞어도 되고, 하나를 고른 뒤 다른 안의 요소를 얹어도 돼.</div>
+
+  <!-- ============ 시안 A ============ -->
+  <div class="anno">
+    <span class="anno-tag">시안 A · 활동 중심</span>
+    <div class="anno-h serif">살아있는 마켓</div>
+    <div class="anno-row">
+      <span><b>핵심:</b> 들어오자마자 "지금 거래가 활발하다"를 보여줌</span>
+      <span><b>강점:</b> 신뢰·활기, 바로 매물 탐색</span>
+      <span><b>주의:</b> 매물 데이터가 비면 썰렁해 보임</span>
+    </div>
+  </div>
+  <div class="browser">
+    <div class="chrome"><span class="dot" style="background:#E0A5A5"></span><span class="dot" style="background:#E7D08A"></span><span class="dot" style="background:#A7C79A"></span><span class="url">gersang-trade.com</span></div>
+    <div class="screen">
+      <div class="nav">
+        <div style="display:flex;align-items:center;gap:22px">
+          <span class="logo serif">거상인</span>
+          <div class="nav-links"><span>거래</span><span>시세</span><span>계산기</span><span>사냥 허브</span></div>
+        </div>
+        <div class="nav-right"><span class="server-sel">서버: 광개토 ▾</span><a class="btn btn-primary">로그인</a></div>
+      </div>
+      <div style="padding:22px 24px 26px">
+        <div style="display:flex;gap:10px;align-items:center;margin-bottom:6px">
+          <span class="serif" style="font-size:22px;font-weight:700">지금 광개토 서버, 이렇게 거래되고 있어요</span>
+        </div>
+        <div class="muted" style="font-size:13px;margin-bottom:14px">아이템명으로 검색하거나 아래 실시간 매물을 둘러보세요</div>
+        <div class="search" style="margin-bottom:22px">
+          <input placeholder="예: 태황세트, 명왕도, 흑요석" readonly>
+          <button class="go">검색</button>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:20px">
+          <div>
+            <div class="sec-h"><h3>실시간 매물</h3><a>전체 거래 보기 →</a></div>
+            <div class="grid">
+              <div class="listing"><div class="thumb">IMG</div><div style="flex:1"><div class="l-name">태황세트 풀 XX</div><div class="l-meta">광개토 · 2분 전</div></div><span class="pill p-sell">팝니다</span><span class="l-price">12,000만</span></div>
+              <div class="listing"><div class="thumb">IMG</div><div style="flex:1"><div class="l-name">명왕도 5강</div><div class="l-meta">광개토 · 8분 전</div></div><span class="pill p-sell">팝니다</span><span class="l-price">3,500만</span></div>
+              <div class="listing"><div class="thumb">IMG</div><div style="flex:1"><div class="l-name">흑요석(주술됨) ×3</div><div class="l-meta">광개토 · 14분 전</div></div><span class="pill p-buy">삽니다</span><span class="l-price">800만</span></div>
+              <div class="listing"><div class="thumb">IMG</div><div style="flex:1"><div class="l-name">풀 00세트 3XX</div><div class="l-meta">광개토 · 21분 전</div></div><span class="pill p-sell">팝니다</span><span class="l-price">6,700만</span></div>
+              <div class="listing"><div class="thumb">IMG</div><div style="flex:1"><div class="l-name">태극반지 00</div><div class="l-meta">광개토 · 33분 전</div></div><span class="pill p-done">거래완료</span><span class="l-price">950만</span></div>
+            </div>
+          </div>
+          <div>
+            <div class="sec-h"><h3>인기 아이템 시세</h3><a>더보기 →</a></div>
+            <div class="card" style="padding:6px 14px">
+              <div style="display:flex;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--border)"><div><div class="l-name" style="font-size:13px">명왕도 5강</div><div class="l-meta">최근 30일 평균</div></div><div style="text-align:right"><div class="l-price">3,500만</div><div style="font-size:12px;color:var(--up)">▲ 8%</div></div></div>
+              <div style="display:flex;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--border)"><div><div class="l-name" style="font-size:13px">태황투구 XX</div><div class="l-meta">최근 30일 평균</div></div><div style="text-align:right"><div class="l-price">1,200만</div><div style="font-size:12px;color:var(--down)">▼ 3%</div></div></div>
+              <div style="display:flex;justify-content:space-between;padding:11px 0"><div><div class="l-name" style="font-size:13px">흑요석 주술됨</div><div class="l-meta">최근 30일 평균</div></div><div style="text-align:right"><div class="l-price">280만</div><div style="font-size:12px;color:var(--up)">▲ 12%</div></div></div>
+            </div>
+            <div class="card" style="margin-top:12px;text-align:center;padding:18px">
+              <div style="font-size:13px;font-weight:600;margin-bottom:4px">로그인하면 관심 아이템 시세를 저장해요</div>
+              <div class="muted" style="font-size:12px;margin-bottom:12px">가격 알림 · 거래 등록 · 채팅</div>
+              <a class="btn btn-primary" style="width:100%;justify-content:center">Google로 시작</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 시안 B ============ -->
+  <div class="anno">
+    <span class="anno-tag">시안 B · 전환 중심</span>
+    <div class="anno-h serif">가치 제안 랜딩</div>
+    <div class="anno-row">
+      <span><b>핵심:</b> "왜 카페·사통팔달 말고 여기?"를 확실히 설득</span>
+      <span><b>강점:</b> 데이터 적어도 성립, 첫인상 강함</span>
+      <span><b>주의:</b> 재방문 단골에겐 매번 광고처럼 지루</span>
+    </div>
+  </div>
+  <div class="browser">
+    <div class="chrome"><span class="dot" style="background:#E0A5A5"></span><span class="dot" style="background:#E7D08A"></span><span class="dot" style="background:#A7C79A"></span><span class="url">gersang-trade.com</span></div>
+    <div class="screen">
+      <div class="nav">
+        <div style="display:flex;align-items:center;gap:22px">
+          <span class="logo serif">거상인</span>
+          <div class="nav-links"><span>거래</span><span>시세</span><span>계산기</span><span>사냥 허브</span></div>
+        </div>
+        <div class="nav-right"><a class="btn btn-ghost">둘러보기</a><a class="btn btn-primary">로그인</a></div>
+      </div>
+      <div style="padding:52px 24px;text-align:center;background:linear-gradient(180deg,#F3ECDA,#F8F2E4)">
+        <div class="serif" style="font-size:34px;font-weight:700;line-height:1.3;margin-bottom:14px">거상 아이템, <span style="color:var(--brown)">시세 보고 안전하게</span> 거래하세요</div>
+        <div style="font-size:15px;color:#6b5c44;max-width:560px;margin:0 auto 26px">서버별 실시간 시세, 세트·주술 정확한 표기, DPS·가성비 계산기까지. 흩어진 거래를 한곳에서.</div>
+        <div style="display:flex;gap:10px;justify-content:center;margin-bottom:12px">
+          <a class="btn btn-primary" style="padding:12px 26px;font-size:15px">Google / Naver로 시작</a>
+          <a class="btn btn-ghost" style="padding:12px 26px;font-size:15px">매물 먼저 둘러보기</a>
+        </div>
+        <div class="muted" style="font-size:12px">가입 없이도 시세·계산기는 무료로 이용할 수 있어요</div>
+      </div>
+      <div style="padding:34px 24px">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
+          <div class="card" style="text-align:center;padding:24px 18px">
+            <svg class="ico-lg" viewBox="0 0 24 24" style="margin-bottom:10px"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>
+            <div style="font-weight:700;margin-bottom:6px">서버별 실시간 시세</div>
+            <div class="muted" style="font-size:13px">판매·구매·거래완료 가격을 기간별로. 관심 아이템은 알림까지.</div>
+          </div>
+          <div class="card" style="text-align:center;padding:24px 18px">
+            <svg class="ico-lg" viewBox="0 0 24 24" style="margin-bottom:10px"><path d="M14 3l7 7-11 11H3v-7z"/><path d="M11 6l7 7"/></svg>
+            <div style="font-weight:700;margin-bottom:6px">세트·주술 정확 표기</div>
+            <div class="muted" style="font-size:13px">풀세트, 주술 성공/대성공까지 그대로. 헷갈릴 일 없이 등록·조회.</div>
+          </div>
+          <div class="card" style="text-align:center;padding:24px 18px">
+            <svg class="ico-lg" viewBox="0 0 24 24" style="margin-bottom:10px"><path d="M4 4h16v16H4z"/><path d="M8 4v16M4 9h4M4 14h4"/></svg>
+            <div style="font-weight:700;margin-bottom:6px">DPS·가성비 계산기</div>
+            <div class="muted" style="font-size:13px">덱을 구성하고 몬스터별 DPS·1점당 가격으로 최적 스펙업 경로를.</div>
+          </div>
+        </div>
+        <div class="card" style="margin-top:16px;display:flex;align-items:center;gap:20px;padding:8px 20px 8px 8px;overflow:hidden">
+          <div style="flex:none;width:300px;height:150px;background:#F1E7D2;border-radius:8px;display:flex;align-items:flex-end;gap:6px;padding:16px">
+            <div style="flex:1;height:40%;background:var(--brown-soft);border-radius:3px"></div>
+            <div style="flex:1;height:65%;background:var(--brown-soft);border-radius:3px"></div>
+            <div style="flex:1;height:52%;background:var(--brown-soft);border-radius:3px"></div>
+            <div style="flex:1;height:80%;background:var(--brown);border-radius:3px"></div>
+            <div style="flex:1;height:70%;background:var(--brown);border-radius:3px"></div>
+          </div>
+          <div>
+            <div style="font-weight:700;font-size:16px;margin-bottom:6px">한눈에 보는 시세 그래프</div>
+            <div class="muted" style="font-size:13px">아이템마다 최근 거래가 흐름을 그래프로. 지금이 살 때인지 팔 때인지 바로 판단하세요.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 시안 C ============ -->
+  <div class="anno">
+    <span class="anno-tag">시안 C · 도구 중심</span>
+    <div class="anno-h serif">거상 도구 허브</div>
+    <div class="anno-row">
+      <span><b>핵심:</b> "거상 유저를 위한 도구 모음"으로 포지셔닝</span>
+      <span><b>강점:</b> 재방문·파워유저에게 강함, 검색이 주행동</span>
+      <span><b>주의:</b> 첫 방문자에겐 거래 활기가 덜 느껴질 수 있음</span>
+    </div>
+  </div>
+  <div class="browser">
+    <div class="chrome"><span class="dot" style="background:#E0A5A5"></span><span class="dot" style="background:#E7D08A"></span><span class="dot" style="background:#A7C79A"></span><span class="url">gersang-trade.com</span></div>
+    <div class="screen">
+      <div class="nav">
+        <div style="display:flex;align-items:center;gap:22px">
+          <span class="logo serif">거상인</span>
+          <div class="nav-links"><span>거래</span><span>시세</span><span>계산기</span><span>사냥 허브</span></div>
+        </div>
+        <div class="nav-right"><span class="server-sel">서버: 광개토 ▾</span><a class="btn btn-primary">로그인</a></div>
+      </div>
+      <div style="padding:34px 24px 20px;text-align:center">
+        <div class="serif" style="font-size:24px;font-weight:700;margin-bottom:4px">거상인</div>
+        <div class="muted" style="font-size:13px;margin-bottom:18px">아이템 거래 · 시세 조회 · DPS 계산기</div>
+        <div class="search" style="max-width:560px;margin:0 auto">
+          <input placeholder="아이템명으로 시세·매물 검색" readonly>
+          <button class="go">검색</button>
+        </div>
+      </div>
+      <div style="padding:6px 24px 30px">
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:22px">
+          <div class="card" style="padding:16px">
+            <svg class="ico" viewBox="0 0 24 24" style="margin-bottom:8px"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>
+            <div style="font-weight:700;font-size:14px">시세 조회</div>
+            <div class="muted" style="font-size:12px;margin-bottom:8px">서버별 실거래가</div>
+            <div style="font-size:11px;color:var(--up)">명왕도 ▲8% · 흑요석 ▲12%</div>
+          </div>
+          <div class="card" style="padding:16px">
+            <svg class="ico" viewBox="0 0 24 24" style="margin-bottom:8px"><path d="M4 4h16v16H4z"/><path d="M8 4v16M4 9h4"/></svg>
+            <div style="font-weight:700;font-size:14px">DPS 계산기</div>
+            <div class="muted" style="font-size:12px;margin-bottom:8px">덱 구성·몬스터별</div>
+            <div style="font-size:11px;color:var(--muted)">최적 스펙업 경로 추천</div>
+          </div>
+          <div class="card" style="padding:16px">
+            <svg class="ico" viewBox="0 0 24 24" style="margin-bottom:8px"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9 10h4.5a2 2 0 010 4H9"/></svg>
+            <div style="font-weight:700;font-size:14px">가성비 테스트</div>
+            <div class="muted" style="font-size:12px;margin-bottom:8px">능력치 1점당 가격</div>
+            <div style="font-size:11px;color:var(--muted)">어디에 투자할지 비교</div>
+          </div>
+          <div class="card" style="padding:16px">
+            <svg class="ico" viewBox="0 0 24 24" style="margin-bottom:8px"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+            <div style="font-weight:700;font-size:14px">사냥 허브</div>
+            <div class="muted" style="font-size:12px;margin-bottom:8px">클리어타임 기록</div>
+            <div style="font-size:11px;color:var(--muted)">내 사냥 효율 관리</div>
+          </div>
+        </div>
+        <div class="sec-h"><h3>최근 등록된 매물</h3><a>전체 거래 보기 →</a></div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+          <div class="listing"><div class="thumb">IMG</div><div style="flex:1"><div class="l-name" style="font-size:13px">태황세트 풀 XX</div><div class="l-meta">광개토 · 2분 전</div></div><span class="l-price" style="font-size:13px">12,000만</span></div>
+          <div class="listing"><div class="thumb">IMG</div><div style="flex:1"><div class="l-name" style="font-size:13px">명왕도 5강</div><div class="l-meta">광개토 · 8분 전</div></div><span class="l-price" style="font-size:13px">3,500만</span></div>
+          <div class="listing"><div class="thumb">IMG</div><div style="flex:1"><div class="l-name" style="font-size:13px">태극반지 00</div><div class="l-meta">이성계 · 33분 전</div></div><span class="l-price" style="font-size:13px">950만</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top:40px;padding:18px 20px;background:#EFE3CE;border-radius:10px;font-size:13px;color:#5c4d38">
+    <b>다음 단계:</b> 마음에 드는 방향(또는 섞을 요소)을 알려주면, 고른 안을 실제 Next.js 홈(<code>front/src/app/page.tsx</code>)에 반영하는 코드로 만들어줄게. 이 파일은 목업이라 클릭 동작은 없어.
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,13 @@
+# Grafana 부팅 시 대시보드 JSON 자동 로드
+apiVersion: 1
+providers:
+  - name: 'gersang-loadtest'
+    orgId: 1
+    folder: ''
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: false

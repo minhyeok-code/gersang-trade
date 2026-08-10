@@ -1,0 +1,18 @@
+# Prometheus 수집 설정 — 부하테스트용
+global:
+  scrape_interval: 5s      # 부하 구간을 촘촘히 보기 위해 5초
+  evaluation_interval: 5s
+
+scrape_configs:
+  # Spring Boot 앱 메트릭 (micrometer-registry-prometheus 필요)
+  - job_name: 'gersang-app'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['host.docker.internal:8080']   # 호스트에서 실행 중인 앱(도커/gradlew 공통)
+        labels:
+          application: 'gersang-trade'
+
+  # Prometheus 자체 상태
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

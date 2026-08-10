@@ -1,0 +1,10 @@
+[
+  { "currentResistPierce": 120, "currentElementValue": 45, "monsterResistance": 180, "monsterElementValue": 30, "monsterElement": "FIRE", "serverId": 1 },
+  { "currentResistPierce": 200, "currentElementValue": 60, "monsterResistance": 300, "monsterElementValue": 50, "monsterElement": "WATER", "serverId": 3 },
+  { "currentResistPierce": 0, "currentElementValue": 10, "monsterResistance": 90, "monsterElementValue": 0, "monsterElement": "NONE", "serverId": 7 },
+  { "currentResistPierce": 260, "currentElementValue": 80, "monsterResistance": 260, "monsterElementValue": 70, "monsterElement": "THUNDER", "serverId": 13, "priceOverrides": { "ITEM_1001": 5000000, "MERC_42": 12000000 } },
+  { "currentResistPierce": 75, "currentElementValue": 25, "monsterResistance": 150, "monsterElementValue": 20, "monsterElement": "EARTH", "serverId": 5 },
+  { "currentResistPierce": 310, "currentElementValue": 95, "monsterResistance": 420, "monsterElementValue": 88, "monsterElement": "WIND", "serverId": 9 },
+  { "currentResistPierce": 40, "currentElementValue": 15, "monsterResistance": 255, "monsterElementValue": 12, "monsterElement": "FIRE", "serverId": 2 },
+  { "currentResistPierce": 180, "currentElementValue": 55, "monsterResistance": 265, "monsterElementValue": 60, "monsterElement": "ADAPTIVE", "serverId": 11 }
+]

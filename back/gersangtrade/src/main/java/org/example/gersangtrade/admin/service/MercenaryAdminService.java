@@ -313,6 +313,7 @@ public class MercenaryAdminService {
      * </ul>
      */
     @Transactional
+    @CacheEvict(value = {CacheConfig.CHARACTERISTICS_BY_MERC, CacheConfig.CHAR_LEVELS_BY_CHAR}, allEntries = true)
     public CharacteristicAdminResponse createCharacteristic(Long mercenaryId,
                                                             CharacteristicCreateRequest req) {
         Mercenary mercenary = getMercenaryOrThrow(mercenaryId);
@@ -351,6 +352,7 @@ public class MercenaryAdminService {
     // ── 특성 수정 ────────────────────────────────────────────────────────────────
 
     @Transactional
+    @CacheEvict(value = {CacheConfig.CHARACTERISTICS_BY_MERC, CacheConfig.CHAR_LEVELS_BY_CHAR}, allEntries = true)
     public CharacteristicAdminResponse updateCharacteristic(Long mercenaryId, Long charId,
                                                             CharacteristicUpdateRequest req) {
         validateCharacteristicBelongsTo(mercenaryId, charId);
@@ -378,6 +380,7 @@ public class MercenaryAdminService {
     // ── 특성 삭제 ────────────────────────────────────────────────────────────────
 
     @Transactional
+    @CacheEvict(value = {CacheConfig.CHARACTERISTICS_BY_MERC, CacheConfig.CHAR_LEVELS_BY_CHAR}, allEntries = true)
     public void deleteCharacteristic(Long mercenaryId, Long charId) {
         validateCharacteristicBelongsTo(mercenaryId, charId);
         // 해당 특성을 선행으로 참조하는 자식이 있으면 삭제 거부
@@ -399,6 +402,7 @@ public class MercenaryAdminService {
      * PUT 의미론 — 기존 레벨 전체를 삭제하고 요청 목록으로 재적재한다.
      */
     @Transactional
+    @CacheEvict(value = {CacheConfig.CHARACTERISTICS_BY_MERC, CacheConfig.CHAR_LEVELS_BY_CHAR}, allEntries = true)
     public CharacteristicAdminResponse saveLevels(Long mercenaryId, Long charId,
                                                    CharacteristicLevelSaveRequest req) {
         validateCharacteristicBelongsTo(mercenaryId, charId);
@@ -434,7 +438,7 @@ public class MercenaryAdminService {
      * 덱, 장비, 전직 재료 등 다른 데이터에서 참조 중이면 삭제를 거부한다.
      */
     @Transactional
-    @CacheEvict(value = CacheConfig.MERCENARIES, allEntries = true)
+    @CacheEvict(value = {CacheConfig.MERCENARIES, CacheConfig.CHARACTERISTICS_BY_MERC, CacheConfig.CHAR_LEVELS_BY_CHAR}, allEntries = true)
     public void deleteMercenary(Long mercenaryId) {
         Mercenary mercenary = getMercenaryOrThrow(mercenaryId);
         if (mercenaryMaterialRepository.existsByMaterialMercenaryId(mercenaryId)) {

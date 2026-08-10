@@ -4,9 +4,10 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getToken, getServer } from '@/lib/api';
 import Link from 'next/link';
-import { Sword, Users, Clock } from 'lucide-react';
+import { Sword, Clock } from 'lucide-react';
 import SearchBar from '@/components/common/SearchBar';
 import InterestPriceWatchPanel from '@/components/home/InterestPriceWatchPanel';
+import GuideChecklistPanel from '@/components/home/GuideChecklistPanel';
 
 export default function Home() {
   const router = useRouter();
@@ -96,29 +97,9 @@ export default function Home() {
       </div>
 
       {isLoggedIn ? (
-        <div className="grid lg:grid-cols-2 gap-6">
+        <div className="space-y-6">
+          <GuideChecklistPanel />
           <InterestPriceWatchPanel />
-
-          <div
-            style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-            className="rounded-xl p-5"
-          >
-            <div className="flex items-center gap-2 mb-4">
-              <Sword style={{ color: 'var(--brown)', width: 18, height: 18 }} />
-              <h2 className="font-semibold" style={{ color: 'var(--text)' }}>스펙업 추천</h2>
-            </div>
-            <div className="flex flex-col items-center justify-center py-8" style={{ color: 'var(--text-muted)' }}>
-              <Users style={{ width: 36, height: 36, margin: '0 auto 8px', opacity: 0.4 }} />
-              <p className="text-sm">덱을 구성하면 스펙업 추천이 제공됩니다</p>
-              <Link
-                href="/deck"
-                style={{ color: 'var(--brown)' }}
-                className="text-xs mt-2 inline-block hover:underline"
-              >
-                전투 계산기에서 덱 설정하기 →
-              </Link>
-            </div>
-          </div>
         </div>
       ) : (
         <div className="grid lg:grid-cols-3 gap-5">
