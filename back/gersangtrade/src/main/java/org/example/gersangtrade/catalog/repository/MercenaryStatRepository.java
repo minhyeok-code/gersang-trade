@@ -1,7 +1,9 @@
 package org.example.gersangtrade.catalog.repository;
 
+import org.example.gersangtrade.config.CacheConfig;
 import org.example.gersangtrade.domain.catalog.MercenaryStat;
 import org.example.gersangtrade.domain.catalog.enums.StatType;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -29,8 +31,17 @@ public interface MercenaryStatRepository extends JpaRepository<MercenaryStat, Lo
     /**
      * 특정 스탯 타입을 보유한 모든 용병의 스탯 조회.
      * 가성비 계산기 목록 구성(저항깎 보유 용병 등)에 사용된다.
+     * 정적 카탈로그라 캐싱한다. 계산기가 stat.getMercenary()를 읽으므로,
+     * 캐시된 엔티티가 detached여도 안전하도록 mercenary를 fetch join으로 초기화한다.
+     * 관리자 용병/스탯 수정 시 @CacheEvict로 무효화한다.
      */
-    List<MercenaryStat> findByStatKey(StatType statKey);
+    @Cacheable(CacheConfig.MERC_STATS_BY_STATKEY)
+    @Query("""
+            SELECT ms FROM MercenaryStat ms
+            JOIN FETCH ms.mercenary
+            WHERE ms.statKey = :statKey
+            """)
+    List<MercenaryStat> findByStatKey(@Param("statKey") StatType statKey);
 
     /**
      * 용병 ID에 해당하는 스탯 전체 삭제.

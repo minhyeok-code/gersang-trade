@@ -32,6 +32,10 @@ public class CacheConfig {
     public static final String CHARACTERISTICS_BY_MERC   = "characteristics-by-merc";
     /** DPS 계산기 N+1 완화 — 특성별 레벨 수치 목록(정적 카탈로그) */
     public static final String CHAR_LEVELS_BY_CHAR       = "char-levels-by-char";
+    /** 가성비 계산기 — 능력치 종류별 아이템 스탯 목록(정적 카탈로그) */
+    public static final String ITEM_STATS_BY_TYPE        = "item-stats-by-type";
+    /** 가성비 계산기 — 능력치 종류별 용병 스탯 목록(정적 카탈로그) */
+    public static final String MERC_STATS_BY_STATKEY     = "merc-stats-by-statkey";
     /** 관심 아이템 시세 — userId:serverId 키, TTL 2분 */
     public static final String PRICE_WATCH               = "priceWatch";
 

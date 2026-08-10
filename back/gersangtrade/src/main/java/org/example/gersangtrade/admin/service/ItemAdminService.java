@@ -231,7 +231,7 @@ public class ItemAdminService {
      * element가 null이면 NONE으로 처리된다 (ItemStat 빌더 동일 정책).
      */
     @Transactional
-    @CacheEvict(value = CacheConfig.EQUIPMENT_SLOT, allEntries = true)
+    @CacheEvict(value = {CacheConfig.EQUIPMENT_SLOT, CacheConfig.ITEM_STATS_BY_TYPE}, allEntries = true)
     public ItemDetailAdminResponse replaceStats(Long itemId, ItemStatReplaceRequest req) {
         Item item = getItemOrThrow(itemId);
         itemStatRepository.deleteByItemId(itemId);

@@ -1,9 +1,11 @@
 package org.example.gersangtrade.catalog.repository;
 
+import org.example.gersangtrade.config.CacheConfig;
 import org.example.gersangtrade.domain.catalog.ItemStat;
 import org.example.gersangtrade.domain.catalog.enums.Element;
 import org.example.gersangtrade.domain.catalog.enums.BuffTarget;
 import org.example.gersangtrade.domain.catalog.enums.StatType;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -22,6 +24,7 @@ public interface ItemStatRepository extends JpaRepository<ItemStat, Long> {
      *
      * @param statType 조회할 능력치 종류 (RESIST_PIERCE | ELEMENT_VALUE | ELEMENT_PIERCE)
      */
+    @Cacheable(CacheConfig.ITEM_STATS_BY_TYPE)
     @Query("""
             SELECT ist FROM ItemStat ist
             JOIN FETCH ist.item

@@ -5,17 +5,16 @@ global:
   evaluation_interval: 5s
 
 scrape_configs:
-  # 운영 앱 (blue 슬롯) — docker-compose.prod.yml의 container_name 기준
+  # 운영 앱 — 블루-그린 양쪽을 모두 스크랩한다.
+  # 배포할 때마다 활성 슬롯이 blue↔green으로 바뀌므로, 둘 다 등록해두면
+  # 활성 슬롯은 항상 UP으로 잡히고 비활성 슬롯만 DOWN으로 뜬다(정상, 무시).
   - job_name: 'gersang-app'
     metrics_path: '/actuator/prometheus'
     static_configs:
       - targets: ['gersang-trade-app-blue:8080']
-        labels:
-          application: 'gersang-trade'
-          slot: 'blue'
-    # green 슬롯을 테스트할 때는 아래 주석을 해제(또는 위 target을 green으로 교체)
-    #   - targets: ['gersang-trade-app-green:8080']
-    #     labels: { application: 'gersang-trade', slot: 'green' }
+        labels: { application: 'gersang-trade', slot: 'blue' }
+      - targets: ['gersang-trade-app-green:8080']
+        labels: { application: 'gersang-trade', slot: 'green' }
 
   - job_name: 'prometheus'
     static_configs:

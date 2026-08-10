@@ -116,7 +116,7 @@ public class MercenaryAdminService {
      * 기존 스탯을 전부 삭제하고 요청 목록으로 재적재한다.
      */
     @Transactional
-    @CacheEvict(value = CacheConfig.MERCENARIES, allEntries = true)
+    @CacheEvict(value = {CacheConfig.MERCENARIES, CacheConfig.MERC_STATS_BY_STATKEY}, allEntries = true)
     public MercenaryDetailAdminResponse replaceStats(Long mercenaryId, MercenaryStatReplaceRequest req) {
         Mercenary mercenary = getMercenaryOrThrow(mercenaryId);
         statRepository.deleteByMercenaryId(mercenaryId);
@@ -238,7 +238,7 @@ public class MercenaryAdminService {
      * 해당 statType이 이미 있으면 값을 업데이트하고, 없으면 새로 추가한다.
      */
     @Transactional
-    @CacheEvict(value = CacheConfig.MERCENARIES, allEntries = true)
+    @CacheEvict(value = {CacheConfig.MERCENARIES, CacheConfig.MERC_STATS_BY_STATKEY}, allEntries = true)
     public MercenaryAdminResponse.StatEntry patchStat(Long mercenaryId, StatType statType, int value) {
         Mercenary mercenary = getMercenaryOrThrow(mercenaryId);
         MercenaryStat stat = statRepository
@@ -438,7 +438,7 @@ public class MercenaryAdminService {
      * 덱, 장비, 전직 재료 등 다른 데이터에서 참조 중이면 삭제를 거부한다.
      */
     @Transactional
-    @CacheEvict(value = {CacheConfig.MERCENARIES, CacheConfig.CHARACTERISTICS_BY_MERC, CacheConfig.CHAR_LEVELS_BY_CHAR}, allEntries = true)
+    @CacheEvict(value = {CacheConfig.MERCENARIES, CacheConfig.CHARACTERISTICS_BY_MERC, CacheConfig.CHAR_LEVELS_BY_CHAR, CacheConfig.MERC_STATS_BY_STATKEY}, allEntries = true)
     public void deleteMercenary(Long mercenaryId) {
         Mercenary mercenary = getMercenaryOrThrow(mercenaryId);
         if (mercenaryMaterialRepository.existsByMaterialMercenaryId(mercenaryId)) {

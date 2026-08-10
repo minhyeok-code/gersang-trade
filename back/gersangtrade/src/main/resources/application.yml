@@ -28,7 +28,7 @@ spring:
     type: caffeine
     caffeine:
       spec: expireAfterWrite=86400s,maximumSize=1000
-    cache-names: servers,mercenaries,mercenary-characteristics,equipment-all,equipment-by-slot,rituals-by-item,rituals-all,priceWatch,characteristics-by-merc,char-levels-by-char
+    cache-names: servers,mercenaries,mercenary-characteristics,equipment-all,equipment-by-slot,rituals-by-item,rituals-all,priceWatch,characteristics-by-merc,char-levels-by-char,item-stats-by-type,merc-stats-by-statkey
     # priceWatch TTL은 CacheConfig.priceWatchCacheCustomizer()에서 2분으로 별도 설정
 
   # ── JPA / Hibernate ───────────────────────────────────────────────────────
