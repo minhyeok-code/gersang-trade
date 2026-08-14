@@ -96,7 +96,8 @@ oauth2:
 aws:
   region: ${AWS_REGION:ap-northeast-2}
   s3:
-    bucket: ${AWS_S3_BUCKET:gersang-trade-images}
+    # 운영은 반드시 AWS_S3_BUCKET secret으로 주입. 기본값 비움 → 미설정 시 조용한 오(誤)버킷 404 대신 이미지 URL 미생성.
+    bucket: ${AWS_S3_BUCKET:}
     # S3 public read URL 기반. CloudFront CDN 사용 시 CDN 도메인으로 교체.
     base-url: ${AWS_S3_BASE_URL:https://${aws.s3.bucket}.s3.${aws.region}.amazonaws.com}
 

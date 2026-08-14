@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>사천왕 루트 선택 — 놀이터 파일럿 시안</title>
+<link href="https://fonts.googleapis.com/css2?family=Jua&family=Gaegu:wght@400;700&display=swap" rel="stylesheet">
+<style>
+/* ══════════════════════════════════════════════════════════════
+   PLAYGROUND THEME TOKENS  (파일럿 전용 레이어)
+   — 기존 globals.css 의 잔잔·모던 토큰은 건드리지 않고,
+     이 레이어만 홈 루트 섹션에 얹는다. 나중에 전역 확장 시 이 블록을 넓힌다.
+════════════════════════════════════════════════════════════════ */
+:root{
+  /* ── 레트로 아케이드 (다크) ── */
+  --pg-bg:        #1E2140;          /* 딥 네이비 배경 */
+  --pg-bg2:       #282C56;
+  --pg-ink:       #EDEFFF;          /* 밝은 텍스트 */
+  --pg-ink-soft:  #A6ABD6;
+  --pg-card:      #2A2E52;
+  --pg-line:      #3A4070;
+  --pg-primary:   #FF4D8D;          /* 네온 핑크 주색 (요소색 아닌 CTA용) */
+  --pg-shadow:    0 8px 0 rgba(0,0,0,.30), 0 16px 34px rgba(0,0,0,.45);
+  --pg-shadow-sm: 0 4px 0 rgba(0,0,0,.30);
+  --pg-radius:    26px;
+
+  /* 속성 4종 = 사천왕 4명 (1:1). -bg 는 다크 위 저채도 틴트 */
+  --fire:   #DE3A2E;  --fire-2:   #F06A5E;  --fire-bg:   #3A1E1B;
+  --wind:   #3FAE3A;  --wind-2:   #6FD06A;  --wind-bg:   #143318;
+  --thunder:#F0C020;  --thunder-2:#FFDC5C;  --thunder-bg:#3A3212;
+  --water:  #2596E6;  --water-2:  #63B6F0;  --water-bg:  #142A3D;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:'Jua','Malgun Gothic',sans-serif;
+  color:var(--pg-ink);
+  background:
+    radial-gradient(1200px 500px at 80% -10%, #2C3168, transparent 60%),
+    radial-gradient(900px 400px at -10% 110%, #3A1E4E, transparent 55%),
+    var(--pg-bg);
+  min-height:100vh;
+  padding:34px 18px 90px;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1040px;margin:0 auto}
+
+/* 데모 안내 배너 */
+.demo-note{
+  font-family:'Gaegu',sans-serif;font-weight:700;
+  background:#161A3E;color:#B9C0EE;border:1px solid var(--pg-line);border-radius:16px;
+  padding:10px 16px;font-size:15px;margin-bottom:20px;
+  display:flex;align-items:center;gap:8px;
+}
+.demo-note b{color:#FFD54A}
+
+/* 헤더 */
+.hero{text-align:center;margin-bottom:26px}
+.hero h1{font-size:34px;letter-spacing:.5px}
+.hero p{font-family:'Gaegu',sans-serif;font-weight:700;color:var(--pg-ink-soft);font-size:17px;margin-top:4px}
+
+/* 브레드크럼(선택 되돌리기) */
+.crumbs{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:6px 0 24px;min-height:34px}
+.crumb{
+  background:var(--pg-card);border:2px solid var(--pg-line);
+  border-radius:999px;padding:6px 14px;font-size:15px;cursor:pointer;
+  box-shadow:var(--pg-shadow-sm);transition:transform .12s;
+  display:inline-flex;align-items:center;gap:7px;
+}
+.crumb:hover{transform:translateY(-2px)}
+.crumb .x{color:var(--pg-ink-soft);font-size:13px}
+.crumb.step-el{border-color:var(--_c,var(--pg-line))}
+
+/* 섹션 타이틀 */
+.step-head{display:flex;align-items:center;gap:10px;margin:26px 0 14px}
+.step-badge{
+  background:var(--pg-primary);color:#22071A;width:30px;height:30px;border-radius:50%;
+  display:grid;place-items:center;font-size:16px;flex:none;
+}
+.step-head h2{font-size:22px}
+
+/* ── 1단계: 속성/사천왕 카드 ── */
+.kings{display:grid;grid-template-columns:repeat(2,1fr);gap:26px 16px;margin-top:22px}
+@media(max-width:760px){.kings{grid-template-columns:1fr}}
+.king{
+  --_c:var(--fire); --_c2:var(--fire-2); --_bg:var(--fire-bg);
+  background:var(--pg-card);border:3px solid transparent;
+  border-radius:var(--pg-radius);padding:34px 16px 16px;position:relative;
+  box-shadow:var(--pg-shadow);transition:transform .14s ease;
+}
+.king:hover{transform:translateY(-4px)}
+/* 요소 배지 (스크린샷 우상단 메달 → 카드 상단 중앙) */
+.king .badge{
+  position:absolute;top:-18px;left:50%;transform:translateX(-50%);
+  width:46px;height:46px;border-radius:50%;background:linear-gradient(150deg,var(--_c2),var(--_c));
+  display:grid;place-items:center;font-size:22px;color:#fff;border:3px solid var(--pg-bg);
+  box-shadow:0 4px 0 rgba(0,0,0,.35);
+}
+.king .el-tag{display:block;text-align:center;margin:8px 0 12px;color:var(--_c);font-size:14px}
+/* 일반/각성 스탠딩 2컷 */
+.stand-row{display:flex;gap:12px}
+.stand{
+  flex:1;border:2px solid var(--pg-line);border-radius:16px;padding:9px 8px 8px;cursor:pointer;
+  background:var(--pg-bg2);transition:transform .12s, border-color .12s;text-align:center;
+}
+.stand:hover{transform:translateY(-3px);border-color:var(--_c)}
+.stand.sel{border-color:var(--_c);background:var(--_bg)}
+.stand-img{
+  height:158px;border-radius:11px;background:linear-gradient(180deg,#20244A,#15183A);
+  display:grid;place-items:center;font-size:52px;position:relative;overflow:hidden;
+}
+.stand.awk .stand-img{background:linear-gradient(180deg,#2A2652,#1A1638)}
+.stand.sel .stand-img{box-shadow:inset 0 0 0 2px var(--_c)}
+.stand-img .s3{position:absolute;bottom:4px;right:6px;font-family:ui-monospace,Menlo,monospace;font-size:9px;color:#6E74A8}
+.stand-lb{font-size:15px;color:var(--pg-ink)}
+.stand.awk .stand-lb::after{content:' ✦';color:var(--_c)}
+.stand-cap{font-family:'Gaegu',sans-serif;font-weight:700;font-size:12px;color:var(--pg-ink-soft);margin-top:1px}
+.kings-note{font-family:'Gaegu',sans-serif;font-weight:700;font-size:13px;color:var(--pg-ink-soft);text-align:center;margin-top:16px;opacity:.85}
+.king.fire{--_c:var(--fire);--_c2:var(--fire-2);--_bg:var(--fire-bg)}
+.king.wind{--_c:var(--wind);--_c2:var(--wind-2);--_bg:var(--wind-bg)}
+.king.thunder{--_c:var(--thunder);--_c2:var(--thunder-2);--_bg:var(--thunder-bg)}
+.king.water{--_c:var(--water);--_c2:var(--water-2);--_bg:var(--water-bg)}
+
+/* 펼쳐지는 영역 공통 */
+.panel{animation:pop .22s ease}
+@keyframes pop{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:none}}
+
+/* ── 2단계: 일반/각성 토글 ── */
+.phases{display:flex;gap:16px;flex-wrap:wrap}
+.phase{
+  flex:1;min-width:220px;background:var(--pg-card);border:3px solid var(--pg-line);
+  border-radius:22px;padding:18px 20px;cursor:pointer;box-shadow:var(--pg-shadow-sm);
+  transition:transform .12s;display:flex;align-items:center;gap:14px;
+}
+.phase:hover{transform:translateY(-4px)}
+.phase.sel{border-color:var(--_c,var(--pg-ink))}
+.phase .pic{width:52px;height:52px;border-radius:16px;display:grid;place-items:center;font-size:26px;flex:none;background:var(--_bg,#eee)}
+.phase .pt{font-size:19px}
+.phase .pd{font-family:'Gaegu',sans-serif;font-weight:700;font-size:14px;color:var(--pg-ink-soft)}
+.phase.awk .pt::after{content:' ✦';color:#FFD54A}
+.phase.awk{background:linear-gradient(180deg,#2E2A46,#3A2E52)}
+
+/* ── 3단계: 몬스터 리스트 ── */
+.monsters{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.mon{
+  background:var(--pg-card);border:3px solid var(--pg-line);border-radius:20px;
+  padding:14px;cursor:pointer;box-shadow:var(--pg-shadow-sm);text-align:center;
+  transition:transform .12s;
+}
+.mon:hover{transform:translateY(-4px) rotate(1deg)}
+.mon.sel{border-color:var(--_c,var(--pg-ink))}
+.mon .mimg{width:64px;height:64px;border-radius:16px;margin:0 auto 8px;background:var(--pg-bg2);display:grid;place-items:center;font-size:32px}
+.mon .mname{font-size:16px}
+.mon .mmeta{font-family:'Gaegu',sans-serif;font-weight:700;font-size:13px;color:var(--pg-ink-soft);margin-top:2px}
+
+/* ── 4단계: 공개 루트 리스트 ── */
+.routes{display:flex;flex-direction:column;gap:12px}
+.route{
+  background:var(--pg-card);border:3px solid var(--pg-line);border-radius:20px;
+  padding:16px 18px;box-shadow:var(--pg-shadow-sm);
+}
+.route.seed{background:linear-gradient(180deg,#2E2A46,#332A44);border-style:dashed;border-color:#6A5A2E}
+.route-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.route-title{font-size:18px}
+.badge{font-family:'Gaegu',sans-serif;font-weight:700;font-size:12px;padding:2px 10px;border-radius:999px}
+.badge.seed{background:#3A3212;color:#FFD54A}
+.badge.pub{background:#123329;color:#3EE6A0}
+.badge.priv{background:#241E44;color:#B7A2FF}
+.badge.phase{background:var(--_bg,#eee);color:var(--_c,#333)}
+.route-by{font-family:'Gaegu',sans-serif;font-weight:700;font-size:14px;color:var(--pg-ink-soft);margin-left:auto}
+.route-stats{display:flex;gap:16px;font-family:'Gaegu',sans-serif;font-weight:700;font-size:14px;color:var(--pg-ink-soft);margin:10px 0}
+.bar{height:12px;border-radius:999px;background:var(--pg-bg2);overflow:hidden;flex:1;min-width:120px}
+.bar>i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--_c2,#7bd),var(--_c,#39b))}
+.route-actions{display:flex;gap:10px;margin-top:6px}
+.btn{
+  font-family:'Jua',sans-serif;border:none;cursor:pointer;border-radius:14px;
+  padding:9px 18px;font-size:15px;box-shadow:var(--pg-shadow-sm);transition:transform .1s;
+}
+.btn:active{transform:translateY(2px);box-shadow:none}
+.btn-clone{background:var(--_c,var(--pg-primary));color:#0E1512}
+.btn-ghost{background:transparent;border:2px solid var(--pg-line);color:var(--pg-ink)}
+
+/* 루트 상세(스텝 체크리스트) */
+.steps{display:flex;gap:8px;overflow-x:auto;padding:14px 2px 4px;margin-top:6px;border-top:2px dashed var(--pg-line)}
+.tile{flex:none;width:80px;text-align:center}
+.tile .box{
+  width:60px;height:60px;border-radius:16px;margin:0 auto 5px;background:var(--pg-bg2);
+  display:grid;place-items:center;font-size:26px;border:3px solid var(--pg-line);position:relative;
+}
+.tile.goal .box{border-color:var(--_c,#333);background:var(--_bg,#eee)}
+.tile.done .box{opacity:.55}
+.tile.done .box::after{content:'✓';position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.55);color:#fff;font-size:26px;border-radius:13px}
+.tile .tl{font-size:13px;line-height:1.2}
+.arrow{align-self:center;color:var(--pg-line);font-size:18px;flex:none}
+
+.hint{font-family:'Gaegu',sans-serif;font-weight:700;color:var(--pg-ink-soft);font-size:15px;text-align:center;padding:14px}
+.mine-cta{
+  margin-top:16px;text-align:center;font-family:'Gaegu',sans-serif;font-weight:700;font-size:16px;
+}
+.mine-cta .btn{margin-top:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="demo-note">🧪 <span>이건 <b>분위기·흐름 확인용 목업</b>입니다. 색·문구·데이터는 예시이고, 실제 구현 스펙은 함께 드린 <b>.md 문서</b> 기준입니다.</span></div>
+
+  <div class="hero">
+    <h1>🗺️ 나만의 육성 루트</h1>
+    <p>속성을 골라 → 사천왕을 정하고 → 목표 몬스터로 가는 길을 짜보자!</p>
+  </div>
+
+  <div class="crumbs" id="crumbs"></div>
+
+  <!-- 1단계 -->
+  <div id="s1">
+    <div class="step-head"><span class="step-badge">1</span><h2>사천왕 고르기 <span style="font-size:14px;color:var(--pg-ink-soft);font-weight:400">— 일반/각성 함께</span></h2></div>
+    <div class="kings" id="kings"></div>
+    <div class="kings-note">※ 서있는 이미지는 사천왕 전용(별도 S3 폴더 · 파일명=id). 일반 용병은 기존 증명사진 컬럼 사용.</div>
+  </div>
+
+  <div id="s2"></div>
+  <div id="s3"></div>
+  <div id="s4"></div>
+
+</div>
+
+<script>
+/* ── 예시 데이터 (실제론 API) ── */
+const KINGS = [
+  {el:'화', cls:'fire',    name:'지국천왕', emoji:'🔥', sub:'화(火) 속성'},
+  {el:'풍', cls:'wind',    name:'광목천왕', emoji:'🍃', sub:'풍(風) 속성'},
+  {el:'뇌', cls:'thunder', name:'증장천왕', emoji:'⚡', sub:'뇌(雷) 속성'},
+  {el:'수', cls:'water',   name:'다문천왕', emoji:'💧', sub:'수(水) 속성'},
+];
+const MONSTERS = {
+  fire:   [['얼음게','🦀','Lv.250'],['설인','🦍','Lv.255'],['빙룡','🐉','Lv.260']],
+  wind:   [['독수리','🦅','Lv.250'],['그리핀','🦅','Lv.258'],['천마','🐎','Lv.260']],
+  thunder:[['뇌조','🐦','Lv.252'],['거인','🗿','Lv.257'],['뇌신','⚡','Lv.260']],
+  water:  [['해파리','🎐','Lv.250'],['크라켄','🦑','Lv.259'],['용왕','🐲','Lv.260']],
+};
+// 몬스터별 공개 루트 (seed=예시)
+function routesFor(king, phase, mon){
+  return [
+    {seed:true, title:`[예시] ${mon} 입문 루트`, by:'거상인(예시)', vis:'pub', clones:0, prog:0,
+     steps:[['전직','🗡️',0],['천왕검','⚔️',0],['화염셋','🥋',0],['특성',' ⭐',0],[mon,'🎯',0]]},
+    {seed:false, title:`${king} ${phase} 스피드런`, by:'(봉황)불꽃남자', vis:'pub', clones:37, prog:80,
+     steps:[['전직','🗡️',1],['고급천왕검','⚔️',1],['화염풀셋','🥋',1],['주술','🔮',0],[mon,'🎯',0]]},
+    {seed:false, title:`가성비 위주 ${mon} 루트`, by:'알뜰상인', vis:'pub', clones:12, prog:40,
+     steps:[['전직','🗡️',1],['중급천왕검','⚔️',1],['화염반셋','🥋',0],[mon,'🎯',0]]},
+  ];
+}
+
+const state={king:null, phase:null, mon:null};
+const $=id=>document.getElementById(id);
+
+/* 1단계: 사천왕 카드 (요소 배지 + 일반/각성 스탠딩 2컷 → 클릭 = 해당 variant 선택) */
+function renderKings(){
+  $('kings').innerHTML = KINGS.map((k,i)=>{
+    const st=`--_c:var(--${k.cls});--_c2:var(--${k.cls}-2);--_bg:var(--${k.cls}-bg)`;
+    const selN=state.king===i&&state.phase==='일반', selA=state.king===i&&state.phase==='각성';
+    return `<div class="king ${k.cls}" style="${st}">
+      <div class="badge">${k.emoji}</div>
+      <div class="stand-row">
+        <div class="stand ${selN?'sel':''}" onclick="pickVariant(${i},'일반')">
+          <div class="stand-img">🧍</div>
+        </div>
+        <div class="stand awk ${selA?'sel':''}" onclick="pickVariant(${i},'각성')">
+          <div class="stand-img">🧍</div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+function colorVars(){
+  const c=KINGS[state.king].cls;
+  return `--_c:var(--${c});--_c2:var(--${c}-2);--_bg:var(--${c}-bg)`;
+}
+function pickVariant(i,phase){
+  state.king=i; state.phase=phase; state.mon=null;
+  renderKings(); renderMonsters(); $('s4').innerHTML=''; crumbs();
+  setTimeout(()=>$('s3').scrollIntoView({behavior:'smooth',block:'nearest'}),60);
+}
+function backToKings(){ state.mon=null; $('s3').innerHTML=''; $('s4').innerHTML=''; crumbs(); window.scrollTo({top:0,behavior:'smooth'}); }
+
+/* 3단계 */
+function renderMonsters(){
+  const st=colorVars(), c=KINGS[state.king].cls;
+  $('s3').innerHTML=`<div class="panel" style="${st}">
+    <div class="step-head"><span class="step-badge">2</span><h2>목표 몬스터 고르기</h2></div>
+    <div class="monsters">${MONSTERS[c].map((m,i)=>`
+      <div class="mon ${state.mon===i?'sel':''}" style="${st}" onclick="pickMon(${i})">
+        <div class="mimg">${m[1]}</div><div class="mname">${m[0]}</div><div class="mmeta">${m[2]}</div>
+      </div>`).join('')}</div></div>`;
+}
+function pickMon(i){ state.mon=i; renderMonsters(); renderRoutes(); crumbs(); }
+
+/* 4단계 */
+function renderRoutes(){
+  const st=colorVars(), c=KINGS[state.king].cls;
+  const king=KINGS[state.king].name, mon=MONSTERS[c][state.mon][0];
+  const list=routesFor(king, state.phase, mon);
+  $('s4').innerHTML=`<div class="panel" style="${st}">
+    <div class="step-head"><span class="step-badge">3</span><h2>공개 루트 — 마음에 드는 길을 복제!</h2></div>
+    <div class="routes">${list.map((r,ri)=>`
+      <div class="route ${r.seed?'seed':''}" style="${st}">
+        <div class="route-top">
+          <span class="route-title">${r.title}</span>
+          ${r.seed?'<span class="badge seed">예시</span>':`<span class="badge pub">공개</span>`}
+          <span class="badge phase" style="${st}">${state.phase}</span>
+          <span class="route-by">by ${r.by}</span>
+        </div>
+        <div class="route-stats">
+          <span>🧬 클론 ${r.clones}</span>
+          <span>진행도 ${r.prog}%</span>
+          <span class="bar" style="${st}"><i style="width:${r.prog}%"></i></span>
+        </div>
+        <div class="steps">${r.steps.map((s,si)=>`
+          ${si>0?'<span class="arrow">➜</span>':''}
+          <div class="tile ${s[2]?'done':''} ${si===r.steps.length-1?'goal':''}" style="${st}">
+            <div class="box">${s[1]}</div><div class="tl">${s[0]}</div>
+          </div>`).join('')}</div>
+        <div class="route-actions">
+          <button class="btn btn-clone" style="${st}" onclick="clone(this)">🧬 내 루트로 복제</button>
+          <button class="btn btn-ghost">미리보기</button>
+        </div>
+      </div>`).join('')}</div>
+    <div class="mine-cta">직접 길을 개척하고 싶다면?<br>
+      <button class="btn btn-clone" style="${st}">+ 빈 루트로 새로 만들기</button>
+    </div></div>`;
+}
+function clone(btn){ btn.textContent='✅ 내 루트에 담김!'; btn.style.opacity=.7; }
+
+/* 브레드크럼 */
+function crumbs(){
+  const c=state.king!==null?KINGS[state.king].cls:'';
+  const parts=[];
+  if(state.king!==null){
+    const k=KINGS[state.king];
+    parts.push(`<span class="crumb step-el" style="--_c:var(--${c})" onclick="backToKings()">${k.emoji} ${state.phase||''} ${k.name} <span class="x">▾</span></span>`);
+  }
+  if(state.mon!==null) parts.push(`<span class="crumb" onclick="pickMon(${state.mon})">🎯 ${MONSTERS[c][state.mon][0]} <span class="x">▾</span></span>`);
+  parts.push(`<span class="crumb" onclick="reset()">↺ 처음부터</span>`);
+  $('crumbs').innerHTML=parts.join('');
+}
+function reset(){ state.king=state.phase=state.mon=null; renderKings(); $('s2').innerHTML=$('s3').innerHTML=$('s4').innerHTML=''; crumbs(); window.scrollTo({top:0,behavior:'smooth'}); }
+function scrollTo2(){ setTimeout(()=>$('s2').scrollIntoView({behavior:'smooth',block:'nearest'}),60); }
+
+renderKings(); crumbs();
+</script>
+</body>
+</html>

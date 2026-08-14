@@ -1,6 +1,7 @@
 package org.example.gersangtrade.catalog.service;
 
 import lombok.RequiredArgsConstructor;
+import org.example.gersangtrade.catalog.dto.response.HeavenlyKingResponse;
 import org.example.gersangtrade.catalog.dto.response.MercenaryCharacteristicCatalogResponse;
 import org.example.gersangtrade.catalog.dto.response.MercenaryCharacteristicSetupResponse;
 import org.example.gersangtrade.catalog.dto.response.MercenaryResponse;
@@ -16,13 +17,17 @@ import org.example.gersangtrade.domain.catalog.MercenaryCharacteristic;
 import org.example.gersangtrade.domain.catalog.MercenaryCharacteristicLevel;
 import org.example.gersangtrade.domain.catalog.MercenaryStat;
 import org.example.gersangtrade.domain.catalog.enums.MercenaryCategory;
+import org.example.gersangtrade.domain.catalog.enums.MercenaryType;
+import org.example.gersangtrade.domain.catalog.enums.Nature;
 import org.example.gersangtrade.domain.catalog.enums.StatType;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -40,11 +45,64 @@ public class MercenaryService {
     private static final int PROTAGONIST_CHARACTERISTIC_POINTS = 16;
     private static final int DEFAULT_CHARACTERISTIC_POINTS = 17;
 
+    /** 사천왕 카드 노출 순서 — 지국(화)·광목(풍)·증장(뇌)·다문(수). */
+    private static final List<Nature> HEAVENLY_KING_ORDER =
+            List.of(Nature.FIRE, Nature.WIND, Nature.THUNDER, Nature.WATER);
+
     private final MercenaryRepository mercenaryRepository;
     private final MercenaryStatRepository mercenaryStatRepository;
     private final MercenaryCharacteristicRepository characteristicRepository;
     private final MercenaryCharacteristicLevelRepository characteristicLevelRepository;
     private final LegendGeneralLoadService legendGeneralLoadService;
+
+    @Value("${aws.s3.bucket:}")
+    private String s3Bucket;
+
+    @Value("${aws.region:ap-northeast-2}")
+    private String s3Region;
+
+    /**
+     * 홈 사천왕 선택 UI용 — 속성별 일반/각성 사천왕 + 전신 스탠딩 이미지 URL.
+     * 스탠딩 이미지는 S3 {@code mercenary-standing/{id}.png} 규칙으로 URL을 조합한다.
+     * hidden 여부와 무관하게 노출한다(사천왕은 고정 4속성 앵커).
+     */
+    public List<HeavenlyKingResponse> listHeavenlyKings() {
+        List<Mercenary> kings = mercenaryRepository.findByMercenaryTypeIn(
+                List.of(MercenaryType.HEAVENLY_KING, MercenaryType.AWAKENED_HEAVENLY_KING));
+
+        Map<Nature, List<Mercenary>> byNature = kings.stream()
+                .filter(m -> m.getNature() != null)
+                .collect(Collectors.groupingBy(Mercenary::getNature));
+
+        List<HeavenlyKingResponse> result = new ArrayList<>();
+        for (Nature nature : HEAVENLY_KING_ORDER) {
+            List<Mercenary> group = byNature.getOrDefault(nature, List.of());
+            Mercenary normal = firstOfType(group, MercenaryType.HEAVENLY_KING);
+            Mercenary awakened = firstOfType(group, MercenaryType.AWAKENED_HEAVENLY_KING);
+            if (normal == null && awakened == null) continue;
+            result.add(new HeavenlyKingResponse(
+                    nature.name(), nature.getDisplayName(),
+                    toVariant(normal), toVariant(awakened)));
+        }
+        return result;
+    }
+
+    private Mercenary firstOfType(List<Mercenary> group, MercenaryType type) {
+        return group.stream()
+                .filter(m -> m.getMercenaryType() == type)
+                .findFirst().orElse(null);
+    }
+
+    private HeavenlyKingResponse.Variant toVariant(Mercenary m) {
+        if (m == null) return null;
+        return new HeavenlyKingResponse.Variant(m.getId(), m.getName(), standingImageUrl(m.getId()));
+    }
+
+    /** S3 스탠딩 이미지 URL 조합. 버킷 미설정(local 등)이면 null. */
+    private String standingImageUrl(Long id) {
+        if (s3Bucket == null || s3Bucket.isBlank()) return null;
+        return "https://" + s3Bucket + ".s3." + s3Region + ".amazonaws.com/mercenary-standing/" + id + ".png";
+    }
 
     /**
      * 용병 목록 조회.

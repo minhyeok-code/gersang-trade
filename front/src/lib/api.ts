@@ -266,6 +266,8 @@ export const api = {
     const qs = sp.toString() ? `?${sp}` : '';
     return request<MercenaryDto[]>(`/api/mercenaries${qs}`);
   },
+  // 홈 사천왕 선택 UI — 속성별 일반/각성 사천왕 + 전신 스탠딩 이미지
+  getHeavenlyKings: () => request<HeavenlyKingDto[]>(`/api/mercenaries/heavenly-kings`),
   getMercenaryCharacteristics: (mercenaryId: number) =>
     request<MercenaryCharacteristicCatalogDto>(`/api/mercenaries/${mercenaryId}/characteristics`),
   getMercenaryCharacteristicSetup: (mercenaryId: number) =>
@@ -968,6 +970,19 @@ export interface MercenaryDto {
   elementValue?: number;
   imageUrl?: string;
   nation?: string;
+}
+
+// 홈 사천왕 선택 UI
+export interface HeavenlyKingVariantDto {
+  id: number;
+  name: string;
+  standingImageUrl: string | null;
+}
+export interface HeavenlyKingDto {
+  element: string;   // FIRE | WIND | THUNDER | WATER
+  elementKo: string; // 화 | 풍 | 뇌 | 수
+  normal: HeavenlyKingVariantDto | null;
+  awakened: HeavenlyKingVariantDto | null;
 }
 
 export interface MercenaryCharacteristicCatalogDto {

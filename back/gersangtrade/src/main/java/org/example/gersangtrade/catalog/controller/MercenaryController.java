@@ -2,6 +2,7 @@ package org.example.gersangtrade.catalog.controller;
 
 import lombok.RequiredArgsConstructor;
 import org.example.gersangtrade.catalog.dto.EquipmentSlotItemResponse;
+import org.example.gersangtrade.catalog.dto.response.HeavenlyKingResponse;
 import org.example.gersangtrade.catalog.dto.response.MercenaryCharacteristicCatalogResponse;
 import org.example.gersangtrade.catalog.dto.response.MercenaryCharacteristicSetupResponse;
 import org.example.gersangtrade.catalog.dto.response.MercenaryResponse;
@@ -45,6 +46,15 @@ public class MercenaryController {
             @RequestParam(required = false) String q,
             @RequestParam(required = false) Integer limit) {
         return ResponseEntity.ok(mercenaryService.listMercenaries(element, q, limit));
+    }
+
+    /**
+     * 사천왕 선택 UI — 속성별 일반/각성 사천왕 + 전신 스탠딩 이미지 URL (인증 불필요).
+     * 홈 콜드스타트 앵커(속성4 → 일반/각성 스탠딩 2컷)에서 사용.
+     */
+    @GetMapping("/heavenly-kings")
+    public ResponseEntity<List<HeavenlyKingResponse>> listHeavenlyKings() {
+        return ResponseEntity.ok(mercenaryService.listHeavenlyKings());
     }
 
     /** 용병 특성 카탈로그 — 스냅샷 뷰어 이름·레벨 라벨 조회용 */

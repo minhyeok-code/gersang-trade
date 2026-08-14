@@ -1337,5 +1337,25 @@
     "tick_interval_ms": null,
     "confidence": "HIGH",
     "note": null
+  },
+  {
+    "row_id": "a6016462-235e-4d22-b8a7-f58531236913",
+    "type": "mercenary",
+    "mercenary_key": "ildaejongsa",
+    "skill_key": "rhdwlsrkr",
+    "skill_name": "공진각",
+    "coef_str": 14.3,
+    "coef_dex": 0.0,
+    "coef_vit": 0.0,
+    "coef_int": 0.0,
+    "coef_atk": 18.7,
+    "coef_lvl": 200.2,
+    "hit_count": 1,
+    "damage_range_factor": 0.43,
+    "skill_type": "INSTANT",
+    "casts_per_second": 0.4,
+    "tick_interval_ms": 0,
+    "confidence": "HIGH",
+    "note": null
   }
 ]

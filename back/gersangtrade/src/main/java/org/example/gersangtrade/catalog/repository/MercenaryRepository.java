@@ -2,6 +2,7 @@ package org.example.gersangtrade.catalog.repository;
 
 import org.example.gersangtrade.domain.catalog.Mercenary;
 import org.example.gersangtrade.domain.catalog.enums.MercenaryCategory;
+import org.example.gersangtrade.domain.catalog.enums.MercenaryType;
 import org.example.gersangtrade.domain.catalog.enums.Nation;
 import org.example.gersangtrade.domain.catalog.enums.Nature;
 import org.springframework.data.domain.Page;
@@ -41,6 +42,9 @@ public interface MercenaryRepository extends JpaRepository<Mercenary, Long> {
 
     /** 이미지 URL이 없는 용병 목록 — 관리자 이미지 등록 대상 파악에 사용된다. */
     List<Mercenary> findByImageUrlIsNull();
+
+    /** 용병 종류 목록으로 조회 — 홈 사천왕 선택 UI(일반/각성 사천왕) 조회에 사용된다. */
+    List<Mercenary> findByMercenaryTypeIn(List<MercenaryType> types);
 
     /**
      * 관리자 목록: category + nature + nation 복합 필터 — 페이징.
