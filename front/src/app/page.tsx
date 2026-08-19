@@ -8,7 +8,7 @@ import { Sword, Clock } from 'lucide-react';
 import SearchBar from '@/components/common/SearchBar';
 import InterestPriceWatchPanel from '@/components/home/InterestPriceWatchPanel';
 import GuideChecklistPanel from '@/components/home/GuideChecklistPanel';
-import HeavenlyKingSelector from '@/components/home/HeavenlyKingSelector';
+import HeavenlyKingBanner from '@/components/home/HeavenlyKingBanner';
 
 export default function Home() {
   const router = useRouter();
@@ -99,7 +99,7 @@ export default function Home() {
 
       {/* 사천왕 육성 루트 선택 (콜드스타트 앵커 · 로그인 무관 노출) */}
       <div className="mb-8">
-        <HeavenlyKingSelector />
+        <HeavenlyKingBanner />
       </div>
 
       {isLoggedIn ? (

@@ -52,3 +52,10 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--brown);
 }
+
+/* 사천왕 배너 등 진입 애니메이션 */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+.fade-in { animation: fadeIn 0.25s ease; }
